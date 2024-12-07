@@ -1,0 +1,31 @@
+version: "3.3"
+services:
+  ton-node:
+    image: mytonctrl:2
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GLOBAL_CONFIG_URL: ${GLOBAL_CONFIG_URL}
+        MYTONCTRL_VERSION: ${MYTONCTRL_VERSION}
+        TELEMETRY: ${TELEMETRY}
+        IGNORE_MINIMAL_REQS: ${IGNORE_MINIMAL_REQS}
+        MODE: ${MODE}
+    restart: always
+    tty: true
+    volumes:
+      - ton:/var/ton-work
+      - mytoncore:/usr/local/bin/mytoncore
+    network_mode: host
+    environment:
+      GLOBAL_CONFIG_URL: ${GLOBAL_CONFIG_URL}
+      IGNORE_MINIMAL_REQS: ${IGNORE_MINIMAL_REQS}
+      DUMP: ${DUMP}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: 100m
+        max-file: "3"
+volumes:
+  ton:
+  mytoncore:
