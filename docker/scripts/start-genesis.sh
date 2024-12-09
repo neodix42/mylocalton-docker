@@ -1,20 +1,18 @@
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
-PUBLIC_IP=127.0.0.1
+if [[ -z "${PUBLIC_IP}" ]]; then
+  PUBLIC_IP=127.0.0.1
+fi
+
+echo Current PUBLIC_IP $PUBLIC_IP, ubuntu $(hostname -I)
+
 PUBLIC_PORT=40001
 CONSOLE_PORT=40002
-DHT_PORT=40002
-LITE_PORT=40003
+DHT_PORT=40003
+LITE_PORT=40004
 
 MY_DIR=$(pwd)
 echo $MY_DIR
-
-#echo Replacing gen-zerostate-test.fif
-#cd $MY_DIR
-#cp ton-private-testnet.config.json.template /var/ton-work/db
-#cp example.config.json /var/ton-work/db
-#cp control.template /var/ton-work/db
-#cp gen-zerostate-test.fif /usr/share/ton/smartcont/gen-zerostate-test.fif
 
 cd /var/ton-work/db/keyring
 
@@ -31,30 +29,21 @@ cp validator-keys.pub /usr/share/ton/smartcont/
 # replace in gen-zerostate.fif parameters - min validators amount, min stake etc
 
 cd /usr/share/ton/smartcont/
-rm -f basestate0.boc
-rm -f main-wallet.pk
-rm -f basestate0.rhash
-rm -f basestate0.fhash
-rm -f main-wallet.addr
-rm -f rm elector.addr
-rm -f config-master.pk
-rm -f config-master.addr
-rm -f zerostate.boc
-rm -f zerostate.rhash
-rm -f zerostate.fhash
 
 
 echo Creating zero state
 echo $PATH
 which fift
 which create-state
-create-state gen-zerostate-test.fif
+create-state gen-zerostate.fif
+test $? -eq 0 || { echo "Can't generate zero-state"; exit 1; }
+
 
 ZEROSTATE_FILEHASH=$(sed ':a;N;$!ba;s/\n//g' <<<$(sed -e "s/\s//g" <<<"$(od -An -t x1 zerostate.fhash)") | awk '{ print toupper($0) }')
 mv zerostate.boc /var/ton-work/db/static/$ZEROSTATE_FILEHASH
 BASESTATE0_FILEHASH=$(sed ':a;N;$!ba;s/\n//g' <<<$(sed -e "s/\s//g" <<<"$(od -An -t x1 basestate0.fhash)") | awk '{ print toupper($0) }')
 mv basestate0.boc /var/ton-work/db/static/$BASESTATE0_FILEHASH
-cp main-wallet.pk main-wallet.addr config-master.pk config-master.addr $MY_DIR/
+cp main-wallet.pk main-wallet.addr config-master.pk config-master.addr faucet.pk faucet.addr $MY_DIR/
 
 cd /var/ton-work/db
 rm -f my-ton-global.config.json
@@ -101,10 +90,11 @@ echo Initializing genesis node...
 
 cd /var/ton-work/db
 
-# Init local config with IP:PORT
+# Create config.json, stops automatically
 rm -f config.json
 validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
 echo Initial /var/ton-work/db/config.json
+cat /var/ton-work/db/config.json
 
 
 # Generating server certificate
@@ -121,12 +111,13 @@ echo -e "\e[1;32m[+]\e[0m Generated client public certificate"
 # Adding client permissions
 rm -f control.new
 sed -e "s/CONSOLE-PORT/\"$(printf "%q" $CONSOLE_PORT)\"/g" -e "s~SERVER-ID~\"$(printf "%q" $SERVER_ID2)\"~g" -e "s~CLIENT-ID~\"$(printf "%q" $CLIENT_ID2)\"~g" control.template > control.new
-sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(more control.new))~g" config.json > config.json.new
+sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(cat control.new))~g" config.json > config.json.new
 mv config.json.new config.json
 
-# NODE INIT END
+echo cat config.json
+cat config.json
 
-
+# start the full node for some time to add validation keys
 (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT")&
 PRELIMINARY_VALIDATOR_RUN=$!
 sleep 4;
@@ -190,8 +181,7 @@ nohup python3 -m http.server&
 #echo
 #echo
 #
-#echo http://$PUBLIC_IP:8000/
-#
+echo http://$PUBLIC_IP:8000/
 echo wget http://$PUBLIC_IP:8000/global.config.json
 echo wget http://$PUBLIC_IP:8000/client.pub
 echo wget http://$PUBLIC_IP:8000/client

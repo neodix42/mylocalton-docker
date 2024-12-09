@@ -1,31 +1,42 @@
-version: "3.3"
 services:
-  ton-node:
-    image: mytonctrl:2
+  genesis:
+    container_name: genesis
+    image: mylocaltondocker
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        GLOBAL_CONFIG_URL: ${GLOBAL_CONFIG_URL}
-        MYTONCTRL_VERSION: ${MYTONCTRL_VERSION}
-        TELEMETRY: ${TELEMETRY}
-        IGNORE_MINIMAL_REQS: ${IGNORE_MINIMAL_REQS}
-        MODE: ${MODE}
     restart: always
-    tty: true
-    volumes:
-      - ton:/var/ton-work
-      - mytoncore:/usr/local/bin/mytoncore
-    network_mode: host
+    ports:
+      - 8000:8000   # http
+#      - 40001:40001 # node
+#      - 40002:40002 # console
+#      - "40003:40003/udp" # dht
+#      - 40004:40004 # lite
+#    volumes:
+#      - ton:/var/ton-work/db
     environment:
-      GLOBAL_CONFIG_URL: ${GLOBAL_CONFIG_URL}
-      IGNORE_MINIMAL_REQS: ${IGNORE_MINIMAL_REQS}
-      DUMP: ${DUMP}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: 100m
-        max-file: "3"
-volumes:
-  ton:
-  mytoncore:
+      - GENESIS=true
+      - PUBLIC_IP=172.28.1.1
+    networks:
+      default:
+        ipv4_address: 172.28.1.1
+  validator:
+    container_name: validator
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - "genesis"
+    environment:
+      - GENESIS=false
+networks:
+  default:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+#volumes:
+#  ton:
+#    external: false
