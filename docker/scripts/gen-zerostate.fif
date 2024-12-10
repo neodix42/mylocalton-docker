@@ -3,12 +3,10 @@
 "Asm.fif" include
 "Lists.fif" include
 
-def? $1 { @' $1 } { "" } cond constant suffix
-{ suffix $+ } : +suffix
 256 1<<1- 15 / constant AllOnes
 
 wc_master setworkchain
--239 setglobalid   // negative value means a test instance of the blockchain
+-217 setglobalid   // negative value means a test instance of the blockchain
 
 // Initial state of Workchain 0 (Basic workchain)
 
@@ -16,14 +14,14 @@ wc_master setworkchain
 
 cr ."initial basechain state is:" cr dup <s csr. cr
 dup dup 31 boc+>B dup Bx. cr
-dup "basestate0" +suffix +".boc" tuck B>file
+dup "basestate0.boc" tuck B>file
 ."(Initial basechain state saved to file " type .")" cr
 Bhashu dup =: basestate0_fhash
 ."file hash=" dup 64x. space 256 u>B dup B>base64url type cr
-"basestate0" +suffix +".fhash" B>file
+"basestate0.fhash" B>file
 hashu dup =: basestate0_rhash
 ."root hash=" dup 64x. space 256 u>B dup B>base64url type cr
-"basestate0" +suffix +".rhash" B>file
+"basestate0.rhash" B>file
 basestate0_rhash basestate0_fhash now 0 1 32 0 add-std-workchain
 config.workchains!
 
@@ -49,7 +47,7 @@ config.workchains!
 }>c
 // code
 <b 0 32 u,
-   "main-wallet" +suffix +".pk" load-generate-keypair drop
+   "main-wallet.pk" load-generate-keypair drop
    B,
 b> // data
 Libs{
@@ -65,7 +63,7 @@ register_smc
 dup make_special dup constant smc1_addr
 Masterchain over
 2dup ."wallet address = " .addr cr 2dup 6 .Addr cr
-"main-wallet" +suffix +".addr" save-address-verbose
+"main-wallet.addr" save-address-verbose
 
 // SmartContract #3
 PROGRAM{
@@ -125,7 +123,43 @@ register_smc
 dup make_special dup constant faucet_addr
 Masterchain over
 2dup ."faucet address = " .addr cr 2dup 6 .Addr cr
-"faucet" +suffix +".addr" save-address-verbose
+"faucet.addr" save-address-verbose
+
+// validator-1 wallet-v3
+"wallet-v3-code.fif" include
+// code
+<b 0 32 u, 42 32 u,
+   "validator-1.pk" load-generate-keypair constant faucet_pk
+   B,
+b> // data
+empty_cell // no libraries
+GR$1000000   // balance
+0 // split_depth
+0 // ticktock
+2 // mode: create + setaddr
+register_smc
+dup make_special dup constant faucet_addr
+Masterchain over
+2dup ."validator-1 address = " .addr cr 2dup 6 .Addr cr
+"validator-1.addr" save-address-verbose
+
+// validator-2 wallet-v3
+"wallet-v3-code.fif" include
+// code
+<b 0 32 u, 42 32 u,
+   "validator-2.pk" load-generate-keypair constant faucet_pk
+   B,
+b> // data
+empty_cell // no libraries
+GR$1000000   // balance
+0 // split_depth
+0 // ticktock
+2 // mode: create + setaddr
+register_smc
+dup make_special dup constant faucet_addr
+Masterchain over
+2dup ."validator-2 address = " .addr cr 2dup 6 .Addr cr
+"validator-2.addr" save-address-verbose
 
 /*
  *
@@ -144,7 +178,7 @@ register_smc
 dup make_special dup constant smc4_addr dup constant elector_addr
 Masterchain swap
 ."elector smart contract address = " 2dup .addr cr 2dup 7 .Addr cr
-"elector" +suffix +".addr" save-address-verbose
+"elector.addr" save-address-verbose
 
 /*
  *
@@ -205,7 +239,7 @@ config.param_proposals_setup!
 // deposit bit_pps cell_pps
 GR$100 1 500 config.complaint_prices!
 
-"validator-keys" +suffix +".pub" file>B
+"validator-keys.pub" file>B
 { dup Blen } { 32 B| swap dup ."Validator public key = " Bx. cr
   17 add-validator } while drop
 // newkeypair nip dup ."Validator #1 public key = " Bx. cr
@@ -223,7 +257,7 @@ now dup orig_vset_valid_for + 0 config.validators!
 "auto/config-code.fif" include   // code in separate source file
 <b configdict ref,  // initial configuration
    0 32 u,          // seqno
-   "config-master" +suffix +".pk" load-generate-keypair drop
+   "config-master.pk" load-generate-keypair drop
    B,
    dictnew dict,   // vote dict
 b> // data
@@ -233,7 +267,7 @@ GR$10  // balance
 dup set_config_smc
 Masterchain swap
 ."config smart contract address = " 2dup .addr cr 2dup 7 .Addr cr
-"config-master" +suffix +".addr" save-address-verbose
+"config-master.addr" save-address-verbose
 // Other data
 
 /*
@@ -245,13 +279,13 @@ Masterchain swap
 create_state
 cr cr ."new state is:" cr dup <s csr. cr
 dup 31 boc+>B dup Bx. cr
-dup "zerostate" +suffix +".boc" tuck B>file
+dup "zerostate.boc" tuck B>file
 ."(Initial masterchain state saved to file " type .")" cr
 Bhashu dup =: zerostate_fhash
 ."file hash= " dup X. space 256 u>B dup B>base64url type cr
-"zerostate" +suffix +".fhash" B>file
+"zerostate.fhash" B>file
 hashu dup =: zerostate_rhash ."root hash= " dup X. space 256 u>B dup B>base64url type cr
-"zerostate" +suffix +".rhash" B>file
+"zerostate.rhash" B>file
 basestate0_rhash ."Basestate0 root hash= " dup X. space 256 u>B B>base64url type cr
 basestate0_fhash ."Basestate0 file hash= " dup X. space 256 u>B B>base64url type cr
 zerostate_rhash ."Zerostate root hash= " dup X. space 256 u>B B>base64url type cr

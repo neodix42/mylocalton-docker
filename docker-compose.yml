@@ -7,21 +7,15 @@ services:
       dockerfile: Dockerfile
     restart: always
     ports:
-      - 8000:8000   # http
-#      - 40001:40001 # node
-#      - 40002:40002 # console
-#      - "40003:40003/udp" # dht
-#      - 40004:40004 # lite
+      - 8000:8000   # simple-http server
+      - 8080:8080   # blockchain explorer
 #    volumes:
 #      - ton:/var/ton-work/db
-    environment:
-      - GENESIS=true
-      - PUBLIC_IP=172.28.1.1
     networks:
       default:
         ipv4_address: 172.28.1.1
-  validator:
-    container_name: validator
+  validator-1:
+    container_name: validator-1
     image: mylocaltondocker
     build:
       context: .
@@ -29,8 +23,23 @@ services:
     restart: always
     depends_on:
       - "genesis"
-    environment:
-      - GENESIS=false
+    networks:
+      default:
+        ipv4_address: 172.28.1.10
+
+  validator-2:
+    container_name: validator-2
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - "genesis"
+    networks:
+      default:
+        ipv4_address: 172.28.1.20
+
 networks:
   default:
     ipam:
