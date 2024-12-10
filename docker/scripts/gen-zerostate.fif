@@ -110,7 +110,7 @@ dup make_special dup constant smc3_addr
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "faucet.pk" load-generate-keypair constant faucet_pk
+   "faucet.pk" load-keypair constant faucet_pk
    B,
 b> // data
 empty_cell // no libraries

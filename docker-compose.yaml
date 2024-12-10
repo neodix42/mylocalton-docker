@@ -9,6 +9,7 @@ services:
     ports:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
+      - 40004:40004 # lite-server
 #    volumes:
 #      - ton:/var/ton-work/db
     networks:

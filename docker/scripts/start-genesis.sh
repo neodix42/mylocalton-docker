@@ -139,36 +139,35 @@ else
   rm -rf /var/ton-work/log*
 
   echo Genesis node initilized
+  echo
+  # current dir /var/ton-work/db
+  # install lite-server using predefined lite-server keys
+  #read -r LITESERVER_ID1 LITESERVER_ID2 <<< $(generate-random-id -m keys -n liteserver)
+  echo "Liteserver IDs: DA46DE8CCCED9AB6F29447B334636FBE07F7F4CAE6B6833D26AF1240A1BB34B1 2kbejMztmrbylEezNGNvvgf39MrmtoM9Jq8SQKG7NLE="
+  cp liteserver /var/ton-work/db/keyring/DA46DE8CCCED9AB6F29447B334636FBE07F7F4CAE6B6833D26AF1240A1BB34B1
 
-  # install lite-server
-  read -r LITESERVER_ID1 LITESERVER_ID2 <<< $(generate-random-id -m keys -n liteserver)
-  echo "Liteserver IDs: $LITESERVER_ID1 $LITESERVER_ID2"
-  cp liteserver /var/ton-work/db/keyring/$LITESERVER_ID1
-
-  LITESERVERS=$(printf "%q" "\"liteservers\":[{\"id\":\"$LITESERVER_ID2\",\"port\":\"$LITE_PORT\"}")
+  LITESERVERS=$(printf "%q" "\"liteservers\":[{\"id\":\"2kbejMztmrbylEezNGNvvgf39MrmtoM9Jq8SQKG7NLE=\",\"port\":\"$LITE_PORT\"}")
   sed -e "s~\"liteservers\"\ \:\ \[~$LITESERVERS~g" config.json > config.json.liteservers
   mv config.json.liteservers config.json
 
-  chmod 777 /var/ton-work/db/liteserver.pub
-
-  dd if=/var/ton-work/db/liteserver.pub bs=1 skip=4 of=/var/ton-work/db/liteserver.pub.4
-  LITESERVER_PUB=$(base64 /var/ton-work/db/liteserver.pub.4)
-  rm -f liteserver.pub.4
   IP=$PUBLIC_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
   [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
-  LITESERVERSCONFIG=$(printf "%q" "\"liteservers\":[{\"id\":{\"key\":\"$LITESERVER_PUB\", \"@type\":\"pub.ed25519\"}, \"port\":\"$LITE_PORT\", \"ip\":$IPNUM }]}")
+  LITESERVERSCONFIG=$(printf "%q" "\"liteservers\":[{\"id\":{\"key\":\"E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY=\", \"@type\":\"pub.ed25519\"}, \"port\":\"$LITE_PORT\", \"ip\":$IPNUM }]}")
   sed -i -e "\$s#\(.*\)\}#\1,$LITESERVERSCONFIG#" my-ton-global.config.json
   python3 -c 'import json; f=open("my-ton-global.config.json", "r"); config=json.loads(f.read()); f.close(); f=open("my-ton-global.config.json", "w");f.write(json.dumps(config, indent=2)); f.close()';
 
   cp my-ton-global.config.json global.config.json
 
   echo Restart DHT server
+  echo
   kill $PRELIMINARY_DHT_SERVER_RUN;
   sleep 1
 fi
 
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$PUBLIC_IP:$DHT_PORT"&
 echo DHT server started at $PUBLIC_IP:$DHT_PORT
+echo
+echo Lite server started at $PUBLIC_IP:$LITE_PORT
 
 # start http server
 nohup python3 -m http.server&
@@ -176,7 +175,8 @@ nohup python3 -m http.server&
 # start blockchain-explorer
 nohup blockchain-explorer -C /var/ton-work/db/global.config.json -H $EXPLORER_PORT&
 
-echo Simple HTTP server run on:
+echo
+echo Simple HTTP server runs on:
 echo
 echo http://127.0.0.1:8000/
 echo http://$PUBLIC_IP:8000/
