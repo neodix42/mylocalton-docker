@@ -1,7 +1,10 @@
 services:
   genesis:
     container_name: genesis
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     ports:
       - 8000:8000   # simple-http server
@@ -14,7 +17,10 @@ services:
         ipv4_address: 172.28.1.1
   validator-1:
     container_name: validator-1
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     depends_on:
       - "genesis"
@@ -24,7 +30,10 @@ services:
 
   validator-2:
     container_name: validator-2
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     depends_on:
       - "genesis"

@@ -9,7 +9,7 @@ Installed Docker or Docker desktop
 
 Build and launch:
 
-```docker-compose -f docker-compose.yaml up```
+```docker-compose -f docker-compose-build.yaml up```
 
 **Blockchain explorer** will be available on localhost via:
 
@@ -37,7 +37,7 @@ docker exec -it validator-2 bash
 
 Reset network and remove all data:
 
-```docker-compose -f docker-compose.yaml down -v --rmi all```
+```docker-compose -f docker-compose-build.yaml down -v --rmi all```
 
 
 ## Features
