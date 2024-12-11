@@ -7,7 +7,7 @@ Installed Docker or Docker desktop
 
 ## Usage
 
-Build and launch:
+### Build and start:
 
 ```docker-compose -f docker-compose-build.yaml up```
 
@@ -23,7 +23,7 @@ Global network configuration file available at:
 
 http://127.0.0.1:8000/global.config.json
 
-Go inside the container:
+### Go inside the container:
 
 ```
 docker exec -it genesis bash
@@ -35,7 +35,13 @@ docker exec -it validator-2 bash
 >getstats
 ```
 
-Reset network and remove all data:
+### Stop all containers:
+
+```docker-compose -f docker-compose-build.yaml stop```
+
+the state will be persisted, and the next time when you start the container the blockchain will be resumed from the last state.
+
+### Reset network and remove all data:
 
 ```docker-compose -f docker-compose-build.yaml down -v --rmi all```
 
