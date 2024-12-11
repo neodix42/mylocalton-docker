@@ -9,7 +9,13 @@ Installed Docker or Docker desktop
 
 ### Build and start:
 
+Clone this repo and execute:
+
 ```docker-compose -f docker-compose-build.yaml up```
+
+### Download and start:
+
+```docker-compose -f docker-compose.yaml up```
 
 **Blockchain explorer** will be available on localhost via:
 
