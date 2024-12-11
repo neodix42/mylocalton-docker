@@ -10,21 +10,28 @@ echo "Current PUBLIC_IP $PUBLIC_IP"
 cd /var/ton-work/db
 
 if [ ! -f "global.config.json" ]; then
+  echo "waiting 90 seconds for genesis to be ready very first time..."
+  sleep 90
   echo "Downloading global.config.json from genesis..."
   wget http://172.28.1.1:8000/global.config.json
 else
+  echo "waiting 20 seconds for genesis to be ready..."
+  sleep 20
   echo "global.config.json from genesis already exists"
 fi
 
-if [ "$PUBLIC_IP" = "172.28.1.10" ]; then
-  wget http://172.28.1.1:8000/validator-1.pk validator.pk
-  wget http://172.28.1.1:8000/validator-1.addr validator.addr
-elif [ "$PUBLIC_IP" = "172.28.1.20" ]; then
-  wget http://172.28.1.1:8000/validator-2.pk validator.pk
-  wget http://172.28.1.1:8000/validator-2.addr validator.addr
+if [ ! -f "validator.pk" ]; then
+  echo "downloading validator.pk..."
+  if [ "$PUBLIC_IP" = "172.28.1.10" ]; then
+    wget http://172.28.1.1:8000/validator-1.pk -O validator.pk
+    wget http://172.28.1.1:8000/validator-1.addr -O validator.addr
+  elif [ "$PUBLIC_IP" = "172.28.1.20" ]; then
+    wget http://172.28.1.1:8000/validator-2.pk -O validator.pk
+    wget http://172.28.1.1:8000/validator-2.addr -O validator.addr
+  fi
+else
+  echo "validator.pk already downloaded."
 fi
-
-ls /var/ton-work/db
 
 if [ ! -f "config.json" ]; then
   echo "config.json does not exist, start very first time"

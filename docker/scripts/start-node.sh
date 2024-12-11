@@ -7,6 +7,5 @@ if [ "$PUBLIC_IP" = "172.28.1.1" ]; then
   /scripts/start-genesis.sh
 else
   echo starting validator...
-  sleep 90
   /scripts/start-validator.sh
 fi
