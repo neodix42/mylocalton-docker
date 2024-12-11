@@ -3,7 +3,7 @@ Allows quickly to set up own TON network with up to 6 validators.
 
 ## Prerequisites
 
-Installed Docker or Docker desktop
+Installed Docker Engine or Docker desktop and docker-compose.
 
 ## Usage
 
@@ -51,7 +51,6 @@ the state will be persisted, and the next time when you start the container the 
 
 ```docker-compose -f docker-compose-build.yaml down -v --rmi all```
 
-
 ## Features
 
 * has predefined faucet address
@@ -59,6 +58,6 @@ the state will be persisted, and the next time when you start the container the 
   * private key ```249489b5c1bfa6f62451be3714679581ee04cc8f82a8e3f74b432a58f3e4fedf```
 * has predefined lite-server keys
   * ```lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last```
-* additional full-nodes become validators and participate in elections automatically
-  * validation cycle
+* additional full-nodes become validators and participate in elections automatically (todo)
 * cross-platform (arm64/amd64)
+* tested on Ubuntu, Windows and MacOS
