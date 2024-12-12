@@ -2,11 +2,6 @@
 
 PUBLIC_IP=$(hostname -I | tr -d " ")
 
-if [ ! "$GENESIS_IP" ]; then
-  echo No GENESIS_IP set, terminating...
-  exit 1
-fi
-
 echo starting cron
 service cron start &
 
@@ -15,5 +10,9 @@ if [ "$GENESIS" = "true" ]; then
   /scripts/start-genesis.sh
 else
   echo starting validator...
+  if [ ! "$GENESIS_IP" ]; then
+    echo No GENESIS_IP set, terminating...
+    exit 1
+  fi
   /scripts/start-validator.sh
 fi
