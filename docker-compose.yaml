@@ -6,9 +6,11 @@ services:
     ports:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
+#      - 9000:9000   # ton-http-api todo
       - 40004:40004 # lite-server
-#    volumes:
-#      - ton:/var/ton-work/db
+    environment:
+      - GENESIS=true
+      - NAME=genesis
     networks:
       default:
         ipv4_address: 172.28.1.1
@@ -16,21 +18,23 @@ services:
     container_name: validator-1
     image: ghcr.io/neodix42/mylocalton-docker:latest
     restart: always
+    environment:
+      - GENESIS=false
+      - NAME=validator-1
+      - GENESIS_IP=172.28.1.1
     depends_on:
       - "genesis"
-    networks:
-      default:
-        ipv4_address: 172.28.1.10
 
   validator-2:
     container_name: validator-2
     image: ghcr.io/neodix42/mylocalton-docker:latest
     restart: always
+    environment:
+      - GENESIS=false
+      - NAME=validator-2
+      - GENESIS_IP=172.28.1.1
     depends_on:
       - "genesis"
-    networks:
-      default:
-        ipv4_address: 172.28.1.20
 
 networks:
   default:
@@ -38,6 +42,3 @@ networks:
       driver: default
       config:
         - subnet: 172.28.0.0/16
-#volumes:
-#  ton:
-#    external: false

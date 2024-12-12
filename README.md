@@ -45,7 +45,7 @@ docker exec -it validator-2 bash
 
 ```docker-compose -f docker-compose-build.yaml stop```
 
-the state will be persisted, and the next time when you start the container the blockchain will be resumed from the last state.
+the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the last state.
 
 ### Reset network and remove all data:
 
@@ -59,6 +59,16 @@ the state will be persisted, and the next time when you start the container the 
   * validation cycle lasts 20 minutes
   * elections lasts 10 minutes (starts 5 minutes after validation cycle starts and finishes 5 minutes before validation cycles ends)
   * stake freeze period 3 minutes
+  * predefined validators' wallet addresses (V3R2)
+    * genesis: 
+      * address ```-1:0755526dfc926d1b6d468801099cad2d588f40a6a6088bcd3e059566c0ef907c```
+      * private key ```5f14ebefc57461002fc07f9438a63ad35ff609759bb0ae334fedabbfb4bfce8```
+    * validator-1: 
+      * address ```-1:0e4160632db47d34bad8a24b55a56f46ca3b6fc84826d90515cd2b6313bd7cf6```
+      * private key  ```001624080b055bf5ea72a252c1acc2c18552df27b4073a412fbde398d8061316```
+    * validator-2: 
+      * address ```-1:ddd8df36e13e3bcec0ffbcfb4de51535d39937311b3c5cad520a0802d3de9b54```
+      * private key ```1da5f8b57104cc6c8af748c0541abc8a735362cd241aa96c201d696623684672```
 * Predefined Faucet Wallets
   * Wallet V3R2
     * address ```-1:7777777777777777777777777777777777777777777777777777777777777777```
@@ -66,7 +76,7 @@ the state will be persisted, and the next time when you start the container the 
     * subWallet Id 42
   * Highload Wallet V3
     * address ```-1:8888888888888888888888888888888888888888888888888888888888888888```
-    * private key ```ee26cd8f2709404b63bc172148ec6179bfc7049b1045a22c3ea5446c5d425347```    
+    * private key ```ee26cd8f2709404b63bc172148ec6179bfc7049b1045a22c3ea5446c5d425347```   
 * Predefined lite-server
   * ```lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last```
 * cross-platform (arm64/amd64)

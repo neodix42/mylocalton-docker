@@ -151,7 +151,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator.pk" load-generate-keypair constant faucet_pk
+   "validator.pk" load-keypair constant faucet_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -169,7 +169,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-1.pk" load-generate-keypair constant faucet_pk
+   "validator-1.pk" load-keypair constant faucet_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -187,7 +187,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-2.pk" load-generate-keypair constant faucet_pk
+   "validator-2.pk" load-keypair constant faucet_pk
    B,
 b> // data
 empty_cell // no libraries
