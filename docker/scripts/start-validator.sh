@@ -1,8 +1,8 @@
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
 PUBLIC_IP=$(hostname -I | tr -d " ")
-PUBLIC_PORT=40001
-CONSOLE_PORT=40002
+export PUBLIC_PORT=40001
+export CONSOLE_PORT=40002
 LITE_PORT=40004
 
 echo "Current PUBLIC_IP $PUBLIC_IP"

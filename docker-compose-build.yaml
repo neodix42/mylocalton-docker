@@ -15,31 +15,32 @@ services:
     networks:
       default:
         ipv4_address: 172.28.1.1
-  validator-1:
-    container_name: validator-1
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: always
-    depends_on:
-      - "genesis"
-    networks:
-      default:
-        ipv4_address: 172.28.1.10
 
-  validator-2:
-    container_name: validator-2
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: always
-    depends_on:
-      - "genesis"
-    networks:
-      default:
-        ipv4_address: 172.28.1.20
+#  validator-1:
+#    container_name: validator-1
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: always
+#    depends_on:
+#      - "genesis"
+#    networks:
+#      default:
+#        ipv4_address: 172.28.1.10
+#
+#  validator-2:
+#    container_name: validator-2
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: always
+#    depends_on:
+#      - "genesis"
+#    networks:
+#      default:
+#        ipv4_address: 172.28.1.20
 
 networks:
   default:

@@ -53,11 +53,21 @@ the state will be persisted, and the next time when you start the container the 
 
 ## Features
 
-* has predefined faucet address
-  * address ```-1:7777777777777777777777777777777777777777777777777777777777777777```
-  * private key ```249489b5c1bfa6f62451be3714679581ee04cc8f82a8e3f74b432a58f3e4fedf```
-* has predefined lite-server keys
+* Validation
+  * automatic participation in elections and reaping of rewards  
+  * specify from 1 to 6 validators on start
+  * validation cycle lasts 20 minutes
+  * elections lasts 10 minutes (starts 5 minutes after validation cycle starts and finishes 5 minutes before validation cycles ends)
+  * stake freeze period 3 minutes
+* Predefined Faucet Wallets
+  * Wallet V3R2
+    * address ```-1:7777777777777777777777777777777777777777777777777777777777777777```
+    * private key ```249489b5c1bfa6f62451be3714679581ee04cc8f82a8e3f74b432a58f3e4fedf```
+    * subWallet Id 42
+  * Highload Wallet V3
+    * address ```-1:8888888888888888888888888888888888888888888888888888888888888888```
+    * private key ```ee26cd8f2709404b63bc172148ec6179bfc7049b1045a22c3ea5446c5d425347```    
+* Predefined lite-server
   * ```lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last```
-* additional full-nodes become validators and participate in elections automatically (todo)
 * cross-platform (arm64/amd64)
 * tested on Ubuntu, Windows and MacOS

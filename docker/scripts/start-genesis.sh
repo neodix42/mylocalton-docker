@@ -27,6 +27,7 @@ else
   echo "Validator key short_id "$VAL_ID_HEX
 
   cp validator-keys.pub /usr/share/ton/smartcont/
+  cp /usr/share/ton/smartcont/auto/highload-wallet-v2-code.fif /usr/share/ton/smartcont/highload-wallet-v2-code.fif
 
   # replace in gen-zerostate.fif parameters - min validators amount, min stake etc
 
@@ -41,7 +42,8 @@ else
   BASESTATE0_FILEHASH=$(sed ':a;N;$!ba;s/\n//g' <<<$(sed -e "s/\s//g" <<<"$(od -An -t x1 basestate0.fhash)") | awk '{ print toupper($0) }')
   mv basestate0.boc /var/ton-work/db/static/$BASESTATE0_FILEHASH
   cp main-wallet.pk main-wallet.addr config-master.pk config-master.addr faucet.pk faucet.addr \
-  validator-1.pk validator-1.addr validator-2.pk validator-2.addr /var/ton-work/db/
+  validator-1.pk validator-1.addr validator-2.pk validator-2.addr validator.pk validator.addr \
+  faucet-highload.pk faucet-highload.addr /var/ton-work/db/
 
   cd /var/ton-work/db
   rm -f my-ton-global.config.json
@@ -157,6 +159,7 @@ else
   python3 -c 'import json; f=open("my-ton-global.config.json", "r"); config=json.loads(f.read()); f.close(); f=open("my-ton-global.config.json", "w");f.write(json.dumps(config, indent=2)); f.close()';
 
   cp my-ton-global.config.json global.config.json
+  rm my-ton-global.config.json
 
   echo Restart DHT server
   echo

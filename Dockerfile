@@ -1,8 +1,8 @@
-# FROM ghcr.io/ton-blockchain/ton:latest
-FROM ghcr.io/neodix42/ton:testnet
+FROM ghcr.io/ton-blockchain/ton:testnet
+#FROM ghcr.io/ton-blockchain/ton:latest
+#FROM ghcr.io/neodix42/ton:testnet
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 cron
 #    openjdk-21-jdk-headless
 
 RUN mkdir -p /scripts \
@@ -11,18 +11,27 @@ RUN mkdir -p /scripts \
     /var/ton-work/db/import \
     /var/ton-work/logs
 
-COPY --chmod=744 docker/scripts/start-genesis.sh /scripts/start-genesis.sh
-COPY --chmod=744 docker/scripts/start-validator.sh /scripts/start-validator.sh
-COPY --chmod=744 docker/scripts/start-node.sh /scripts/start-node.sh
+COPY --chmod=744 docker/scripts/start-genesis.sh /scripts
+COPY --chmod=744 docker/scripts/start-validator.sh /scripts
+COPY --chmod=744 docker/scripts/start-node.sh /scripts
+COPY --chmod=744 docker/scripts/participate.sh /scripts
+COPY --chmod=744 docker/scripts/reap.sh /scripts
 COPY docker/scripts/gen-zerostate.fif /usr/share/ton/smartcont/gen-zerostate.fif
 COPY docker/scripts/ton-private-testnet.config.json.template /var/ton-work/db
 COPY docker/scripts/example.config.json /var/ton-work/db
 COPY docker/scripts/control.template /var/ton-work/db
 COPY docker/scripts/faucet.pk /usr/share/ton/smartcont
+COPY docker/scripts/faucet-highload.pk /usr/share/ton/smartcont
 COPY docker/scripts/liteserver /var/ton-work/db
 COPY docker/scripts/liteserver.pub /var/ton-work/db
 
 RUN echo 'alias getstats="validator-engine-console -k /var/ton-work/db/client -p /var/ton-work/db/server.pub -a $(hostname -I | tr -d " "):$(jq .control[].port <<< cat /var/ton-work/db/config.json) -c getstats"' >> ~/.bashrc
 RUN echo 'alias last="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c last"' >> ~/.bashrc
+
+# Setup cron
+RUN touch /var/log/participate.log
+RUN touch /var/log/reap.log
+RUN (crontab -l ; echo "*/3 * * * * /scripts/participate.sh >> /var/log/participate.log 2>&1") | crontab
+RUN (crontab -l ; echo "*/4 * * * * /scripts/reap.sh >> /var/log/reap.log 2>&1") | crontab
 
 ENTRYPOINT ["/scripts/start-node.sh"]
