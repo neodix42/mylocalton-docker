@@ -11,13 +11,16 @@ Installed Docker Engine or Docker desktop and docker-compose.
 
 Clone this repo and execute:
 
-```docker-compose -f docker-compose-build.yaml up```
+```
+docker-compose build
+docker-compose up -d
+```
 
 ### Download and start
 By default, only one genesis validator will be started. Uncomment sections in ```docker-compose.yaml``` for more.
 ```
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
-docker-compose -f docker-compose.yaml up
+docker-compose up
 ```
 
 **Blockchain explorer** will be available on localhost via:
@@ -49,13 +52,13 @@ docker exec -it validator-5 bash
 
 ### Stop all containers
 
-```docker-compose -f docker-compose-build.yaml stop```
+```docker-compose down```
 
 the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the last state.
 
 ### Reset network and remove all data:
 
-```docker-compose -f docker-compose-build.yaml down -v --rmi all```
+```docker-compose down -v --rmi all```
 
 ## Features
 
