@@ -14,6 +14,7 @@ services:
     networks:
       default:
         ipv4_address: 172.28.1.1
+
   validator-1:
     container_name: validator-1
     image: ghcr.io/neodix42/mylocalton-docker:latest
@@ -33,6 +34,51 @@ services:
       - GENESIS=false
       - NAME=validator-2
       - GENESIS_IP=172.28.1.1
+    depends_on:
+      - "genesis"
+
+  validator-3:
+    container_name: validator-3
+    image: ghcr.io/neodix42/mylocalton-docker:latest
+    restart: always
+    environment:
+      - GENESIS=false
+      - NAME=validator-3
+      - GENESIS_IP=172.28.1.1
+    depends_on:
+      - "genesis"
+
+  validator-4:
+    container_name: validator-4
+    image: ghcr.io/neodix42/mylocalton-docker:latest
+    restart: always
+    environment:
+      - GENESIS=false
+      - NAME=validator-4
+      - GENESIS_IP=172.28.1.1
+    depends_on:
+      - "genesis"
+
+  validator-5:
+    container_name: validator-5
+    image: ghcr.io/neodix42/mylocalton-docker:latest
+    restart: always
+    environment:
+      - GENESIS=false
+      - NAME=validator-5
+      - GENESIS_IP=172.28.1.1
+    depends_on:
+      - "genesis"
+
+  validator-6:
+    container_name: validator-6
+    image: ghcr.io/neodix42/mylocalton-docker:latest
+    restart: always
+    environment:
+      - GENESIS=false
+      - NAME=validator-6
+      - GENESIS_IP=172.28.1.1
+    #      - VERBOSITY=4
     depends_on:
       - "genesis"
 

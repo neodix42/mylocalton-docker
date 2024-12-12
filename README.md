@@ -59,7 +59,7 @@ the state will be persisted, and the next time when you start the containers up 
   * validation cycle lasts 20 minutes
   * elections lasts 10 minutes (starts 5 minutes after validation cycle starts and finishes 5 minutes before validation cycles ends)
   * stake freeze period 3 minutes
-  * predefined validators' wallet addresses (V3R2)
+  * predefined validators' wallet addresses (V3R2, subWalletId = 42)
     * genesis: 
       * address ```-1:0755526dfc926d1b6d468801099cad2d588f40a6a6088bcd3e059566c0ef907c```
       * private key ```5f14ebefc57461002fc07f9438a63ad35ff609759bb0ae334fedabbfb4bfce8```
@@ -69,6 +69,15 @@ the state will be persisted, and the next time when you start the containers up 
     * validator-2: 
       * address ```-1:ddd8df36e13e3bcec0ffbcfb4de51535d39937311b3c5cad520a0802d3de9b54```
       * private key ```1da5f8b57104cc6c8af748c0541abc8a735362cd241aa96c201d696623684672```
+    * validator-3:
+      * address ```-1:1ea99012e00cee2aef95c6ac245ee28894080801e4e5fae2d91363f2ef5a7232```
+      * private key ```fe968161dfe5aa6d7a6f8fdd1d43ceeee9395f1ca61bb8224d4f60e48fdc589d```
+    * validator-4:
+      * address ```-1:c21b6e9f20c35f31a3c46e510daae29261c3127e43aa2c90e5d1463451f623f8```
+      * private key ```49cce23987cacbd05fac13978eff826e9107d694c0040a1e98bca4c2872d80f8```
+    * validator-5:
+      * address ```-1:a485d0e84de33e212d66eb025fbbaecbeed9dbad7f78cd8cd2058afe20cebde9```
+      * private key ```b5e0ce4fba8ae2e3f44a393ac380549bfa44c3a5ba33a49171d502f1e4ac6c1d```
 * Predefined Faucet Wallets
   * Wallet V3R2
     * address ```-1:7777777777777777777777777777777777777777777777777777777777777777```

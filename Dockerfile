@@ -25,6 +25,9 @@ COPY docker/scripts/faucet-highload.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-1.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-2.pk /usr/share/ton/smartcont
+COPY docker/scripts/validator-3.pk /usr/share/ton/smartcont
+COPY docker/scripts/validator-4.pk /usr/share/ton/smartcont
+COPY docker/scripts/validator-5.pk /usr/share/ton/smartcont
 COPY docker/scripts/liteserver /var/ton-work/db
 COPY docker/scripts/liteserver.pub /var/ton-work/db
 

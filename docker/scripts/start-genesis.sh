@@ -29,8 +29,6 @@ else
   cp validator-keys.pub /usr/share/ton/smartcont/
   cp /usr/share/ton/smartcont/auto/highload-wallet-v2-code.fif /usr/share/ton/smartcont/highload-wallet-v2-code.fif
 
-  # replace in gen-zerostate.fif parameters - min validators amount, min stake etc
-
   cd /usr/share/ton/smartcont/
 
   create-state gen-zerostate.fif
@@ -41,9 +39,15 @@ else
   mv zerostate.boc /var/ton-work/db/static/$ZEROSTATE_FILEHASH
   BASESTATE0_FILEHASH=$(sed ':a;N;$!ba;s/\n//g' <<<$(sed -e "s/\s//g" <<<"$(od -An -t x1 basestate0.fhash)") | awk '{ print toupper($0) }')
   mv basestate0.boc /var/ton-work/db/static/$BASESTATE0_FILEHASH
-  cp main-wallet.pk main-wallet.addr config-master.pk config-master.addr faucet.pk faucet.addr \
-  validator-1.pk validator-1.addr validator-2.pk validator-2.addr validator.pk validator.addr \
-  faucet-highload.pk faucet-highload.addr /var/ton-work/db/
+  cp main-wallet.pk main-wallet.addr config-master.pk config-master.addr \
+  validator-1.pk validator-1.addr \
+  validator-2.pk validator-2.addr \
+  validator-3.pk validator-3.addr \
+  validator-4.pk validator-4.addr \
+  validator-5.pk validator-5.addr \
+  validator.pk validator.addr \
+  faucet-highload.pk faucet-highload.addr \
+  faucet.pk faucet.addr /var/ton-work/db/
 
   cd /var/ton-work/db
   rm -f my-ton-global.config.json
@@ -93,9 +97,6 @@ else
   # Create config.json, stops automatically
   rm -f config.json
   validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
-  echo Initial /var/ton-work/db/config.json
-  cat /var/ton-work/db/config.json
-
 
   # Generating server certificate
   read -r SERVER_ID1 SERVER_ID2 <<< $(generate-random-id -m keys -n server)
@@ -113,9 +114,6 @@ else
   sed -e "s/CONSOLE-PORT/\"$(printf "%q" $CONSOLE_PORT)\"/g" -e "s~SERVER-ID~\"$(printf "%q" $SERVER_ID2)\"~g" -e "s~CLIENT-ID~\"$(printf "%q" $CLIENT_ID2)\"~g" control.template > control.new
   sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(cat control.new))~g" config.json > config.json.new
   mv config.json.new config.json
-
-  echo cat config.json
-  cat config.json
 
   # start the full node for some time to add validation keys
   (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT")&
@@ -197,6 +195,13 @@ echo http://127.0.0.1:$EXPLORER_PORT/last
 echo http://$PUBLIC_IP:$EXPLORER_PORT/last
 echo
 
-validator-engine -C /var/ton-work/db/global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
+if [ ! "$VERBOSITY" ]; then
+  VERBOSITY=1
+else
+  VERBOSITY=$VERBOSITY
+fi
+
+echo Started $NAME at $PUBLIC_IP:$PUBLIC_PORT
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
 
 

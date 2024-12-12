@@ -15,8 +15,8 @@ if [ ! -f "global.config.json" ]; then
   echo "Downloading global.config.json from genesis..."
   wget http://$GENESIS_IP:8000/global.config.json
 else
-  echo "waiting 20 seconds for genesis to be ready..."
-  sleep 20
+#  echo "waiting 20 seconds for genesis to be ready..."
+#  sleep 20
   echo "global.config.json from genesis already exists"
 fi
 
@@ -28,6 +28,15 @@ if [ ! -f "validator.pk" ]; then
   elif [ "$NAME" = "validator-2" ]; then
     wget http://$GENESIS_IP:8000/validator-2.pk -O validator.pk
     wget http://$GENESIS_IP:8000/validator-2.addr -O validator.addr
+  elif [ "$NAME" = "validator-3" ]; then
+    wget http://$GENESIS_IP:8000/validator-3.pk -O validator.pk
+    wget http://$GENESIS_IP:8000/validator-3.addr -O validator.addr
+  elif [ "$NAME" = "validator-4" ]; then
+    wget http://$GENESIS_IP:8000/validator-4.pk -O validator.pk
+    wget http://$GENESIS_IP:8000/validator-4.addr -O validator.addr
+  elif [ "$NAME" = "validator-5" ]; then
+    wget http://$GENESIS_IP:8000/validator-5.pk -O validator.pk
+    wget http://$GENESIS_IP:8000/validator-5.addr -O validator.addr
   fi
 else
   echo "validator.pk already downloaded."
@@ -75,5 +84,12 @@ echo NODE_PORT         $PUBLIC_PORT
 echo VALIDATOR_CONSOLE $CONSOLE_PORT
 echo LITESERVER_PORT   $LITE_PORT
 echo
-echo Starting validator at $PUBLIC_IP:$PUBLIC_PORT
-validator-engine -C /var/ton-work/db/global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
+
+if [ ! "$VERBOSITY" ]; then
+  VERBOSITY=1
+else
+  VERBOSITY=$VERBOSITY
+fi
+
+echo Started $NAME at $PUBLIC_IP:$PUBLIC_PORT
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
