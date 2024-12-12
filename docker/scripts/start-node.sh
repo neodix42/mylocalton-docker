@@ -2,7 +2,7 @@
 
 PUBLIC_IP=$(hostname -I | tr -d " ")
 
-if [ ! "$GENESIS_IP" ]
+if [ ! "$GENESIS_IP" ]; then
   echo No GENESIS_IP set, terminating...
   exit 1
 fi
