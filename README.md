@@ -7,15 +7,18 @@ Installed Docker Engine or Docker desktop and docker-compose.
 
 ## Usage
 
-### Build and start:
+### Build and start
 
 Clone this repo and execute:
 
 ```docker-compose -f docker-compose-build.yaml up```
 
-### Download and start:
-
-```docker-compose -f docker-compose.yaml up```
+### Download and start
+By default, only one genesis validator will be started. Uncomment sections in ```docker-compose.yaml``` for more.
+```
+wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
+docker-compose -f docker-compose.yaml up
+```
 
 **Blockchain explorer** will be available on localhost via:
 
@@ -29,19 +32,22 @@ Global network configuration file available at:
 
 http://127.0.0.1:8000/global.config.json
 
-### Go inside the container:
+### Go inside the container
 
 ```
 docker exec -it genesis bash
 docker exec -it validator-1 bash
 docker exec -it validator-2 bash
+docker exec -it validator-3 bash
+docker exec -it validator-4 bash
+docker exec -it validator-5 bash
 
 # each container has some predefined aliases:
 >last
 >getstats
 ```
 
-### Stop all containers:
+### Stop all containers
 
 ```docker-compose -f docker-compose-build.yaml stop```
 
