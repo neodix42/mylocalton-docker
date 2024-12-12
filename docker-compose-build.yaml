@@ -1,7 +1,10 @@
 services:
   genesis:
     container_name: genesis
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     ports:
       - 8000:8000   # simple-http server
@@ -17,7 +20,10 @@ services:
 
   validator-1:
     container_name: validator-1
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     environment:
       - GENESIS=false
@@ -28,7 +34,10 @@ services:
 
   validator-2:
     container_name: validator-2
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     environment:
       - GENESIS=false
@@ -39,7 +48,10 @@ services:
 
   validator-3:
     container_name: validator-3
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     environment:
       - GENESIS=false
@@ -50,7 +62,10 @@ services:
 
   validator-4:
     container_name: validator-4
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     environment:
       - GENESIS=false
@@ -61,12 +76,16 @@ services:
 
   validator-5:
     container_name: validator-5
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: mylocaltondocker
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     environment:
       - GENESIS=false
       - NAME=validator-5
       - GENESIS_IP=172.28.1.1
+#      - VERBOSITY=4
     depends_on:
       - "genesis"
 
