@@ -1,25 +1,41 @@
 # MyLocalTon Docker image
-Allows quickly to set up own TON network with up to 6 validators.
+
+Allows quickly to set up own [TON blockchain](https://github.com/ton-blockchain/ton) with up to 6 validators, running [TON-HTTP-API](https://github.com/toncenter/ton-http-api) and lite-server.
 
 ## Prerequisites
 
 Installed Docker Engine or Docker desktop and docker-compose.
 
+- For Ubuntu:
+``` 
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh && sh /tmp/get-docker.sh
+curl -L "https://github.com/docker/compose/releases/download/v2.6.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+```
+ For MacOS and Windows: install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
 ## Usage
 
-### Build and start
+### Quick start
+
+By default, only one genesis validator will be started. Uncomment sections in ```docker-compose.yaml``` for more.
+
+```
+wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
+docker-compose -f docker-compose.yaml up -d
+```
+
+### Build from sources
 
 Clone this repo and execute:
 
 ```docker-compose -f docker-compose-build.yaml up -d```
 
-### Download and start
+### Access services
 
-By default, only one genesis validator will be started. Uncomment sections in ```docker-compose.yaml``` for more.
-```
-wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
-docker-compose -f docker-compose.yaml up -d
-```
+**TON-HTTP-API** will be started at:
+
+http://127.0.0.1:8081/
 
 **Blockchain explorer** will be available on localhost via:
 
@@ -32,6 +48,10 @@ http://127.0.0.1:8000
 Global network configuration file available at:
 
 http://127.0.0.1:8000/global.config.json
+
+**Lite-server** on genesis node runs on port 40004 and can be queried as follows:
+
+```lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last```
 
 ### Go inside the container
 
@@ -50,13 +70,13 @@ docker exec -it validator-5 bash
 
 ### Stop all containers
 
-```docker-compose -f docker-compose-build.yaml down```
+```docker-compose -f docker-compose.yaml down```
 
 the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the last state.
 
 ### Reset network and remove all data:
 
-```docker-compose -f docker-compose-build.yaml down -v --rmi all```
+```docker-compose -f docker-compose.yaml down -v --rmi all```
 
 ## Features
 

@@ -6,69 +6,110 @@ services:
     ports:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
-#      - 9000:9000   # ton-http-api todo
       - 40004:40004 # lite-server
     environment:
       - GENESIS=true
       - NAME=genesis
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
+      interval: 30s
+      timeout: 20s
+      retries: 10
     networks:
       default:
         ipv4_address: 172.28.1.1
 
-  validator-1:
-    container_name: validator-1
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: always
-    environment:
-      - GENESIS=false
-      - NAME=validator-1
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
+#  validator-1:
+#    container_name: validator-1
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-1
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-2:
+#    container_name: validator-2
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-2
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-3:
+#    container_name: validator-3
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-3
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-4:
+#    container_name: validator-4
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-4
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-5:
+#    container_name: validator-5
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-5
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
 
-  validator-2:
-    container_name: validator-2
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: always
+  tonhttpapi:
+    container_name: ton-http-api
+    image: toncenter/ton-http-api
+    ports:
+      - 8081:8081
     environment:
-      - GENESIS=false
-      - NAME=validator-2
-      - GENESIS_IP=172.28.1.1
+      - TON_API_CACHE_ENABLED
+      - TON_API_CACHE_REDIS_ENDPOINT
+      - TON_API_CACHE_REDIS_PORT
+      - TON_API_CACHE_REDIS_TIMEOUT
+      - TON_API_LOGS_JSONIFY=0
+      - TON_API_LOGS_LEVEL=ERROR
+      - TON_API_TONLIB_LITESERVER_CONFIG=http://172.28.1.1:8000/global.config.json
+      - TON_API_TONLIB_KEYSTORE
+      - TON_API_TONLIB_PARALLEL_REQUESTS_PER_LITESERVER
+      - TON_API_TONLIB_CDLL_PATH
+      - TON_API_TONLIB_REQUEST_TIMEOUT
+      - TON_API_GET_METHODS_ENABLED=1
+      - TON_API_JSON_RPC_ENABLED=1
+      - TON_API_ROOT_PATH=
+    restart: unless-stopped
     depends_on:
-      - "genesis"
+      genesis:
+        condition: service_healthy
+    secrets:
+      - liteserver_config
+    command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8081 pyTON.main:app"
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8081${TON_API_ROOT_PATH}/healthcheck || echo 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
 
-  validator-3:
-    container_name: validator-3
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: always
-    environment:
-      - GENESIS=false
-      - NAME=validator-3
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
-
-  validator-4:
-    container_name: validator-4
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: always
-    environment:
-      - GENESIS=false
-      - NAME=validator-4
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
-
-  validator-5:
-    container_name: validator-5
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: always
-    environment:
-      - GENESIS=false
-      - NAME=validator-5
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
+secrets:
+  liteserver_config:
+    file: ${TON_API_TONLIB_LITESERVER_CONFIG:-./private/mainnet.json}
 
 networks:
   default:
