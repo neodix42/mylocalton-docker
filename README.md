@@ -22,7 +22,7 @@ By default, only one genesis validator will be started. Uncomment sections in ``
 
 ```
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
-docker-compose -f docker-compose.yaml up -d
+docker-compose up -d
 ```
 
 ### Build from sources
@@ -70,13 +70,13 @@ docker exec -it validator-5 bash
 
 ### Stop all containers
 
-```docker-compose -f docker-compose.yaml down```
+```docker-compose down```
 
 the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the last state.
 
 ### Reset network and remove all data:
 
-```docker-compose -f docker-compose.yaml down -v --rmi all```
+```docker-compose down -v --rmi all```
 
 ## Features
 

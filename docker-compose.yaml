@@ -98,18 +98,12 @@ services:
     depends_on:
       genesis:
         condition: service_healthy
-    secrets:
-      - liteserver_config
     command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8081 pyTON.main:app"
     healthcheck:
       test: curl -sS http://127.0.0.1:8081${TON_API_ROOT_PATH}/healthcheck || echo 1
       interval: 30s
       timeout: 5s
       retries: 10
-
-secrets:
-  liteserver_config:
-    file: ${TON_API_TONLIB_LITESERVER_CONFIG:-./private/mainnet.json}
 
 networks:
   default:
