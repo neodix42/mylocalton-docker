@@ -13,6 +13,7 @@ services:
     environment:
       - GENESIS=true
       - NAME=genesis
+#      - VALIDATION_PERIOD=86400 # 24h, but is default 20min
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
       interval: 30s
@@ -22,76 +23,76 @@ services:
       default:
         ipv4_address: 172.28.1.1
 
-  validator-1:
-    container_name: validator-1
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      - GENESIS=false
-      - NAME=validator-1
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
-
-  validator-2:
-    container_name: validator-2
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      - GENESIS=false
-      - NAME=validator-2
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
-
-  validator-3:
-    container_name: validator-3
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      - GENESIS=false
-      - NAME=validator-3
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
-
-  validator-4:
-    container_name: validator-4
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      - GENESIS=false
-      - NAME=validator-4
-      - GENESIS_IP=172.28.1.1
-    depends_on:
-      - "genesis"
-
-  validator-5:
-    container_name: validator-5
-    image: mylocaltondocker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      - GENESIS=false
-      - NAME=validator-5
-      - GENESIS_IP=172.28.1.1
-#      - VERBOSITY=4
-    depends_on:
-      - "genesis"
+#  validator-1:
+#    container_name: validator-1
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-1
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-2:
+#    container_name: validator-2
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-2
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-3:
+#    container_name: validator-3
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-3
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-4:
+#    container_name: validator-4
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-4
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-5:
+#    container_name: validator-5
+#    image: mylocaltondocker
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    restart: unless-stopped
+#    environment:
+#      - GENESIS=false
+#      - NAME=validator-5
+#      - GENESIS_IP=172.28.1.1
+##      - VERBOSITY=4
+#    depends_on:
+#      - "genesis"
 
   tonhttpapi:
     container_name: ton-http-api

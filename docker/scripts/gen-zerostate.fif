@@ -288,7 +288,7 @@ Masterchain swap
 GR$10000 GR$1000000 GR$10000 sg~10 config.validator_stake_limits!
 // elected-for elect-start-before elect-end-before stakes-frozen-for
 // 400000 200000 4000 400000 config.election_params!
-1200 900 300 180 config.election_params!  // 20min validation, 10min elections, 3min frozen
+VALIDATION_PERIOD 900 300 180 config.election_params!  // 20min validation, 10min elections, 3min frozen
 // config-addr = -1:5555...5555
 AllOnes 5 * constant config_addr
 config_addr config.config_smc!

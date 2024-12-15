@@ -31,6 +31,10 @@ else
 
   cd /usr/share/ton/smartcont/
 
+  VALIDATION_PERIOD=${VALIDATION_PERIOD:-1200}
+  echo VALIDATION_PERIOD=$VALIDATION_PERIOD
+
+  sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
   create-state gen-zerostate.fif
   test $? -eq 0 || { echo "Can't generate zero-state"; exit 1; }
 

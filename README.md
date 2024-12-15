@@ -83,7 +83,7 @@ the state will be persisted, and the next time when you start the containers up 
 * Validation
   * automatic participation in elections and reaping of rewards  
   * specify from 1 to 6 validators on start
-  * validation cycle lasts 20 minutes
+  * validation cycle lasts 20 minutes (can be changed via env var VALIDATION_PERIOD)
   * elections lasts 10 minutes (starts 5 minutes after validation cycle starts and finishes 5 minutes before validation cycles ends)
   * stake freeze period 3 minutes
   * predefined validators' wallet addresses (V3R2, subWalletId = 42)
