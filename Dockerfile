@@ -1,5 +1,5 @@
-FROM ghcr.io/ton-blockchain/ton:testnet
-#FROM ghcr.io/ton-blockchain/ton:latest
+#FROM ghcr.io/ton-blockchain/ton:testnet
+FROM ghcr.io/ton-blockchain/ton:latest
 #FROM ghcr.io/neodix42/ton:testnet
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 cron
