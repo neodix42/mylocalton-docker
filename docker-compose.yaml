@@ -79,7 +79,7 @@ services:
 
   tonhttpapi:
     container_name: ton-http-api
-    image: toncenter/ton-http-api
+    image: ghcr.io/neodix42/ton-http-api:latest
     ports:
       - 8081:8081
     volumes:

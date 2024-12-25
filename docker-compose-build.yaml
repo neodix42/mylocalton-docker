@@ -10,6 +10,8 @@ services:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
       - 40004:40004 # lite-server
+    volumes:
+      - shared-data:/usr/share/libs
     environment:
       - GENESIS=true
       - NAME=genesis
@@ -96,9 +98,11 @@ services:
 
   tonhttpapi:
     container_name: ton-http-api
-    image: toncenter/ton-http-api
+    image: ghcr.io/neodix42/ton-http-api:latest
     ports:
       - 8081:8081
+    volumes:
+      - shared-data:/usr/share/libs
     environment:
       - TON_API_CACHE_ENABLED
       - TON_API_CACHE_REDIS_ENDPOINT
@@ -109,11 +113,10 @@ services:
       - TON_API_TONLIB_LITESERVER_CONFIG=http://172.28.1.1:8000/global.config.json
       - TON_API_TONLIB_KEYSTORE
       - TON_API_TONLIB_PARALLEL_REQUESTS_PER_LITESERVER
-      - TON_API_TONLIB_CDLL_PATH
+      - TON_API_TONLIB_CDLL_PATH=/usr/share/libs/libtonlibjson.so
       - TON_API_TONLIB_REQUEST_TIMEOUT
       - TON_API_GET_METHODS_ENABLED=1
       - TON_API_JSON_RPC_ENABLED=1
-      - TON_API_ROOT_PATH=
     restart: unless-stopped
     depends_on:
       genesis:
@@ -124,6 +127,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 10
+
+volumes:
+  shared-data:
 
 networks:
   default:
