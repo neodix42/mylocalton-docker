@@ -7,6 +7,8 @@ service cron start &
 
 if [ "$GENESIS" = "true" ]; then
   echo starting genesis...
+  cp /usr/local/bin/libtonlibjson.so /usr/share/libs
+  cp /usr/local/bin/libemulator.so /usr/share/libs
   /scripts/start-genesis.sh
 else
   echo starting validator...

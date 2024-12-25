@@ -5,7 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 cron
 #    openjdk-21-jdk-headless
 
-RUN mkdir -p /scripts \
+RUN mkdir -p /scripts  \
+    /usr/share/libs/ \
     /var/ton-work/db/static \
     /var/ton-work/db/keyring \
     /var/ton-work/db/import \

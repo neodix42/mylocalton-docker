@@ -7,6 +7,8 @@ services:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
       - 40004:40004 # lite-server
+    volumes:
+      - shared-data:/usr/share/libs
     environment:
       - GENESIS=true
       - NAME=genesis
@@ -80,31 +82,35 @@ services:
     image: toncenter/ton-http-api
     ports:
       - 8081:8081
+    volumes:
+      - shared-data:/usr/share/libs
     environment:
       - TON_API_CACHE_ENABLED
       - TON_API_CACHE_REDIS_ENDPOINT
       - TON_API_CACHE_REDIS_PORT
       - TON_API_CACHE_REDIS_TIMEOUT
       - TON_API_LOGS_JSONIFY=0
-      - TON_API_LOGS_LEVEL=ERROR
+      - TON_API_LOGS_LEVEL=DEBUG
       - TON_API_TONLIB_LITESERVER_CONFIG=http://172.28.1.1:8000/global.config.json
       - TON_API_TONLIB_KEYSTORE
       - TON_API_TONLIB_PARALLEL_REQUESTS_PER_LITESERVER
-      - TON_API_TONLIB_CDLL_PATH
+      - TON_API_TONLIB_CDLL_PATH=/usr/share/libs/libtonlibjson.so
       - TON_API_TONLIB_REQUEST_TIMEOUT
       - TON_API_GET_METHODS_ENABLED=1
       - TON_API_JSON_RPC_ENABLED=1
-      - TON_API_ROOT_PATH=
     restart: unless-stopped
     depends_on:
       genesis:
         condition: service_healthy
     command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8081 pyTON.main:app"
     healthcheck:
-      test: curl -sS http://127.0.0.1:8081${TON_API_ROOT_PATH}/healthcheck || echo 1
+      test: curl -sS http://127.0.0.1:8081/healthcheck || echo 1
       interval: 30s
       timeout: 5s
       retries: 10
+
+volumes:
+  shared-data:
 
 networks:
   default:
