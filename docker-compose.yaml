@@ -12,7 +12,8 @@ services:
     environment:
       - GENESIS=true
       - NAME=genesis
-#      - VALIDATION_PERIOD=86400 # 24h, but is default 20min
+#      - VALIDATION_PERIOD=86400 # 24h, default 20min
+#      - MASTERCHAIN_ONLY=true   # default false
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
       interval: 30s

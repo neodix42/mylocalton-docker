@@ -33,8 +33,17 @@ else
 
   VALIDATION_PERIOD=${VALIDATION_PERIOD:-1200}
   echo VALIDATION_PERIOD=$VALIDATION_PERIOD
-
   sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
+
+  MASTERCHAIN_ONLY=${MASTERCHAIN_ONLY:-"false"}
+  echo MASTERCHAIN_ONLY=$MASTERCHAIN_ONLY
+  if [ ! "$MASTERCHAIN_ONLY" ] || [ "$MASTERCHAIN_ONLY" == "false" ]; then
+    echo "With workchains"
+    sed -i "s/MASTERCHAIN_ONLY/config.workchains!/g" gen-zerostate.fif
+  else
+    echo "Without workchains"
+    sed -i "s/MASTERCHAIN_ONLY//g" gen-zerostate.fif
+  fi
   create-state gen-zerostate.fif
   test $? -eq 0 || { echo "Can't generate zero-state"; exit 1; }
 
