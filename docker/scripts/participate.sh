@@ -31,18 +31,18 @@ PUBLIC_IP=$(hostname -I | tr -d " ")
 CONSOLE_PORT=40002
 NODEHOST="$PUBLIC_IP:$CONSOLE_PORT" # Full Node IP:HOST
 
-if [ ! -f "/var/ton-work/db/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
+if [ ! -f "/usr/share/ton/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "participate.sh: Not ready yet. Exit."
   echo "------------------------------------------------------------------"
   exit
 else
-  WALLET_ADDR=-1:$(head -c 32 /var/ton-work/db/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
+  WALLET_ADDR=-1:$(head -c 32 /usr/share/ton/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
   echo "running participate.sh with wallet $WALLET_ADDR on $NODEHOST"
 fi
 
 MAX_FACTOR=3
 STAKE_AMOUNT=10001
-WALLETKEYS_DIR="/var/ton-work/db/"
+WALLETKEYS_DIR="/usr/share/ton/"
 VALIDATOR_WALLET_FILEBASE="validator"
 SUBWALLET_ID=42
 

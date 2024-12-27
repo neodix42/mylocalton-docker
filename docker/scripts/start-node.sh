@@ -5,10 +5,13 @@ PUBLIC_IP=$(hostname -I | tr -d " ")
 echo starting cron
 service cron start &
 
+GENESIS=${GENESIS:-"false"}
+echo GENESIS=$GENESIS
+
 if [ "$GENESIS" = "true" ]; then
   echo starting genesis...
-  cp /usr/local/bin/libtonlibjson.so /usr/share/libs
-  cp /usr/local/bin/libemulator.so /usr/share/libs
+  cp /usr/local/bin/libtonlibjson.so /usr/share/data
+  cp /usr/local/bin/libemulator.so /usr/share/data
   /scripts/start-genesis.sh
 else
   echo starting validator...

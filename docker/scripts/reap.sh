@@ -31,12 +31,12 @@
 
 PUBLIC_IP=$(hostname -I | tr -d " ")
 
-if [ ! -f "/var/ton-work/db/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
+if [ ! -f "/usr/share/ton/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "reap.sh: Not ready yet. Exit."
   echo "------------------------------------------------------------------"
   exit
 else
-  WALLET_ADDR=-1:$(head -c 32 /var/ton-work/db/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
+  WALLET_ADDR=-1:$(head -c 32 /usr/share/ton/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
   echo "running reap.sh with wallet $WALLET_ADDR on $PUBLIC_IP"
 fi
 
@@ -47,7 +47,7 @@ export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont/
 CONTRACTS_PATH="/usr/share/ton/smartcont/"
 WALLET_FIF=$CONTRACTS_PATH"wallet-v3.fif"
 SUBWALLET_ID=42
-WALLETKEYS_DIR="/var/ton-work/db/"
+WALLETKEYS_DIR="/usr/share/ton/"
 VALIDATOR_WALLET_FILEBASE="validator"
 
 ELECTOR_ADDRESS=$(${LITECLIENT} -C ${LITECLIENT_CONFIG} -v 0 -c "getconfig 1" |grep x{|sed -e 's/{/\ /g' -e 's/}//g'|awk {'print $2'})

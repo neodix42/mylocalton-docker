@@ -25,6 +25,18 @@ wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/mai
 docker-compose up -d
 ```
 
+### Start parameters
+Edit `docker-compose.yaml` for relevant changes.
+
+Specify only for `genesis` container:
+
+* `VALIDATION_PERIOD` - set validation period in seconds, default `1200 (20 min)`;
+* `MASTERCHAIN_ONLY` - set to `true` if you want to have only masterchain, i.e. without workchains, default `false`;
+* `HIDE_PRIVATE_KEYS` - set to `true` if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;
+
+Can be set for all node types:
+* `VERBOSITY` - set verbosity level for validator-engine. Default 1, allowed values: 0, 1, 2, 3, 4;
+
 ### Build from sources
 
 Clone this repo and execute:

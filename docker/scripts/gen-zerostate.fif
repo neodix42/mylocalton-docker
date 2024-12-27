@@ -110,7 +110,7 @@ dup make_special dup constant smc3_addr
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "faucet.pk" load-keypair constant faucet_pk
+   "faucet.pk" load-generate-keypair constant faucet_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -130,7 +130,7 @@ Masterchain over
 "highload-wallet-v2-code.fif" include
 // code
 <b 42 32 i, 0 64 u,
-   "faucet-highload.pk" load-keypair constant faucet_pk
+   "faucet-highload.pk" load-generate-keypair constant faucet_hl_pk
    B,
    false 1 i,
 b> // data
@@ -151,7 +151,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator.pk" load-keypair constant faucet_pk
+   "validator.pk" load-generate-keypair constant validator_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -169,7 +169,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-1.pk" load-keypair constant faucet_pk
+   "validator-1.pk" load-generate-keypair constant validator1_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -187,7 +187,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-2.pk" load-keypair constant faucet_pk
+   "validator-2.pk" load-generate-keypair constant validator2_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -205,7 +205,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-3.pk" load-keypair constant faucet_pk
+   "validator-3.pk" load-generate-keypair constant validator3_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -223,7 +223,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-4.pk" load-keypair constant faucet_pk
+   "validator-4.pk" load-generate-keypair constant validator4_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -241,7 +241,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-5.pk" load-keypair constant faucet_pk
+   "validator-5.pk" load-generate-keypair constant validator5_pk
    B,
 b> // data
 empty_cell // no libraries

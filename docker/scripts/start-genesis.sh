@@ -23,6 +23,7 @@ else
 
   read -r VAL_ID_HEX VAL_ID_BASE64 <<< $(generate-random-id -m keys -n validator)
   cp validator $VAL_ID_HEX
+  rm validator
   fift -s <<< $(echo '"validator.pub" file>B 4 B| nip "validator-keys.pub" B>file')
   echo "Validator key short_id "$VAL_ID_HEX
 
@@ -31,16 +32,24 @@ else
 
   cd /usr/share/ton/smartcont/
 
+  HIDE_PRIVATE_KEYS=${HIDE_PRIVATE_KEYS:-"false"}
+  echo HIDE_PRIVATE_KEYS=$HIDE_PRIVATE_KEYS
+
+  if [ "$HIDE_PRIVATE_KEYS" == "true" ]; then
+    # regenerate private keys
+    rm validator-1.pk validator-2.pk validator-3.pk validator-4.pk validator-5.pk validator.pk faucet-highload.pk faucet.pk
+  fi
+
   VALIDATION_PERIOD=${VALIDATION_PERIOD:-1200}
   echo VALIDATION_PERIOD=$VALIDATION_PERIOD
   sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
 
   MASTERCHAIN_ONLY=${MASTERCHAIN_ONLY:-"false"}
   echo MASTERCHAIN_ONLY=$MASTERCHAIN_ONLY
-  if [ ! "$MASTERCHAIN_ONLY" ] || [ "$MASTERCHAIN_ONLY" == "false" ]; then
+  if [ "$MASTERCHAIN_ONLY" == "false" ]; then
     echo "With workchains"
     sed -i "s/MASTERCHAIN_ONLY/config.workchains!/g" gen-zerostate.fif
-  else
+  elif [ "$MASTERCHAIN_ONLY" == "true" ]; then
     echo "Without workchains"
     sed -i "s/MASTERCHAIN_ONLY//g" gen-zerostate.fif
   fi
@@ -52,15 +61,35 @@ else
   mv zerostate.boc /var/ton-work/db/static/$ZEROSTATE_FILEHASH
   BASESTATE0_FILEHASH=$(sed ':a;N;$!ba;s/\n//g' <<<$(sed -e "s/\s//g" <<<"$(od -An -t x1 basestate0.fhash)") | awk '{ print toupper($0) }')
   mv basestate0.boc /var/ton-work/db/static/$BASESTATE0_FILEHASH
-  cp main-wallet.pk main-wallet.addr config-master.pk config-master.addr \
-  validator-1.pk validator-1.addr \
-  validator-2.pk validator-2.addr \
-  validator-3.pk validator-3.addr \
-  validator-4.pk validator-4.addr \
-  validator-5.pk validator-5.addr \
-  validator.pk validator.addr \
-  faucet-highload.pk faucet-highload.addr \
-  faucet.pk faucet.addr /var/ton-work/db/
+
+  if [ "$HIDE_PRIVATE_KEYS" == "false" ]; then
+    echo "Share private keys via http-server"
+    cp main-wallet.pk main-wallet.addr \
+      config-master.pk config-master.addr \
+      validator-1.pk validator-1.addr \
+      validator-2.pk validator-2.addr \
+      validator-3.pk validator-3.addr \
+      validator-4.pk validator-4.addr \
+      validator-5.pk validator-5.addr \
+      validator.pk validator.addr \
+      faucet-highload.pk faucet-highload.addr \
+      faucet.pk faucet.addr \
+      /var/ton-work/db/
+  elif [ "$HIDE_PRIVATE_KEYS" == "true" ]; then
+    echo "Share private keys via docker shared volume"
+    cp main-wallet.pk main-wallet.addr \
+      config-master.pk config-master.addr \
+      validator-1.pk validator-1.addr \
+      validator-2.pk validator-2.addr \
+      validator-3.pk validator-3.addr \
+      validator-4.pk validator-4.addr \
+      validator-5.pk validator-5.addr \
+      validator.pk validator.addr \
+      faucet-highload.pk faucet-highload.addr \
+      faucet.pk faucet.addr \
+      /usr/share/data
+    chmod 744 /usr/share/data/*
+  fi
 
   cd /var/ton-work/db
   rm -f my-ton-global.config.json
@@ -170,7 +199,7 @@ else
   python3 -c 'import json; f=open("my-ton-global.config.json", "r"); config=json.loads(f.read()); f.close(); f=open("my-ton-global.config.json", "w");f.write(json.dumps(config, indent=2)); f.close()';
 
   cp my-ton-global.config.json global.config.json
-  rm my-ton-global.config.json
+  rm my-ton-global.config.json control.new control.template ton-private-testnet.config.json.template
 
   echo Restart DHT server
   echo

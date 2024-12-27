@@ -6,7 +6,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-instal
 #    openjdk-21-jdk-headless
 
 RUN mkdir -p /scripts  \
-    /usr/share/libs/ \
+    /usr/share/data/ \
     /var/ton-work/db/static \
     /var/ton-work/db/keyring \
     /var/ton-work/db/import \

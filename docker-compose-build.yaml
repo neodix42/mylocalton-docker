@@ -11,12 +11,14 @@ services:
       - 8080:8080   # blockchain explorer
       - 40004:40004 # lite-server
     volumes:
-      - shared-data:/usr/share/libs
+      - shared-data:/usr/share/data
     environment:
       - GENESIS=true
       - NAME=genesis
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
+#      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000
+#      - VERBOSITY=4
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
       interval: 30s
@@ -33,8 +35,9 @@ services:
 #      context: .
 #      dockerfile: Dockerfile
 #    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
 #    environment:
-#      - GENESIS=false
 #      - NAME=validator-1
 #      - GENESIS_IP=172.28.1.1
 #    depends_on:
@@ -47,8 +50,9 @@ services:
 #      context: .
 #      dockerfile: Dockerfile
 #    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
 #    environment:
-#      - GENESIS=false
 #      - NAME=validator-2
 #      - GENESIS_IP=172.28.1.1
 #    depends_on:
@@ -61,8 +65,9 @@ services:
 #      context: .
 #      dockerfile: Dockerfile
 #    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
 #    environment:
-#      - GENESIS=false
 #      - NAME=validator-3
 #      - GENESIS_IP=172.28.1.1
 #    depends_on:
@@ -75,8 +80,9 @@ services:
 #      context: .
 #      dockerfile: Dockerfile
 #    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
 #    environment:
-#      - GENESIS=false
 #      - NAME=validator-4
 #      - GENESIS_IP=172.28.1.1
 #    depends_on:
@@ -89,11 +95,11 @@ services:
 #      context: .
 #      dockerfile: Dockerfile
 #    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
 #    environment:
-#      - GENESIS=false
 #      - NAME=validator-5
 #      - GENESIS_IP=172.28.1.1
-##      - VERBOSITY=4
 #    depends_on:
 #      - "genesis"
 
@@ -103,7 +109,7 @@ services:
     ports:
       - 8081:8081
     volumes:
-      - shared-data:/usr/share/libs
+      - shared-data:/usr/share/data
     environment:
       - TON_API_CACHE_ENABLED
       - TON_API_CACHE_REDIS_ENDPOINT
@@ -114,7 +120,7 @@ services:
       - TON_API_TONLIB_LITESERVER_CONFIG=http://172.28.1.1:8000/global.config.json
       - TON_API_TONLIB_KEYSTORE
       - TON_API_TONLIB_PARALLEL_REQUESTS_PER_LITESERVER
-      - TON_API_TONLIB_CDLL_PATH=/usr/share/libs/libtonlibjson.so
+      - TON_API_TONLIB_CDLL_PATH=/usr/share/data/libtonlibjson.so
       - TON_API_TONLIB_REQUEST_TIMEOUT
       - TON_API_GET_METHODS_ENABLED=1
       - TON_API_JSON_RPC_ENABLED=1
