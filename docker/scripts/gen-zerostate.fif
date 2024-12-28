@@ -65,46 +65,6 @@ Masterchain over
 2dup ."wallet address = " .addr cr 2dup 6 .Addr cr
 "main-wallet.addr" save-address-verbose
 
-// SmartContract #3
-PROGRAM{
-  recv_internal x{} PROC
-  run_ticktock PROC:<{
-    c4 PUSHCTR CTOS 32 LDU 256 LDU ENDS
-    NEWC ROT INC 32 STUR OVER 256 STUR ENDC
-    c4 POPCTR
-    // first 32 bits of persistent data have been increased
-    // remaining 256 bits with an address have been fetched
-    // create new empty message with 0.1 Grams to that address
-    NEWC b{00100010011111111} STSLICECONST TUCK 256 STU
-    100000000 INT STGRAMS  // store 0.1 Grams
-    1 4 + 4 + 64 + 32 + 1+ 1+ INT STZEROES ENDC
-    // send raw message from Cell
-    ZERO SENDRAWMSG
-    -17 INT 256 STIR 130000000 INT STGRAMS
-    107 INT STZEROES ENDC
-    ZERO // another message with 0.13 Grams to account -17
-    NEWC b{11000100100000} "test" $>s |+ STSLICECONST
-    123456789 INT STGRAMS
-    107 INT STZEROES "Hello, world!" $>s STSLICECONST ENDC
-    ZERO SENDRAWMSG SENDRAWMSG // external message to address "test"
-  }>
-}END>c
-// code
-<b x{11EF55AA} s,
-"Ef9yNgE6aW4h1wrIAU4ldKP5BBl52AD-uUoxrj8Qt5pL31qK" true parse-load-address drop swap drop 256 u, b> // data
-// empty_cell // libraries
-Libs{
-  x{ABACABADABACABA} s>c public_lib
-  x{1234} x{5678} |_ s>c public_lib
-}Libs  // libraries
-GR$1 // balance
-0 // split_depth
-3 // ticktock: tick
-2 // mode: create
-register_smc
-dup make_special dup constant smc3_addr
-."address = " 64x. cr
-
 
 // Faucet smartcontract - wallet-v3
 "wallet-v3-code.fif" include
@@ -117,8 +77,7 @@ empty_cell // no libraries
 GR$1000000   // balance
 0 // split_depth
 0 // ticktock
-AllOnes 7 * // address: -1:77777
-6 // mode: create + setaddr
+2 // mode: create + setaddr
 register_smc
 dup make_special dup constant faucet_addr
 Masterchain over
@@ -138,8 +97,7 @@ empty_cell // no libraries
 GR$1000000   // balance
 0 // split_depth
 0 // ticktock
-AllOnes 8 * // address: -1:88888
-6 // mode: create + setaddr
+2 // mode: create + setaddr
 register_smc
 dup make_special dup constant faucet_addr
 Masterchain over

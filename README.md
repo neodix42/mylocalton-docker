@@ -101,10 +101,10 @@ the state will be persisted, and the next time when you start the containers up 
   * predefined validators' wallet addresses (V3R2, subWalletId = 42)
     * genesis: 
       * address ```-1:0755526dfc926d1b6d468801099cad2d588f40a6a6088bcd3e059566c0ef907c```
-      * private key ```5f14ebefc57461002fc07f9438a63ad35ff609759bb0ae334fedabbfb4bfce8```
+      * private key ```5f14ebefc57461002fc07f9438a63ad35ff609759bb0ae334fedabbfb4bfdce8```
     * validator-1: 
       * address ```-1:0e4160632db47d34bad8a24b55a56f46ca3b6fc84826d90515cd2b6313bd7cf6```
-      * private key  ```001624080b055bf5ea72a252c1acc2c18552df27b4073a412fbde398d8061316```
+      * private key ```001624080b055bf5ea72a252c1acc2c18552df27b4073a412fbde398d8061316```
     * validator-2: 
       * address ```-1:ddd8df36e13e3bcec0ffbcfb4de51535d39937311b3c5cad520a0802d3de9b54```
       * private key ```1da5f8b57104cc6c8af748c0541abc8a735362cd241aa96c201d696623684672```
@@ -119,13 +119,39 @@ the state will be persisted, and the next time when you start the containers up 
       * private key ```b5e0ce4fba8ae2e3f44a393ac380549bfa44c3a5ba33a49171d502f1e4ac6c1d```
 * Predefined Faucet Wallets
   * Wallet V3R2
-    * address ```-1:7777777777777777777777777777777777777777777777777777777777777777```
+    * address ```-1:db7ef76c48e888b7a35d3c88ed61cc33e2ec84b74f0ce2d159e4dd6cd34f406c```
     * private key ```249489b5c1bfa6f62451be3714679581ee04cc8f82a8e3f74b432a58f3e4fedf```
     * subWallet Id 42
   * Highload Wallet V3
-    * address ```-1:8888888888888888888888888888888888888888888888888888888888888888```
+    * address ```-1:fee48a6002da9ad21c61a6a2e4dd73c005d46101450b52bf47d1ce16cdc8230f```
     * private key ```ee26cd8f2709404b63bc172148ec6179bfc7049b1045a22c3ea5446c5d425347```   
 * Predefined lite-server
   * ```lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last```
 * cross-platform (arm64/amd64)
 * tested on Ubuntu, Windows and MacOS
+
+## Development using TON third party libraries
+### ton4j - https://github.com/neodiX42/ton4j
+
+```java
+Tonlib tonlib =
+    Tonlib.builder()
+        .pathToTonlibSharedLib("path to libtonlibjson.so/dll/dylib")
+        .pathToGlobalConfig("<user>/global.config.json") // global config from MyLocalTon (http://127.0.0.1:8000/global.config.json)
+        .ignoreCache(false)
+        .build();
+
+log.info("last {}", tonlib.getLast());
+
+byte[] prvKey =  Utils.hexToSignedBytes("249489b5c1bfa6f62451be3714679581ee04cc8f82a8e3f74b432a58f3e4fedf");
+TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
+
+WalletV3R2 contract =  WalletV3R2.builder().tonlib(tonlib).wc(-1).keyPair(keyPair).walletId(42).build();
+log.info("WalletV3R2 address {}", contract.getAddress().toRaw());
+assertThat(contract.getAddress().toRaw()).isEqualTo("-1:db7ef76c48e888b7a35d3c88ed61cc33e2ec84b74f0ce2d159e4dd6cd34f406c");
+```
+
+**Important!** MyLocalTon-Docker lite-server runs inside genesis container in its own network on IP `172.28.1.1` (integer `-1407450879`),
+if you want to access it from local host you have to refer to `127.0.0.1` IP address.  
+
+Go inside `global.config.json` and in `liteservers` section replace this IP `-1407450879` to this one `2130706433`.
