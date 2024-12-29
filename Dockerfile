@@ -1,12 +1,9 @@
-#FROM ghcr.io/ton-blockchain/ton:testnet
 FROM ghcr.io/ton-blockchain/ton:latest
-#FROM ghcr.io/neodix42/ton:testnet
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 cron
-#    openjdk-21-jdk-headless
+RUN apt update && apt install --no-install-recommends -y python3 cron openjdk-19-jdk-headless
 
-RUN mkdir -p /scripts  \
-    /usr/share/data/ \
+RUN mkdir -p /scripts/web  \
+    /usr/share/data \
     /var/ton-work/db/static \
     /var/ton-work/db/keyring \
     /var/ton-work/db/import \
@@ -31,6 +28,11 @@ COPY docker/scripts/validator-4.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-5.pk /usr/share/ton/smartcont
 COPY docker/scripts/liteserver /var/ton-work/db
 COPY docker/scripts/liteserver.pub /var/ton-work/db
+COPY docker/scripts/web/index.html /scripts/web
+COPY docker/scripts/web/script.js /scripts/web
+COPY docker/scripts/web/style.css /scripts/web
+
+COPY target/MyLocalTonDockerWebFaucet.jar /scripts
 
 RUN echo 'alias getstats="validator-engine-console -k /var/ton-work/db/client -p /var/ton-work/db/server.pub -a $(hostname -I | tr -d " "):$(jq .control[].port <<< cat /var/ton-work/db/config.json) -c getstats"' >> ~/.bashrc
 RUN echo 'alias last="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c last"' >> ~/.bashrc
