@@ -1,10 +1,6 @@
-name: MyLocalTon Docker
+name: MyLocalTon Docker (branch)
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - 'main'
+on: [push,workflow_dispatch,workflow_call]
 
 env:
   REGISTRY: ghcr.io
@@ -30,6 +26,11 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get tag as branch name
+        id: tag
+        run: |
+          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+
       - name: Build and push
         id: docker_build
         uses: docker/build-push-action@v6
@@ -38,4 +39,4 @@ jobs:
           push: true
           context: ./
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}
