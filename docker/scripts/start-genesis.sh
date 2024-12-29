@@ -221,7 +221,7 @@ nohup blockchain-explorer -C /var/ton-work/db/global.config.json -H $EXPLORER_PO
 if [ "$RECAPTCHA_SITE_KEY" ]; then
   # start web faucet
   sed -i "s/RECAPTCHA_SITE_KEY/$RECAPTCHA_SITE_KEY/g" /scripts/web/index.html
-  nohup java -jar /scripts/MyLocalTonDockerWebFaucet.jar &
+  nohup java -jar /scripts/web/MyLocalTonDockerWebFaucet.jar &
   echo Web Faucet Started $SERVER_ADDRESS:$SERVER_PORT
 else
   echo Web Faucet will not be started due to missing RECAPTCHA_SITE_KEY
