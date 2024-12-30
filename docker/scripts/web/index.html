@@ -4,26 +4,58 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Public faucet (not suitable for mainnet or testnet)</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <!--    <script src="https://www.google.com/recaptcha/api.js" async defer></script>-->
+    <script src="https://www.google.com/recaptcha/enterprise.js" async defer></script>
     <link rel="stylesheet" href="style.css">
+
+    <script>
+    let captchaWidgetId;
+
+    // Ensure the script has loaded
+    window.onload = function () {
+        grecaptcha.enterprise.ready(function () {
+            captchaWidgetId = grecaptcha.enterprise.render('captcha-container', {
+                'sitekey': 'RECAPTCHA_SITE_KEY',
+                 'size': 'invisible',
+            });
+        });
+    };
+
+    function getCaptchaResponse() {
+        return new Promise((resolve, reject) => {
+            grecaptcha.enterprise.execute(captchaWidgetId, { action: 'submit' })
+                .then(function (token) {
+                    console.log('Captcha Token:', token);
+                    resolve(token);
+                })
+                .catch(function (error) {
+                    console.error('Error executing reCAPTCHA:', error);
+                    reject(error);
+                });
+        });
+    }
+    </script>
+
 </head>
 <body>
-    <h1>Get toncoins</h1>
-    <form id="validateCaptchaForm">
-        <center><div class="g-recaptcha" data-sitekey="RECAPTCHA_SITE_KEY"></div></center>
-        <br>
-        <label for="user-input">Enter wallet address</label>
-        <input type="text" id="user-input" name="userInput" required>
-        <br><br>
-        <button type="button" id="submit-btn">Submit</button>
-    </form>
-    <h1>Check Balance</h1>
-    <form id="getBalanceForm">
-        <label for="userAddress">Enter wallet address</label>
-        <input type="text" id="userAddress" name="userAddress" required>
-        <br><br>
-        <button type="button" id="getBalanceBtn">Get Balance</button>
-    </form>
-    <script src="script.js"></script>
+<h1>Get toncoins</h1>
+<form id="validateCaptchaForm">
+    <center>
+        <div id="captcha-container"></div>
+    </center>
+    <br>
+    <label for="user-input">Enter wallet address</label>
+    <input type="text" id="user-input" name="userInput" required>
+    <br><br>
+    <button type="button" id="submit-btn">Submit</button>
+</form>
+<h1>Check Balance</h1>
+<form id="getBalanceForm">
+    <label for="userAddress">Enter wallet address</label>
+    <input type="text" id="userAddress" name="userAddress" required>
+    <br><br>
+    <button type="button" id="getBalanceBtn">Get Balance</button>
+</form>
+<script src="script.js"></script>
 </body>
 </html>

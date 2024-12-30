@@ -1,28 +1,33 @@
 document.getElementById("submit-btn").addEventListener("click", function () {
     const userInput = document.getElementById("user-input").value;
-    const captchaResponse = grecaptcha.getResponse();
-
-    fetch("/validateCaptcha", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            token: captchaResponse,
-            userInput: userInput
-        }),
+    getCaptchaResponse()
+    .then(function (token) {
+        console.log('Received Token:', token);
+            fetch("/validateCaptcha", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    token: token, // captchaResponse
+                    userInput: userInput
+                }),
+            })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.success) {
+                    alert(data.message);
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch((error) => {
+                console.error("Error:", error);
+                alert("Something went wrong.");
+            });
     })
-    .then((response) => response.json())
-    .then((data) => {
-        if (data.success) {
-            alert(data.message);
-        } else {
-            alert(data.message);
-        }
-    })
-    .catch((error) => {
-        console.error("Error:", error);
-        alert("Something went wrong.");
+    .catch(function (error) {
+        console.error('Failed to get reCAPTCHA token:', error);
     });
 });
 

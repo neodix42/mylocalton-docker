@@ -12,6 +12,6 @@ public class AppErrorController implements ErrorController {
   @RequestMapping(value = PATH, produces = "text/html")
   @ResponseBody
   public String getErrorPath() {
-    return "No Mapping Found";
+    return "not ready";
   }
 }
