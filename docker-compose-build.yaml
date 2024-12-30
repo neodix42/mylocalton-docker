@@ -18,8 +18,8 @@ services:
       - NAME=genesis
       - SERVER_PORT=80             # used for web-faucet
       - SERVER_ADDRESS=172.28.1.1  # used for web-faucet
-      - RECAPTCHA_SITE_KEY=6LeObqkqAAAAAEN5U4kr6nCSJwAcvqVO5ulflS2b # used for web-faucet
-      - RECAPTCHA_SECRET=6LeObqkqAAAAAHHsHwE-h6ckFBUM2M_PuUpnapeL   # used for web-faucet
+      - RECAPTCHA_SITE_KEY= # used for web-faucet
+      - RECAPTCHA_SECRET=   # used for web-faucet
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000

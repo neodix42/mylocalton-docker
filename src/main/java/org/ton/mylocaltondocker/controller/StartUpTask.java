@@ -6,10 +6,7 @@ import org.springframework.stereotype.Component;
 import org.ton.java.tonlib.Tonlib;
 import org.ton.mylocaltondocker.Main;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @Component
@@ -32,6 +29,5 @@ public class StartUpTask {
             .pathToGlobalConfig("/var/ton-work/db/global.config.json")
             .ignoreCache(false)
             .build();
-
   }
 }
