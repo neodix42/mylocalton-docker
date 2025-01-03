@@ -32,7 +32,7 @@ jobs:
           echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
       - name: Build and push
-        id: docker_build
+        id: docker_build_1
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
@@ -47,7 +47,7 @@ jobs:
           echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
       - name: Build and push faucet
-        id: docker_build
+        id: docker_build_2
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
