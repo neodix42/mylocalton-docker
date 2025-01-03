@@ -35,4 +35,4 @@ jobs:
           context: .
           dockerfile: ./faucet/Dockerfile
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:faucet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:faucet-prod

@@ -33,12 +33,14 @@ Specify only for `genesis` container:
 * `VALIDATION_PERIOD` - set validation period in seconds, default `1200 (20 min)`;
 * `MASTERCHAIN_ONLY` - set to `true` if you want to have only masterchain, i.e. without workchains, default `false`;
 * `HIDE_PRIVATE_KEYS` - set to `true` if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;
-* `SERVER_PORT` - used by local http-server that runs faucet service, default port `80`;
-* `SERVER_ADDRESS` - used by local http-server that runs faucet service, default bind IP `172.28.1.1`;
-* `FAUCET_REQUEST_EXPIRATION_PERIOD` - used by local http-server that runs faucet service, default `86400` seconds (24h);
-* `FAUCET_SINGLE_GIVEAWAY` - used by local http-server that runs faucet service, default `10` toncoins;
-* `RECAPTCHA_SITE_KEY` - used by local http-server that runs faucet service, default `empty`; **If not empty then the faucet will be started at** `SERVER_ADDRESS`:`SERVER_PORT`;
-* `RECAPTCHA_SECRET` - used by local http-server that runs faucet service, , default `empty`;
+ 
+Specify only for `faucet` container:
+
+* `RECAPTCHA_SITE_KEY` - used by local http-server that runs faucet service, mandatory;
+* `RECAPTCHA_SECRET` - used by local http-server that runs faucet service, , mandatory;
+* `FAUCET_REQUEST_EXPIRATION_PERIOD` - used by local http-server that runs faucet service, default `86400` seconds (24h), optional;
+* `FAUCET_SINGLE_GIVEAWAY` - used by local http-server that runs faucet service, default `10` toncoins, optional;
+* `SERVER_PORT` - used by local http-server that runs faucet service, default port `80`, optional;
 
 Can be set for all node types:
 * `VERBOSITY` - set verbosity level for validator-engine. Default 1, allowed values: 0, 1, 2, 3, 4;
@@ -70,6 +72,9 @@ http://127.0.0.1:8000/global.config.json
 **Lite-server** on genesis node runs on port 40004 and can be queried as follows:
 
 `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last`
+
+**Faucet** with reCaptcha V2 protections can be enabled by uncommenting its section in `docker-compose.yaml` and runs on:
+`http://127.0.0.1:88`
 
 ### Go inside the container
 
