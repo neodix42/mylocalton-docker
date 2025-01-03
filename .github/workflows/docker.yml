@@ -37,6 +37,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
+          file: ./Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Build and push faucet
@@ -46,5 +47,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
-          dockerfile: ./faucet/Dockerfile
+          file: ./faucet/Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:latest
