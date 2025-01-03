@@ -26,8 +26,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get tag as branch name
-        id: tag
+      - name: Get tag-1 as branch name
+        id: tag1
+        run: |
+          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+
+      - name: Get tag-2 as branch name
+        id: tag2
         run: |
           echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
@@ -39,7 +44,7 @@ jobs:
           push: true
           context: ./
           tags: |
-            ${{ env.REGISTRY }}/mylocaton-docker:${{ steps.tag.outputs.TAG }}
+            ${{ env.REGISTRY }}/mylocaton-docker:${{ steps.tag1.outputs.TAG }}
 
       - name: Get tag as branch name
         id: tag
@@ -54,4 +59,4 @@ jobs:
           push: true
           context: ./
           tags: |
-            ${{ env.REGISTRY }}/mylocaton-docker-faucet:${{ steps.tag.outputs.TAG }}
+            ${{ env.REGISTRY }}/mylocaton-docker-faucet:${{ steps.tag2.outputs.TAG }}
