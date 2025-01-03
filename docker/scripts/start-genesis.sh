@@ -207,6 +207,8 @@ else
   sleep 1
 fi
 
+cp global.config.json /usr/share/data/
+
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$PUBLIC_IP:$DHT_PORT"&
 echo DHT server started at $PUBLIC_IP:$DHT_PORT
 echo
@@ -217,27 +219,6 @@ nohup python3 -m http.server&
 
 # start blockchain-explorer
 nohup blockchain-explorer -C /var/ton-work/db/global.config.json -H $EXPLORER_PORT&
-
-if [ "$RECAPTCHA_SITE_KEY" ]; then
-  # start web faucet
-  export FAUCET_REQUEST_EXPIRATION_PERIOD=${FAUCET_REQUEST_EXPIRATION_PERIOD:-86400}
-  echo FAUCET_REQUEST_EXPIRATION_PERIOD $FAUCET_REQUEST_EXPIRATION_PERIOD
-
-  export FAUCET_SINGLE_GIVEAWAY=${FAUCET_SINGLE_GIVEAWAY:-10}
-  echo FAUCET_SINGLE_GIVEAWAY $FAUCET_SINGLE_GIVEAWAY
-
-  export SERVER_PORT=${SERVER_PORT:-80}
-  echo SERVER_PORT $SERVER_PORT
-
-  export SERVER_ADDRESS=${SERVER_ADDRESS:-172.28.1.1}
-  echo SERVER_ADDRESS $SERVER_ADDRESS
-
-  sed -i "s/RECAPTCHA_SITE_KEY/$RECAPTCHA_SITE_KEY/g" /scripts/web/index.html
-  nohup java -jar /scripts/web/MyLocalTonDockerWebFaucet.jar &
-  echo Web Faucet Started $SERVER_ADDRESS:$SERVER_PORT
-else
-  echo Web Faucet will not be started due to missing RECAPTCHA_SITE_KEY
-fi
 
 echo
 echo Simple HTTP server runs on:

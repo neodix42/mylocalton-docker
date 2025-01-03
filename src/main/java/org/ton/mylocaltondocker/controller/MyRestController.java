@@ -1,6 +1,5 @@
 package org.ton.mylocaltondocker.controller;
 
-import com.iwebpp.crypto.TweetNaclFast;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -8,9 +7,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import org.ton.java.address.Address;
-import org.ton.java.smartcontract.types.WalletV3Config;
 import org.ton.java.smartcontract.wallet.v3.WalletV3R2;
-import org.ton.java.tonlib.types.ExtMessageInfo;
 import org.ton.java.tonlib.types.FullAccountState;
 import org.ton.java.utils.Utils;
 import org.ton.mylocaltondocker.Main;
@@ -171,10 +168,10 @@ public class MyRestController {
   }
 
   private boolean addRequest(String remoteIp, String walletAddr) {
-    //    if (DB.findRemoteIp(remoteIp).size() > 0) { // this ip already requested
-    //      log.error("cant add request - ip {} found", remoteIp);
-    //      return false;
-    //    }
+    if (DB.findRemoteIp(remoteIp).size() > 0) { // this ip already requested
+      log.error("cant add request - ip {} found", remoteIp);
+      return false;
+    }
 
     if (nonNull(
         DB.findWallet(

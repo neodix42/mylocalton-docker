@@ -10,19 +10,11 @@ services:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
       - 40004:40004 # lite-server
-      - 80:80       # web-faucet
     volumes:
       - shared-data:/usr/share/data
     environment:
       - GENESIS=true
       - NAME=genesis
-      - RECAPTCHA_SITE_KEY=6Ld7e6kqAAAAALdZkpFi_GkCFXgF-vXFmmbqCUyL # used for web-faucet
-      - RECAPTCHA_SECRET=6Ld7e6kqAAAAAFpymNx_j0khI7gG_iMiJxL185KL   # used for web-faucet
-#      - FAUCET_REQUEST_EXPIRATION_PERIOD= # used for web-faucet, default 86400 seconds (24h)
-#      - FAUCET_SINGLE_GIVEAWAY=    # used for web-faucet, default 10 toncoins
-#      - SERVER_PORT=80             # used for web-faucet, default 80
-#      - SERVER_ADDRESS=172.28.1.1  # used for web-faucet, default 172.28.1.1
-
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000
@@ -142,6 +134,29 @@ services:
       interval: 30s
       timeout: 5s
       retries: 10
+
+  faucet:
+    container_name: faucet
+    image: faucet
+    build:
+      context: .
+      dockerfile: ./faucet/Dockerfile
+    ports:
+      - 80:80
+    volumes:
+      - shared-data:/usr/share/data
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+      - RECAPTCHA_SECRET=   # google reCaptcha v2
+#      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
+#      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
+#      - SERVER_PORT=80             # default 80
+    healthcheck:
+      test: curl -sS http://127.0.0.1:80|| echo 1
 
 volumes:
   shared-data:

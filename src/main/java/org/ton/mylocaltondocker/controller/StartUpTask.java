@@ -33,20 +33,29 @@ public class StartUpTask {
 
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() throws InterruptedException {
-    System.out.println("Web Faucet has started. Sleep 120 seconds till blockchain is ready...");
 
-    Thread.sleep(120 * 1000);
+    log.info("RECAPTCHA_SITE_KEY {}", System.getenv("RECAPTCHA_SITE_KEY").strip());
+    log.info("RECAPTCHA_SECRET {}", System.getenv("RECAPTCHA_SECRET").strip());
+    log.info("SERVER_PORT {}", System.getenv("SERVER_PORT").strip());
+//    log.info("SERVER_ADDRESS {}", System.getenv("SERVER_ADDRESS").strip());
+    log.info(
+        "FAUCET_REQUEST_EXPIRATION_PERIOD {}",
+        Integer.parseInt(System.getenv("FAUCET_REQUEST_EXPIRATION_PERIOD").strip()));
+    log.info(
+        "FAUCET_SINGLE_GIVEAWAY {}",
+        Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip()));
+
     System.out.println("Initializing tonlib");
 
-    while (!Files.exists(Paths.get("/var/ton-work/db/global.config.json"))) {
-      System.out.println("faucet is waiting for /var/ton-work/db/global.config.json");
+    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
+      System.out.println("faucet is waiting for /usr/share/data/global.config.json");
       Thread.sleep(5000);
     }
 
     Main.tonlib =
         Tonlib.builder()
             .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
-            .pathToGlobalConfig("/var/ton-work/db/global.config.json")
+            .pathToGlobalConfig("/usr/share/data/global.config.json")
             //            .pathToTonlibSharedLib("g:/libs/master-tonlibjson.dll")
             //            .pathToGlobalConfig("g:/libs/global.config-mlt.json")
             .ignoreCache(false)
@@ -76,12 +85,6 @@ public class StartUpTask {
         DB.getWalletsToSend().size(),
         DB.getTotalWallets());
 
-    log.info(
-        "FAUCET_REQUEST_EXPIRATION_PERIOD {}",
-        Integer.parseInt(System.getenv("FAUCET_REQUEST_EXPIRATION_PERIOD").strip()));
-    log.info(
-        "FAUCET_SINGLE_GIVEAWAY {}", Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip()));
-
     runFaucetSendScheduler();
     runFaucetCleanQueueScheduler();
 
@@ -93,7 +96,7 @@ public class StartUpTask {
     Executors.newSingleThreadScheduledExecutor()
         .scheduleAtFixedRate(
             () -> {
-              Thread.currentThread().setName("Send");
+              Thread.currentThread().setName("SendRequest");
 
               List<WalletEntity> walletRequests = DB.getWalletsToSend();
               log.info("triggered send to {} wallets", walletRequests.size());
@@ -109,7 +112,8 @@ public class StartUpTask {
                         .bounce(false)
                         .address(wallet.getWalletAddress())
                         .amount(
-                            Utils.toNano(Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip())))
+                            Utils.toNano(
+                                Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip())))
                         .build());
               }
 
@@ -166,7 +170,7 @@ public class StartUpTask {
     Executors.newSingleThreadScheduledExecutor()
         .scheduleAtFixedRate(
             () -> {
-              Thread.currentThread().setName("Clean");
+              Thread.currentThread().setName("CleanQueue");
               DB.deleteExpiredWallets(
                   Integer.parseInt(System.getenv("FAUCET_REQUEST_EXPIRATION_PERIOD").strip()));
             },
