@@ -30,6 +30,10 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build MyLocalTon Java Faucet
+        run: |
+          mvn clean compile package -DskipTests
+
       - name: Build and push
         id: docker_build_1
         uses: docker/build-push-action@v6

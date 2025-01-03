@@ -28,12 +28,6 @@ COPY docker/scripts/validator-4.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-5.pk /usr/share/ton/smartcont
 COPY docker/scripts/liteserver /var/ton-work/db
 COPY docker/scripts/liteserver.pub /var/ton-work/db
-#COPY docker/scripts/web/index.html /scripts/web
-#COPY docker/scripts/web/script.js /scripts/web
-#COPY docker/scripts/web/style.css /scripts/web
-#COPY docker/scripts/web/MyLocalTonDockerWebFaucet.jar /scripts/web
-#COPY target/MyLocalTonDockerWebFaucet.jar /scripts/web
-#COPY objectdb-2.8.6.jar /scripts/web
 
 RUN echo 'alias getstats="validator-engine-console -k /var/ton-work/db/client -p /var/ton-work/db/server.pub -a $(hostname -I | tr -d " "):$(jq .control[].port <<< cat /var/ton-work/db/config.json) -c getstats"' >> ~/.bashrc
 RUN echo 'alias last="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c last"' >> ~/.bashrc
