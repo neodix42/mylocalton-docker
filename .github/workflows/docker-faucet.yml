@@ -1,10 +1,6 @@
 name: MyLocalTon Docker Faucet
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - 'main'
+on: [push,workflow_dispatch,workflow_call]
 
 env:
   REGISTRY: ghcr.io
@@ -36,6 +32,7 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           push: true
-          context: ./
+          context: .
+          dockerfile: ./faucet/Dockerfile
           tags: |
-            ${{ env.REGISTRY }}/mylocalton-faucet:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:faucet
