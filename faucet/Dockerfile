@@ -1,6 +1,4 @@
-FROM ubuntu:22.04
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt install --no-install-recommends -y openjdk-19-jdk-headless
+FROM openjdk:19-jdk-alpine
 
 ENV SERVER_PORT=80
 ENV FAUCET_REQUEST_EXPIRATION_PERIOD=86400
@@ -11,7 +9,7 @@ RUN mkdir -p /scripts/web
 COPY faucet/index.html /scripts/web
 COPY faucet/script.js /scripts/web
 COPY faucet/style.css /scripts/web
-COPY faucet/start.sh /scripts/web
+COPY --chmod=744 faucet/start.sh /scripts/web
 COPY target/MyLocalTonDockerWebFaucet.jar /scripts/web
 
 WORKDIR "/scripts/web"

@@ -1,6 +1,6 @@
 FROM ghcr.io/ton-blockchain/ton:latest
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt install --no-install-recommends -y python3 cron openjdk-19-jdk-headless
+RUN apt update && apt install --no-install-recommends -y python3 cron
 
 RUN mkdir -p /scripts/web  \
     /usr/share/data \
