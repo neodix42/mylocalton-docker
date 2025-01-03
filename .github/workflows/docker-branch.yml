@@ -39,7 +39,7 @@ jobs:
           push: true
           context: ./
           tags: |
-            ${{ env.REGISTRY }}/mylocaton-docker:${{ steps.tag1.outputs.TAG }}
+            ${{ env.REGISTRY }}/mylocalton-docker:${{ steps.tag1.outputs.TAG }}
 
       - name: Get tag-2 as branch name
         id: tag2
@@ -54,4 +54,4 @@ jobs:
           push: true
           context: ./
           tags: |
-            ${{ env.REGISTRY }}/mylocaton-docker-faucet:${{ steps.tag2.outputs.TAG }}
+            ${{ env.REGISTRY }}/mylocalton-docker-faucet:${{ steps.tag2.outputs.TAG }}
