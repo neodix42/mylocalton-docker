@@ -37,5 +37,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.REGISTRY }}/mylocalton-docker:latest
+
+      - name: Build and push faucet
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          dockerfile: ./faucet/Dockerfile
+          tags: ${{ env.REGISTRY }}/mylocalton-docker-faucet:latest

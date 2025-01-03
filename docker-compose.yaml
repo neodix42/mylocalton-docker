@@ -120,7 +120,7 @@ services:
 
 #  faucet:
 #    container_name: faucet
-#    image: ghcr.io/neodix42/mylocalton-docker:faucet-prod
+#    image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
 #    ports:
 #      - 88:88
 #    volumes:
