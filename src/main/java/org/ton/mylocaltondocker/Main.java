@@ -10,7 +10,6 @@ public class Main {
   public static Tonlib tonlib;
 
   public static void main(String[] args) {
-    System.out.println("staring spring boot");
     SpringApplication.run(Main.class, args);
   }
 }

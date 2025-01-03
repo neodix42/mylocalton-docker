@@ -4,27 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Public faucet (not suitable for mainnet or testnet)</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <script src="https://www.google.com/recaptcha/api.js?onload=CaptchaCallback&render=explicit" async defer></script>
     <link rel="stylesheet" href="style.css">
+
+    <script type="text/javascript">
+    var CaptchaCallback = function() {
+        grecaptcha.render('recaptchaField1', {'sitekey' : '6Ld7e6kqAAAAALdZkpFi_GkCFXgF-vXFmmbqCUyL'});
+        grecaptcha.render('recaptchaField2', {'sitekey' : '6Ld7e6kqAAAAALdZkpFi_GkCFXgF-vXFmmbqCUyL'});
+    };
+    </script>
+
 </head>
 <body>
-    <h1>Get toncoins</h1>
+    <h1>Get 10 Toncoins</h1>
     <form id="validateCaptchaForm">
         <center>
-            <div class="g-recaptcha" data-sitekey="RECAPTCHA_SITE_KEY"></div>
+            <div id="recaptchaField1"></div>
+        </div>
         </center>
         <br>
-        <label for="user-input">Enter wallet address</label>
-        <input type="text" id="user-input" name="userInput" required>
+        <label for="userAddress1">Enter wallet address</label>
+        <input type="text" id="userAddress1" name="userAddress1" required>
         <br><br>
         <button type="button" id="submit-btn">Submit</button>
     </form>
     <h1>Check Balance</h1>
     <form id="getBalanceForm">
-        <label for="userAddress">Enter wallet address</label>
-        <input type="text" id="userAddress" name="userAddress" required>
+        <label for="userAddress2">Enter wallet address</label>
+        <input type="text" id="userAddress2" name="userAddress2" required>
         <br><br>
-        <button type="button" id="getBalanceBtn">Get Balance</button>
+        <button type="button" id="getBalanceBtn">Show balance</button>
+    </form>
+    <h1>Generate wallet</h1>
+    <form id="generateWalletForm">
+        <center>
+            <div id="recaptchaField2"></div>
+        </center>
+        <br>
+        <button type="button" id="generateWalletBtn">Generate</button>
     </form>
     <script src="script.js"></script>
 </body>

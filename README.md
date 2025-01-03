@@ -35,6 +35,8 @@ Specify only for `genesis` container:
 * `HIDE_PRIVATE_KEYS` - set to `true` if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;
 * `SERVER_PORT` - used by local http-server that runs faucet service, default port `80`;
 * `SERVER_ADDRESS` - used by local http-server that runs faucet service, default bind IP `172.28.1.1`;
+* `FAUCET_REQUEST_EXPIRATION_PERIOD` - used by local http-server that runs faucet service, default `86400` seconds (24h);
+* `FAUCET_SINGLE_GIVEAWAY` - used by local http-server that runs faucet service, default `10` toncoins;
 * `RECAPTCHA_SITE_KEY` - used by local http-server that runs faucet service, default `empty`; **If not empty then the faucet will be started at** `SERVER_ADDRESS`:`SERVER_PORT`;
 * `RECAPTCHA_SECRET` - used by local http-server that runs faucet service, , default `empty`;
 
