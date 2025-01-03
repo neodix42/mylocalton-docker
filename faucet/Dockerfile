@@ -1,4 +1,4 @@
-FROM openjdk:19-jdk-alpine
+FROM amazoncorretto:17-alpine3.19-jdk
 
 ENV SERVER_PORT=80
 ENV FAUCET_REQUEST_EXPIRATION_PERIOD=86400
