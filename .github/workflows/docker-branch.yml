@@ -31,11 +31,6 @@ jobs:
         run: |
           echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
-      - name: Get tag-2 as branch name
-        id: tag2
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
-
       - name: Build and push
         id: docker_build_1
         uses: docker/build-push-action@v6
@@ -46,8 +41,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/mylocaton-docker:${{ steps.tag1.outputs.TAG }}
 
-      - name: Get tag as branch name
-        id: tag
+      - name: Get tag-2 as branch name
+        id: tag2
         run: |
           echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
