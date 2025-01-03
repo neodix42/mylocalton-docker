@@ -41,15 +41,15 @@ public class StartUpTask {
       Thread.sleep(5000);
     }
 
-      log.info("RECAPTCHA_SITE_KEY {}", System.getenv("RECAPTCHA_SITE_KEY").strip());
-      log.info("RECAPTCHA_SECRET {}", System.getenv("RECAPTCHA_SECRET").strip());
-      log.info("SERVER_PORT {}", System.getenv("SERVER_PORT").strip());
-      log.info(
-              "FAUCET_REQUEST_EXPIRATION_PERIOD {}",
-              Integer.parseInt(System.getenv("FAUCET_REQUEST_EXPIRATION_PERIOD").strip()));
-      log.info(
-              "FAUCET_SINGLE_GIVEAWAY {}",
-              Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip()));
+    log.info("RECAPTCHA_SITE_KEY {}", System.getenv("RECAPTCHA_SITE_KEY").strip());
+    log.info("RECAPTCHA_SECRET {}", System.getenv("RECAPTCHA_SECRET").strip());
+    log.info("SERVER_PORT {}", System.getenv("SERVER_PORT").strip());
+    log.info(
+        "FAUCET_REQUEST_EXPIRATION_PERIOD {}",
+        Integer.parseInt(System.getenv("FAUCET_REQUEST_EXPIRATION_PERIOD").strip()));
+    log.info(
+        "FAUCET_SINGLE_GIVEAWAY {}",
+        Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip()));
 
     Main.tonlib =
         Tonlib.builder()
@@ -159,9 +159,9 @@ public class StartUpTask {
                   highloadFaucet.getAddress().toRaw(),
                   Utils.formatNanoValue(highloadFaucet.getBalance()));
             },
-            30L,
-            30L,
-            TimeUnit.SECONDS);
+            1,
+            1,
+            TimeUnit.MINUTES);
   }
 
   public void runFaucetCleanQueueScheduler() {
@@ -173,8 +173,8 @@ public class StartUpTask {
               DB.deleteExpiredWallets(
                   Integer.parseInt(System.getenv("FAUCET_REQUEST_EXPIRATION_PERIOD").strip()));
             },
-            1,
-            1,
+            2,
+            5,
             TimeUnit.MINUTES);
   }
 }
