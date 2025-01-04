@@ -1,14 +1,60 @@
 /* General body styling */
 body {
     font-family: 'Arial', sans-serif;
-    background-color: #f5f5f5;
     margin: 0;
+    height: 100vh;
+    text-align: center;
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
-    text-align: center;
-    flex-direction: column; /* Stack the forms vertically */
+    flex-direction: column;
+    position: relative; /* Ensure stacking works correctly */
+    z-index: 1; /* Place body content above the background animation */
+}
+
+/* Background animation container */
+.background-animation {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    overflow: hidden;
+    background: linear-gradient(135deg, #e4e4e4, #d3f4ff, #0e84b8)
+}
+
+/* Animated lines */
+.line {
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: 100px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+    animation: fly 5s linear infinite;
+}
+
+.line:nth-child(1) { left: 10%; animation-duration: 4s; }
+.line:nth-child(2) { left: 25%; animation-duration: 6s; }
+.line:nth-child(3) { left: 40%; animation-duration: 3.5s; }
+.line:nth-child(4) { left: 60%; animation-duration: 5.5s; }
+.line:nth-child(5) { left: 80%; animation-duration: 7s; }
+.line:nth-child(6) { left: 95%; animation-duration: 4.5s; }
+
+@keyframes fly {
+    0% {
+        transform: translateY(-200px) scaleY(1);
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+        transform: translateY(200px) scaleY(2);
+    }
+    100% {
+        transform: translateY(500px) scaleY(1);
+        opacity: 0;
+    }
 }
 
 /* Styling for forms */
@@ -20,35 +66,29 @@ form {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     margin-bottom: 20px;
     width: 100%;
-    max-width: 650px; /* Maximum form width for larger screens */
+    max-width: 700px;
+    position: relative; /* Ensure forms stack correctly above animation */
+    z-index: 1;
 }
 
-/* Styling for headings */
-h1 {
-    font-size: 1.8rem;
-    margin-bottom: 15px;
-    color: #333;
-}
-
-/* Styling for labels */
+/* Labels should be stacked above inputs */
 label {
-    display: block;
+    display: block; /* Place labels on their own line */
     font-weight: bold;
-    margin-bottom: 10px;
+    margin-bottom: 5px; /* Add space between label and input */
     color: #555;
 }
 
-/* Styling for input fields */
+/* Input fields */
 input[type="text"] {
-    width: 90%; /* Make input fields 50% wider */
+    width: 90%; /* Full width */
     padding: 10px 15px;
-    margin-bottom: 15px;
+    margin-bottom: 20px; /* Add space between fields */
     border: 1px solid #ccc;
     border-radius: 6px;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
     font-size: 1rem;
     color: #333;
-    max-width: calc(150% - 20px); /* Ensure it doesn't overflow parent */
 }
 
 /* Input hover and focus effects */
@@ -69,6 +109,8 @@ button {
     cursor: pointer;
     transition: background-color 0.3s ease, box-shadow 0.3s ease;
     width: 100%; /* Make buttons span the full width of the form */
+    z-index: 1;
+    position: relative;
 }
 
 /* Button hover effect */
@@ -81,4 +123,20 @@ button:hover {
 button:focus {
     outline: none;
     box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+}
+
+
+.message {
+    font-size: 1rem;
+    margin-top: 10px;
+    text-align: left;
+    white-space:pre-wrap;
+}
+
+.message.success {
+    color: green;
+}
+
+.message.error {
+    color: red;
 }

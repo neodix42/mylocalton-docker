@@ -104,11 +104,13 @@ public class MyRestController {
       log.info("account state {}", fullAccountState);
 
       Map<String, Object> response = new HashMap<>();
+      response.put("success", true);
       response.put("balance", Utils.formatNanoValue(fullAccountState.getBalance()));
       return response;
     } catch (Error e) {
       Map<String, Object> response = new HashMap<>();
-      response.put("balance", "-1");
+      response.put("success", false);
+      response.put("balance", e.getMessage());
       return response;
     }
   }
@@ -139,30 +141,12 @@ public class MyRestController {
         return response;
       } catch (Error e) {
         response.put("success", false);
-        response.put("error", "cannot generate wallet");
+        response.put("message", "cannot generate wallet");
         return response;
       }
     } else {
       response.put("success", false);
       response.put("message", "captcha validation failed.");
-      return response;
-    }
-  }
-
-  @PostMapping("/test")
-  public Map<String, Object> getTest(
-      @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
-    System.out.println("running /test");
-
-    String userAddress = request.get("userAddress2");
-    String remoteIp = httpServletRequest.getRemoteAddr();
-
-    Map<String, Object> response = new HashMap<>();
-    if (addRequest(remoteIp, userAddress)) {
-      response.put("success", "true");
-      return response;
-    } else {
-      response.put("success", "false");
       return response;
     }
   }

@@ -1,7 +1,7 @@
 services:
   genesis:
     container_name: genesis
-    image: ghcr.io/neodix42/mylocalton-docker:latest
+    image: ghcr.io/neodix42/mylocalton-docker:dev
     restart: always
     ports:
       - 8000:8000   # simple-http server
@@ -28,7 +28,7 @@ services:
 
 #  validator-1:
 #    container_name: validator-1
-#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    image: ghcr.io/neodix42/mylocalton-docker:dev
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -40,7 +40,7 @@ services:
 #
 #  validator-2:
 #    container_name: validator-2
-#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    image: ghcr.io/neodix42/mylocalton-docker:dev
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -52,7 +52,7 @@ services:
 #
 #  validator-3:
 #    container_name: validator-3
-#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    image: ghcr.io/neodix42/mylocalton-docker:dev
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -64,7 +64,7 @@ services:
 #
 #  validator-4:
 #    container_name: validator-4
-#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    image: ghcr.io/neodix42/mylocalton-docker:dev
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -76,7 +76,7 @@ services:
 #
 #  validator-5:
 #    container_name: validator-5
-#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    image: ghcr.io/neodix42/mylocalton-docker:dev
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -118,25 +118,25 @@ services:
       timeout: 5s
       retries: 10
 
-#  faucet:
-#    container_name: faucet
-#    image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
-#    ports:
-#      - 88:88
-#    volumes:
-#      - shared-data:/usr/share/data
-#    restart: unless-stopped
-#    depends_on:
-#      genesis:
-#        condition: service_healthy
-#    environment:
-#      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
-#      - RECAPTCHA_SECRET=   # google reCaptcha v2
-#      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
-#      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
-#      - SERVER_PORT=88             # default 80
-#    healthcheck:
-#      test: curl -sS http://127.0.0.1:88|| echo 1
+  faucet:
+    container_name: faucet
+    image: ghcr.io/neodix42/mylocalton-docker-faucet:dev
+    ports:
+      - 88:88
+    volumes:
+      - shared-data:/usr/share/data
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+      - RECAPTCHA_SECRET=   # google reCaptcha v2
+#      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
+#      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
+      - SERVER_PORT=88             # default 80
+    healthcheck:
+      test: curl -sS http://127.0.0.1:88|| echo 1
 
 volumes:
   shared-data:
