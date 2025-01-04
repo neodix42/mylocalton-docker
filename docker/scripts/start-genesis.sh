@@ -1,13 +1,14 @@
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
-PUBLIC_IP=$(hostname -I | tr -d " ")
+INTERNAL_IP=$(hostname -I | tr -d " ")
 PUBLIC_PORT=40001
 CONSOLE_PORT=40002
 DHT_PORT=40003
 LITE_PORT=40004
 EXPLORER_PORT=8080
 
-echo Current PUBLIC_IP $PUBLIC_IP
+echo Current INTERNAL_IP $INTERNAL_IP
+echo Custom EXTERNAL_IP $EXTERNAL_IP
 
 export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont/
 
@@ -94,18 +95,18 @@ else
   cd /var/ton-work/db
   rm -f my-ton-global.config.json
   sed -e "s#ROOT_HASH#$(cat /usr/share/ton/smartcont/zerostate.rhash | base64)#g" -e "s#FILE_HASH#$(cat /usr/share/ton/smartcont/zerostate.fhash | base64)#g" ton-private-testnet.config.json.template > my-ton-global.config.json
-  IP=$PUBLIC_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
+  IP=$INTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
   [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
 
 
-  echo Creating DHT server at $PUBLIC_IP:$DHT_PORT
+  echo Creating DHT server at $INTERNAL_IP:$DHT_PORT
 
   rm -rf dht-server
   mkdir dht-server
   cd dht-server
   cp ../my-ton-global.config.json .
   cp ../example.config.json .
-  dht-server -C example.config.json -D . -I "$PUBLIC_IP:$DHT_PORT"
+  dht-server -C example.config.json -D . -I "$INTERNAL_IP:$DHT_PORT"
 
   DHT_NODES=$(generate-random-id -m dht -k keyring/* -a "{
                \"@type\": \"adnl.addressList\",
@@ -125,10 +126,10 @@ else
   sed -i -e "s#NODES#$(printf "%q" $DHT_NODES)#g" my-ton-global.config.json
   cp my-ton-global.config.json ..
 
-  (dht-server -C my-ton-global.config.json -D . -I "$PUBLIC_IP:$DHT_PORT")&
+  (dht-server -C my-ton-global.config.json -D . -I "$INTERNAL_IP:$DHT_PORT")&
   PRELIMINARY_DHT_SERVER_RUN=$!
   sleep 1;
-  echo DHT server started at $PUBLIC_IP:$DHT_PORT
+  echo DHT server started at $INTERNAL_IP:$DHT_PORT
 
   echo Initializing genesis node...
 
@@ -138,7 +139,7 @@ else
 
   # Create config.json, stops automatically
   rm -f config.json
-  validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
+  validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT"
 
   # Generating server certificate
   read -r SERVER_ID1 SERVER_ID2 <<< $(generate-random-id -m keys -n server)
@@ -158,24 +159,24 @@ else
   mv config.json.new config.json
 
   # start the full node for some time to add validation keys
-  (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT")&
+  (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT")&
   PRELIMINARY_VALIDATOR_RUN=$!
   sleep 4;
 
   echo Adding keys to validator-engine-console...
 
-  read -r t1 t2 t3 NEW_NODE_KEY <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
-  read -r t1 t2 t3 NEW_VAL_ADNL <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
+  read -r t1 t2 t3 NEW_NODE_KEY <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
+  read -r t1 t2 t3 NEW_VAL_ADNL <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
 
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "addpermkey $VAL_ID_HEX 0 $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "addtempkey $VAL_ID_HEX $VAL_ID_HEX $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "addadnl $NEW_VAL_ADNL 0" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "addadnl $VAL_ID_HEX 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addpermkey $VAL_ID_HEX 0 $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addtempkey $VAL_ID_HEX $VAL_ID_HEX $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_VAL_ADNL 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $VAL_ID_HEX 0" 2>&1
 
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "addvalidatoraddr $VAL_ID_HEX $NEW_VAL_ADNL $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "addadnl $NEW_NODE_KEY 0" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$PUBLIC_IP:$CONSOLE_PORT" -rc "changefullnodeaddr $NEW_NODE_KEY" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a "$PUBLIC_IP:$CONSOLE_PORT" -rc "importf keyring/$VAL_ID_HEX" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addvalidatoraddr $VAL_ID_HEX $NEW_VAL_ADNL $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_NODE_KEY 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "changefullnodeaddr $NEW_NODE_KEY" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a "$INTERNAL_IP:$CONSOLE_PORT" -rc "importf keyring/$VAL_ID_HEX" 2>&1
   kill $PRELIMINARY_VALIDATOR_RUN;
 
   rm -rf /var/ton-work/log*
@@ -192,7 +193,7 @@ else
   sed -e "s~\"liteservers\"\ \:\ \[~$LITESERVERS~g" config.json > config.json.liteservers
   mv config.json.liteservers config.json
 
-  IP=$PUBLIC_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
+  IP=$INTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
   [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
   LITESERVERSCONFIG=$(printf "%q" "\"liteservers\":[{\"id\":{\"key\":\"E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY=\", \"@type\":\"pub.ed25519\"}, \"port\":$LITE_PORT, \"ip\":$IPNUM }]}")
   sed -i -e "\$s#\(.*\)\}#\1,$LITESERVERSCONFIG#" my-ton-global.config.json
@@ -200,6 +201,14 @@ else
 
   cp my-ton-global.config.json global.config.json
   rm my-ton-global.config.json control.new control.template ton-private-testnet.config.json.template
+
+  if [ "$EXTERNAL_IP" ]; then
+    IP=$EXTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
+    [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
+    jq --argjson newIp $IPNUM '.liteservers[0].ip = $newIp' global.config.json > external.global.config.json
+  fi
+
+  jq --argjson newIp 2130706433 '.liteservers[0].ip = $newIp' global.config.json > localhost.global.config.json
 
   echo Restart DHT server
   echo
@@ -209,10 +218,10 @@ fi
 
 cp global.config.json /usr/share/data/
 
-nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$PUBLIC_IP:$DHT_PORT"&
-echo DHT server started at $PUBLIC_IP:$DHT_PORT
+nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$INTERNAL_IP:$DHT_PORT"&
+echo DHT server started at $INTERNAL_IP:$DHT_PORT
 echo
-echo Lite server started at $PUBLIC_IP:$LITE_PORT
+echo Lite server started at $INTERNAL_IP:$LITE_PORT
 echo
 # start http server
 nohup python3 -m http.server&
@@ -224,19 +233,13 @@ echo
 echo Simple HTTP server runs on:
 echo
 echo http://127.0.0.1:8000/
-echo http://$PUBLIC_IP:8000/
-echo wget http://$PUBLIC_IP:8000/global.config.json
-echo wget http://$PUBLIC_IP:8000/client.pub
-echo wget http://$PUBLIC_IP:8000/client
-echo wget http://$PUBLIC_IP:8000/server
-echo wget http://$PUBLIC_IP:8000/server.pub
-echo wget http://$PUBLIC_IP:8000/liteserver.pub
-echo wget http://$PUBLIC_IP:8000/liteserver
+echo http://$INTERNAL_IP:8000/
+echo wget http://$INTERNAL_IP:8000/global.config.json
 echo
 echo blockchain-explorer available at:
 echo
 echo http://127.0.0.1:$EXPLORER_PORT/last
-echo http://$PUBLIC_IP:$EXPLORER_PORT/last
+echo http://$INTERNAL_IP:$EXPLORER_PORT/last
 echo
 
 if [ ! "$VERBOSITY" ]; then
@@ -245,7 +248,7 @@ else
   VERBOSITY=$VERBOSITY
 fi
 
-echo Started $NAME at $PUBLIC_IP:$PUBLIC_PORT
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
+echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT"
 
 

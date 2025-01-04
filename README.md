@@ -30,6 +30,7 @@ Edit `docker-compose.yaml` for relevant changes.
 
 Specify only for `genesis` container:
 
+* `EXTERNAL_IP` - used to generate  `external.global.config.json` that allows remote users to connect to lite-server via public IP. Default `empty`, i.e. no `external.global.config.json` will be generated;
 * `VALIDATION_PERIOD` - set validation period in seconds, default `1200 (20 min)`;
 * `MASTERCHAIN_ONLY` - set to `true` if you want to have only masterchain, i.e. without workchains, default `false`;
 * `HIDE_PRIVATE_KEYS` - set to `true` if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;
@@ -139,6 +140,10 @@ the state will be persisted, and the next time when you start the containers up 
     * queryId `0`
 * Predefined lite-server
   * `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last`
+* Faucet web server with reCaptcha V2 functionality; 
+  * uncomment section in `docker-compose.yaml` to enable;
+  * specify RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET reCaptcha parameters;
+  * hardcoded rate limit per session - 10 requests per minute per session. 
 * cross-platform (arm64/amd64)
 * tested on Ubuntu, Windows and MacOS
 

@@ -29,7 +29,7 @@
 
 #!/usr/bin/env bash
 
-PUBLIC_IP=$(hostname -I | tr -d " ")
+INTERNAL_IP=$(hostname -I | tr -d " ")
 
 if [ ! -f "/usr/share/ton/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "reap.sh: Not ready yet. Exit."
@@ -37,7 +37,7 @@ if [ ! -f "/usr/share/ton/validator.pk" ] || [ ! -f "/var/ton-work/db/global.con
   exit
 else
   WALLET_ADDR=-1:$(head -c 32 /usr/share/ton/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
-  echo "running reap.sh with wallet $WALLET_ADDR on $PUBLIC_IP"
+  echo "running reap.sh with wallet $WALLET_ADDR on $INTERNAL_IP"
 fi
 
 LITECLIENT="lite-client"

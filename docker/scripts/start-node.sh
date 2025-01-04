@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-PUBLIC_IP=$(hostname -I | tr -d " ")
-
 echo starting cron
 service cron start &
 

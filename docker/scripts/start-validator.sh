@@ -1,11 +1,11 @@
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
-PUBLIC_IP=$(hostname -I | tr -d " ")
+INTERNAL_IP=$(hostname -I | tr -d " ")
 export PUBLIC_PORT=40001
 export CONSOLE_PORT=40002
 LITE_PORT=40004
 
-echo "Current PUBLIC_IP $PUBLIC_IP"
+echo "Current INTERNAL_IP $INTERNAL_IP"
 
 
 if [ ! -f "/var/ton-work/db/global.config.json" ]; then
@@ -70,7 +70,7 @@ if [ ! -f "config.json" ]; then
   echo "config.json does not exist, start very first time"
 
   # very first start to generate config.json only, stops automatically
-  validator-engine -C /var/ton-work/db/global.config.json --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
+  validator-engine -C /var/ton-work/db/global.config.json --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT"
   sleep 2
 
   # Give access to validator-console
@@ -103,7 +103,7 @@ if [ ! -f "config.json" ]; then
 
 fi
 
-echo NODE IP           $PUBLIC_IP
+echo NODE IP           $INTERNAL_IP
 echo NODE_PORT         $PUBLIC_PORT
 echo VALIDATOR_CONSOLE $CONSOLE_PORT
 echo LITESERVER_PORT   $LITE_PORT
@@ -115,5 +115,5 @@ else
   VERBOSITY=$VERBOSITY
 fi
 
-echo Started $NAME at $PUBLIC_IP:$PUBLIC_PORT
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$PUBLIC_IP:$PUBLIC_PORT"
+echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT"

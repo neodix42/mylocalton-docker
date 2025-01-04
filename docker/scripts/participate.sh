@@ -27,9 +27,9 @@
 # (c) Mercuryo and Viacheslav Akhmetov - original authors
 # (c) @neodiX
 
-PUBLIC_IP=$(hostname -I | tr -d " ")
+INTERNAL_IP=$(hostname -I | tr -d " ")
 CONSOLE_PORT=40002
-NODEHOST="$PUBLIC_IP:$CONSOLE_PORT" # Full Node IP:HOST
+NODEHOST="$INTERNAL_IP:$CONSOLE_PORT" # Full Node IP:HOST
 
 if [ ! -f "/usr/share/ton/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "participate.sh: Not ready yet. Exit."

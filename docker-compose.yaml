@@ -13,6 +13,7 @@ services:
     environment:
       - GENESIS=true
       - NAME=genesis
+#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000
