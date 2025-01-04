@@ -1,5 +1,8 @@
 package org.ton.mylocaltondocker.controller;
 
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.Refill;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -15,9 +18,11 @@ import org.ton.mylocaltondocker.db.DB;
 import org.ton.mylocaltondocker.db.WalletEntity;
 import org.ton.mylocaltondocker.db.WalletPk;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static java.util.Objects.nonNull;
 
@@ -26,38 +31,60 @@ import static java.util.Objects.nonNull;
 public class MyRestController {
   String error;
 
+  private final ConcurrentHashMap<String, Bucket> sessionBuckets = new ConcurrentHashMap<>();
+
   @PostMapping("/requestTons")
   public Map<String, Object> executeJavaCode(
       @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
     System.out.println("running /requestTons");
 
-    String token = request.get("token");
+    String sessionId = httpServletRequest.getSession().getId();
+    sessionBuckets.computeIfAbsent(
+        sessionId,
+        id -> {
+          Refill refill = Refill.intervally(10, Duration.ofMinutes(1));
+          Bandwidth limit = Bandwidth.classic(10, refill);
+          return Bucket.builder().addLimit(limit).build();
+        });
 
-    String userAddress = request.get("userAddress1");
-    String remoteIp = httpServletRequest.getRemoteAddr();
+    Bucket bucket = sessionBuckets.get(sessionId);
 
-    Map<String, Object> response = new HashMap<>();
+    if (bucket.tryConsume(1)) {
 
-    if (validateCaptcha(token, remoteIp)) {
+      String token = request.get("token");
 
-      if (!Address.isValid(userAddress)) {
-        response.put("success", "false");
-        response.put("message", "Wrong wallet format.");
-        return response;
-      }
+      String userAddress = request.get("userAddress1");
+      String remoteIp = httpServletRequest.getRemoteAddr();
 
-      if (addRequest(remoteIp, userAddress)) {
-        response.put("success", "true");
-        response.put("message", "Request added and will be processed within 1 minute.");
-        return response;
+      Map<String, Object> response = new HashMap<>();
+
+      if (validateCaptcha(token, remoteIp)) {
+
+        if (!Address.isValid(userAddress)) {
+          response.put("success", "false");
+          response.put("message", "Wrong wallet format.");
+          return response;
+        }
+
+        if (addRequest(remoteIp, userAddress)) {
+          response.put("success", "true");
+          response.put("message", "Request added and will be processed within 1 minute.");
+          return response;
+        } else {
+          response.put("success", "false");
+          response.put("message", "Request already processed, wait for the next round.");
+          return response;
+        }
       } else {
-        response.put("success", "false");
-        response.put("message", "Request already processed, wait for the next round.");
+        response.put("success", false);
+        response.put("message", "captcha validation failed.");
         return response;
       }
     } else {
+      Map<String, Object> response = new HashMap<>();
+      log.info("rate limit, session {}", sessionId);
       response.put("success", false);
-      response.put("message", "captcha validation failed.");
+      response.put("message", "rate limit, 10 requests per minute");
       return response;
     }
   }
@@ -96,17 +123,42 @@ public class MyRestController {
   }
 
   @PostMapping("/getBalance")
-  public Map<String, Object> getBalance(@RequestBody Map<String, String> request) {
+  public Map<String, Object> getBalance(
+      @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
     log.info("running /getBalance");
-    String userAddress = request.get("userAddress2");
+
     try {
-      FullAccountState fullAccountState = Main.tonlib.getAccountState(Address.of(userAddress));
-      log.info("account state {}", fullAccountState);
 
       Map<String, Object> response = new HashMap<>();
-      response.put("success", true);
-      response.put("balance", Utils.formatNanoValue(fullAccountState.getBalance()));
-      return response;
+
+      String sessionId = httpServletRequest.getSession().getId();
+      sessionBuckets.computeIfAbsent(
+          sessionId,
+          id -> {
+            Refill refill = Refill.intervally(10, Duration.ofMinutes(1));
+            Bandwidth limit = Bandwidth.classic(10, refill);
+            return Bucket.builder().addLimit(limit).build();
+          });
+
+      Bucket bucket = sessionBuckets.get(sessionId);
+
+      if (bucket.tryConsume(1)) {
+        log.info("consumed, session {}", sessionId);
+        String userAddress = request.get("userAddress2");
+
+        FullAccountState fullAccountState = Main.tonlib.getAccountState(Address.of(userAddress));
+        log.info("account state {}", fullAccountState);
+
+        response.put("success", true);
+        response.put("message", Utils.formatNanoValue(fullAccountState.getBalance()));
+
+        return response;
+      } else {
+        log.info("rate limit, session {}", sessionId);
+        response.put("success", false);
+        response.put("message", "rate limit, 10 requests per minute");
+        return response;
+      }
     } catch (Error e) {
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
@@ -120,33 +172,54 @@ public class MyRestController {
       @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
     log.info("running /generateWallet");
 
-    String token = request.get("token");
+    String sessionId = httpServletRequest.getSession().getId();
+    sessionBuckets.computeIfAbsent(
+        sessionId,
+        id -> {
+          Refill refill = Refill.intervally(10, Duration.ofMinutes(1));
+          Bandwidth limit = Bandwidth.classic(10, refill);
+          return Bucket.builder().addLimit(limit).build();
+        });
 
-    String remoteIp = httpServletRequest.getRemoteAddr();
+    Bucket bucket = sessionBuckets.get(sessionId);
 
-    Map<String, Object> response = new HashMap<>();
+    if (bucket.tryConsume(1)) {
 
-    if (validateCaptcha(token, remoteIp)) {
-      try {
-        long walletId = Math.abs(Utils.getRandomInt());
-        WalletV3R2 walletV3R2 = WalletV3R2.builder().wc(0).walletId(walletId).build();
+      String token = request.get("token");
 
-        response.put("success", true);
-        response.put("prvKey", Utils.bytesToHex(walletV3R2.getKeyPair().getSecretKey()));
-        response.put("pubKey", Utils.bytesToHex(walletV3R2.getKeyPair().getPublicKey()));
-        response.put("walletId", walletId);
-        response.put("rawAddress", walletV3R2.getAddress().toRaw());
-        log.info("generated wallet {}", walletV3R2.getAddress().toRaw());
+      String remoteIp = httpServletRequest.getRemoteAddr();
 
-        return response;
-      } catch (Error e) {
+      Map<String, Object> response = new HashMap<>();
+
+      if (validateCaptcha(token, remoteIp)) {
+        try {
+          long walletId = Math.abs(Utils.getRandomInt());
+          WalletV3R2 walletV3R2 = WalletV3R2.builder().wc(0).walletId(walletId).build();
+
+          response.put("success", true);
+          response.put("prvKey", Utils.bytesToHex(walletV3R2.getKeyPair().getSecretKey()));
+          response.put("pubKey", Utils.bytesToHex(walletV3R2.getKeyPair().getPublicKey()));
+          response.put("walletId", walletId);
+          response.put("rawAddress", walletV3R2.getAddress().toRaw());
+          log.info("generated wallet {}", walletV3R2.getAddress().toRaw());
+
+          return response;
+        } catch (Error e) {
+          response.put("success", false);
+          response.put("message", "cannot generate wallet");
+          return response;
+        }
+      } else {
         response.put("success", false);
-        response.put("message", "cannot generate wallet");
+        response.put("message", "captcha validation failed.");
         return response;
       }
     } else {
+      Map<String, Object> response = new HashMap<>();
+
+      log.info("rate limit, session {}", sessionId);
       response.put("success", false);
-      response.put("message", "captcha validation failed.");
+      response.put("message", "rate limit, 10 requests per minute");
       return response;
     }
   }

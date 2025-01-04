@@ -43,11 +43,11 @@ document.getElementById("getBalanceBtn").addEventListener("click", function () {
     .then((response) => response.json())
     .then((data) => {
         if (data.success) {
-            messageElement.textContent = "Balance: " + data.balance;
+            messageElement.textContent = "Balance: " + data.message;
             messageElement.className = "message success";
         } else {
-            console.error(data.balance);
-            messageElement.textContent = "Can't get balance";
+            console.error(data.message);
+            messageElement.textContent = data.message;
             messageElement.className = "message error";
         }
     })

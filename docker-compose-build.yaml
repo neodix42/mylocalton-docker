@@ -150,8 +150,8 @@ services:
       genesis:
         condition: service_healthy
     environment:
-      - RECAPTCHA_SITE_KEY=6Ld7e6kqAAAAALdZkpFi_GkCFXgF-vXFmmbqCUyL # google reCaptcha v2
-      - RECAPTCHA_SECRET=6Ld7e6kqAAAAAFpymNx_j0khI7gG_iMiJxL185KL   # google reCaptcha v2
+      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+      - RECAPTCHA_SECRET=   # google reCaptcha v2
 #      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
 #      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
       - SERVER_PORT=88              # default 80
