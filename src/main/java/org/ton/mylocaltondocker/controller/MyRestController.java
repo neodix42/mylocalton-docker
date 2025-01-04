@@ -184,7 +184,6 @@ public class MyRestController {
     Bucket bucket = sessionBuckets.get(sessionId);
 
     if (bucket.tryConsume(1)) {
-
       String token = request.get("token");
 
       String remoteIp = httpServletRequest.getRemoteAddr();
@@ -197,7 +196,8 @@ public class MyRestController {
           WalletV3R2 walletV3R2 = WalletV3R2.builder().wc(0).walletId(walletId).build();
 
           response.put("success", true);
-          response.put("prvKey", Utils.bytesToHex(walletV3R2.getKeyPair().getSecretKey()));
+          response.put(
+              "prvKey", Utils.bytesToHex(walletV3R2.getKeyPair().getSecretKey()).substring(0, 64));
           response.put("pubKey", Utils.bytesToHex(walletV3R2.getKeyPair().getPublicKey()));
           response.put("walletId", walletId);
           response.put("rawAddress", walletV3R2.getAddress().toRaw());

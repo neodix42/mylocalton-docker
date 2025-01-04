@@ -74,7 +74,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$10000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -94,7 +94,7 @@ Masterchain over
    false 1 i,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$10000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
