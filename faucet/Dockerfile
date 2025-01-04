@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ghcr.io/ton-blockchain/ton:latest
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update && apt install --no-install-recommends -y openjdk-19-jdk-headless
 
