@@ -98,31 +98,36 @@ input[type="text"]:focus {
     box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
 }
 
-/* Styling for buttons */
 button {
-    background-color: #007bff;
+    background: linear-gradient(135deg, #0e84b8, #007bff);
     color: #fff;
-    padding: 10px 15px;
+    padding: 12px 20px;
     border: none;
-    border-radius: 6px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 1.1rem;
     cursor: pointer;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease;
-    width: 100%; /* Make buttons span the full width of the form */
-    z-index: 1;
-    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    width: 100%;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    font-weight: bold;
 }
 
-/* Button hover effect */
 button:hover {
-    background-color: #0056b3;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* Button focus effect */
 button:focus {
     outline: none;
-    box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+    box-shadow: 0 0 6px rgba(14, 132, 184, 0.8);
+}
+
+button:disabled {
+    background: linear-gradient(135deg, #d3d3d3, #b0b0b0);
+    color: #808080;
+    cursor: not-allowed;
+    box-shadow: none;
 }
 
 
