@@ -31,13 +31,13 @@
 
 INTERNAL_IP=$(hostname -I | tr -d " ")
 
-if [ ! -f "/usr/share/ton/validator.pk" ] || [ ! -f "/var/ton-work/db/global.config.json" ]; then
+if [ -f "/usr/share/ton/validator.pk" ] && [ -f "/var/ton-work/db/global.config.json" ]; then
+  WALLET_ADDR=-1:$(head -c 32 /usr/share/data/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
+  echo "running reap.sh with wallet $WALLET_ADDR on $INTERNAL_IP"
+else
   echo "reap.sh: Not ready yet. Exit."
   echo "------------------------------------------------------------------"
   exit
-else
-  WALLET_ADDR=-1:$(head -c 32 /usr/share/ton/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
-  echo "running reap.sh with wallet $WALLET_ADDR on $INTERNAL_IP"
 fi
 
 LITECLIENT="lite-client"

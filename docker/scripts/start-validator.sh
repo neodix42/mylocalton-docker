@@ -22,43 +22,22 @@ fi
 cd /usr/share/ton
 
 if [ ! -f "validator.pk" ]; then
-  # HIDE_PRIVATE_KEYS == false, private keys are not copied by genesis to docker shared volume /usr/share/data/
-  if [ ! -f "/usr/share/data/validator.pk" ]; then
-    echo "downloading validator.pk from genesis to $NAME..."
-    if [ "$NAME" = "validator-1" ]; then
-      wget http://$GENESIS_IP:8000/validator-1.pk -O validator.pk
-      wget http://$GENESIS_IP:8000/validator-1.addr -O validator.addr
-    elif [ "$NAME" = "validator-2" ]; then
-      wget http://$GENESIS_IP:8000/validator-2.pk -O validator.pk
-      wget http://$GENESIS_IP:8000/validator-2.addr -O validator.addr
-    elif [ "$NAME" = "validator-3" ]; then
-      wget http://$GENESIS_IP:8000/validator-3.pk -O validator.pk
-      wget http://$GENESIS_IP:8000/validator-3.addr -O validator.addr
-    elif [ "$NAME" = "validator-4" ]; then
-      wget http://$GENESIS_IP:8000/validator-4.pk -O validator.pk
-      wget http://$GENESIS_IP:8000/validator-4.addr -O validator.addr
-    elif [ "$NAME" = "validator-5" ]; then
-      wget http://$GENESIS_IP:8000/validator-5.pk -O validator.pk
-      wget http://$GENESIS_IP:8000/validator-5.addr -O validator.addr
-    fi
-  else
-    echo "copying validator.pk from genesis /usr/share/data to $NAME..."
-    if [ "$NAME" = "validator-1" ]; then
-      cp /usr/share/data/validator-1.pk validator.pk
-      cp /usr/share/data/validator-1.addr validator.addr
-    elif [ "$NAME" = "validator-2" ]; then
-      cp /usr/share/data/validator-2.pk validator.pk
-      cp /usr/share/data/validator-2.addr validator.addr
-    elif [ "$NAME" = "validator-3" ]; then
-      cp /usr/share/data/validator-3.pk validator.pk
-      cp /usr/share/data/validator-3.addr validator.addr
-    elif [ "$NAME" = "validator-4" ]; then
-      cp /usr/share/data/validator-4.pk validator.pk
-      cp /usr/share/data/validator-4.addr validator.addr
-    elif [ "$NAME" = "validator-5" ]; then
-      cp /usr/share/data/validator-5.pk validator.pk
-      cp /usr/share/data/validator-5.addr validator.addr
-    fi
+  echo "copying validator.pk from genesis /usr/share/data to $NAME..."
+  if [ "$NAME" = "validator-1" ]; then
+    cp /usr/share/data/validator-1.pk validator.pk
+    cp /usr/share/data/validator-1.addr validator.addr
+  elif [ "$NAME" = "validator-2" ]; then
+    cp /usr/share/data/validator-2.pk validator.pk
+    cp /usr/share/data/validator-2.addr validator.addr
+  elif [ "$NAME" = "validator-3" ]; then
+    cp /usr/share/data/validator-3.pk validator.pk
+    cp /usr/share/data/validator-3.addr validator.addr
+  elif [ "$NAME" = "validator-4" ]; then
+    cp /usr/share/data/validator-4.pk validator.pk
+    cp /usr/share/data/validator-4.addr validator.addr
+  elif [ "$NAME" = "validator-5" ]; then
+    cp /usr/share/data/validator-5.pk validator.pk
+    cp /usr/share/data/validator-5.addr validator.addr
   fi
 else
   echo "validator.pk already received/copied."

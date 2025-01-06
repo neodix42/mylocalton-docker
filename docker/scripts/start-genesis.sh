@@ -76,21 +76,29 @@ else
       faucet-highload.pk faucet-highload.addr \
       faucet.pk faucet.addr \
       /var/ton-work/db/
-  elif [ "$HIDE_PRIVATE_KEYS" == "true" ]; then
-    echo "Share private keys via docker shared volume"
-    cp main-wallet.pk main-wallet.addr \
-      config-master.pk config-master.addr \
-      validator-1.pk validator-1.addr \
-      validator-2.pk validator-2.addr \
-      validator-3.pk validator-3.addr \
-      validator-4.pk validator-4.addr \
-      validator-5.pk validator-5.addr \
-      validator.pk validator.addr \
-      faucet-highload.pk faucet-highload.addr \
-      faucet.pk faucet.addr \
-      /usr/share/data
-    chmod 744 /usr/share/data/*
   fi
+
+  echo "Share private keys via docker shared volume"
+  cp main-wallet.pk main-wallet.addr \
+    config-master.pk config-master.addr \
+    validator-1.pk validator-1.addr \
+    validator-2.pk validator-2.addr \
+    validator-3.pk validator-3.addr \
+    validator-4.pk validator-4.addr \
+    validator-5.pk validator-5.addr \
+    validator.pk validator.addr \
+    faucet-highload.pk faucet-highload.addr \
+    faucet.pk faucet.addr \
+    /usr/share/data
+  chmod 744 /usr/share/data/*
+
+  echo "Make available for reap and participate"
+  cp validator.pk validator.addr \
+    faucet-highload.pk faucet-highload.addr \
+    faucet.pk faucet.addr \
+    /usr/share/ton
+  chmod 744 /usr/share/ton/*
+
 
   cd /var/ton-work/db
   rm -f my-ton-global.config.json
