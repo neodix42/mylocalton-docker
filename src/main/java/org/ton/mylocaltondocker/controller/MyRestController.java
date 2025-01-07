@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static java.util.Objects.nonNull;
@@ -162,7 +163,7 @@ public class MyRestController {
     } catch (Error e) {
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
-      response.put("balance", e.getMessage());
+      response.put("message", "Something went wrong. Maybe address does not exist?");
       return response;
     }
   }
@@ -192,8 +193,15 @@ public class MyRestController {
 
       if (validateCaptcha(token, remoteIp)) {
         try {
+          String MASTERCHAIN_ONLY = System.getenv("MASTERCHAIN_ONLY");
+          log.info("MASTERCHAIN_ONLY {}", MASTERCHAIN_ONLY); // if true create wallets only in masterchain
+
           long walletId = Math.abs(Utils.getRandomInt());
-          WalletV3R2 walletV3R2 = WalletV3R2.builder().wc(0).walletId(walletId).build();
+          WalletV3R2 walletV3R2 =
+              WalletV3R2.builder()
+                  .wc((Objects.equals(MASTERCHAIN_ONLY, "true")) ? -1 : 0)
+                  .walletId(walletId)
+                  .build();
 
           response.put("success", true);
           response.put(

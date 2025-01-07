@@ -37,7 +37,7 @@ else
   echo HIDE_PRIVATE_KEYS=$HIDE_PRIVATE_KEYS
 
   if [ "$HIDE_PRIVATE_KEYS" == "true" ]; then
-    # regenerate private keys
+    echo "regenerate private keys"
     rm validator-1.pk validator-2.pk validator-3.pk validator-4.pk validator-5.pk validator.pk faucet-highload.pk faucet.pk
   fi
 
@@ -93,10 +93,7 @@ else
   chmod 744 /usr/share/data/*
 
   echo "Make available for reap and participate"
-  cp validator.pk validator.addr \
-    faucet-highload.pk faucet-highload.addr \
-    faucet.pk faucet.addr \
-    /usr/share/ton
+  cp validator.pk validator.addr /usr/share/ton
   chmod 744 /usr/share/ton/*
 
 

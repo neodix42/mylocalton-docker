@@ -2,6 +2,7 @@ package org.ton.mylocaltondocker.controller;
 
 import com.iwebpp.crypto.TweetNaclFast;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ import org.ton.mylocaltondocker.db.DB;
 import org.ton.mylocaltondocker.db.WalletEntity;
 import org.ton.mylocaltondocker.db.WalletPk;
 
+import java.io.File;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -31,7 +33,8 @@ import static java.util.Objects.nonNull;
 @Slf4j
 public class StartUpTask {
 
-  @EventListener(ApplicationReadyEvent.class)
+    private static byte[] prvKey;
+    @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() throws InterruptedException {
 
     System.out.println("Initializing tonlib");
@@ -51,38 +54,45 @@ public class StartUpTask {
         "FAUCET_SINGLE_GIVEAWAY {}",
         Integer.parseInt(System.getenv("FAUCET_SINGLE_GIVEAWAY").strip()));
 
-    Main.tonlib =
-        Tonlib.builder()
-            .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
-            .pathToGlobalConfig("/usr/share/data/global.config.json")
-            //            .pathToTonlibSharedLib("g:/libs/master-tonlibjson.dll")
-            //            .pathToGlobalConfig("g:/libs/global.config-mlt.json")
-            .ignoreCache(false)
-            .receiveRetryTimes(10)
-            .build();
+    try {
 
-    byte[] prvKey =
-        Utils.hexToSignedBytes("ee26cd8f2709404b63bc172148ec6179bfc7049b1045a22c3ea5446c5d425347");
-    TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
+      Main.tonlib =
+          Tonlib.builder()
+              .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
+              .pathToGlobalConfig("/usr/share/data/global.config.json")
+              //            .pathToTonlibSharedLib("g:/libs/master-tonlibjson.dll")
+              //            .pathToGlobalConfig("g:/libs/global.config-mlt.json")
+              .ignoreCache(false)
+              .receiveRetryTimes(10)
+              .build();
 
-    HighloadWallet highloadFaucet =
-        HighloadWallet.builder()
-            .tonlib(Main.tonlib)
-            .keyPair(keyPair)
-            .wc(-1)
-            .walletId(42L)
-            .queryId(BigInteger.ZERO)
-            .build();
+      log.info(Main.tonlib.getLast().toString());
 
-    log.info(
-        "faucet address {}, balance {}",
-        highloadFaucet.getAddress().toRaw(),
-        Utils.formatNanoValue(highloadFaucet.getBalance()));
+      prvKey = FileUtils.readFileToByteArray(new File("/usr/share/data/faucet-highload.pk"));
+      log.info(Utils.bytesToHex(prvKey));
+      TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
-    log.info(
-        "faucet pending queue size {}, total queue size {}",
-        DB.getWalletsToSend().size(),
-        DB.getTotalWallets());
+      HighloadWallet highloadFaucet =
+          HighloadWallet.builder()
+              .tonlib(Main.tonlib)
+              .keyPair(keyPair)
+              .wc(-1)
+              .walletId(42L)
+              .queryId(BigInteger.ZERO)
+              .build();
+
+      log.info(
+          "highload faucet address {}, balance {}",
+          highloadFaucet.getAddress().toRaw(),
+          Utils.formatNanoValue(highloadFaucet.getBalance()));
+
+      log.info(
+          "highload faucet pending queue size {}, total queue size {}",
+          DB.getWalletsToSend().size(),
+          DB.getTotalWallets());
+    } catch (Exception e) {
+      log.error("cant read /usr/share/data/faucet-highload.pk or " + e.getMessage());
+    }
 
     runFaucetSendScheduler();
     runFaucetCleanQueueScheduler();
@@ -118,9 +128,6 @@ public class StartUpTask {
 
               log.info("generated total destinations {}", destinations.size());
 
-              byte[] prvKey =
-                  Utils.hexToSignedBytes(
-                      "ee26cd8f2709404b63bc172148ec6179bfc7049b1045a22c3ea5446c5d425347");
               TweetNaclFast.Signature.KeyPair keyPair =
                   Utils.generateSignatureKeyPairFromSeed(prvKey);
 

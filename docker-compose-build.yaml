@@ -153,6 +153,7 @@ services:
     environment:
       - RECAPTCHA_SITE_KEY= # google reCaptcha v2
       - RECAPTCHA_SECRET=   # google reCaptcha v2
+#      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
 #      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
 #      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
       - SERVER_PORT=88              # default 80
