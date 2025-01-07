@@ -2,12 +2,12 @@ services:
   genesis:
     container_name: genesis
     image: ghcr.io/neodix42/mylocalton-docker:dev
-    restart: always
+    restart: unless-stopped
     ports:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
       - 40004:40004 # lite-server
-      - 80:80       # web-faucet
+      - 40003:40003 # lite-server
     volumes:
       - shared-data:/usr/share/data
     environment:
@@ -119,25 +119,25 @@ services:
       timeout: 5s
       retries: 10
 
-  faucet:
-    container_name: faucet
-    image: ghcr.io/neodix42/mylocalton-docker-faucet:dev
-    ports:
-      - 88:88
-    volumes:
-      - shared-data:/usr/share/data
-    restart: unless-stopped
-    depends_on:
-      genesis:
-        condition: service_healthy
-    environment:
-      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
-      - RECAPTCHA_SECRET=   # google reCaptcha v2
-#      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
-#      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
-      - SERVER_PORT=88             # default 80
-    healthcheck:
-      test: curl -sS http://127.0.0.1:88|| echo 1
+#  faucet:
+#    container_name: faucet
+#    image: ghcr.io/neodix42/mylocalton-docker-faucet:dev
+#    ports:
+#      - 88:88
+#    volumes:
+#      - shared-data:/usr/share/data
+#    restart: unless-stopped
+#    depends_on:
+#      genesis:
+#        condition: service_healthy
+#    environment:
+#      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+#      - RECAPTCHA_SECRET=   # google reCaptcha v2
+##      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
+##      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
+#      - SERVER_PORT=88             # default 80
+#    healthcheck:
+#      test: curl -sS http://127.0.0.1:88|| echo 1
 
 volumes:
   shared-data:

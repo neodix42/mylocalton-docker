@@ -9,16 +9,17 @@ services:
     ports:
       - 8000:8000   # simple-http server
       - 8080:8080   # blockchain explorer
+      - 40003:40003 # lite-server
       - 40004:40004 # lite-server
     volumes:
       - shared-data:/usr/share/data
     environment:
       - GENESIS=true
       - NAME=genesis
-#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
+      - EXTERNAL_IP=54.54.54.54 # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
-#      - MASTERCHAIN_ONLY=true   # default false
-#      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000
+      - MASTERCHAIN_ONLY=true   # default false
+      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000
 #      - VERBOSITY=4
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
@@ -136,29 +137,29 @@ services:
       timeout: 5s
       retries: 10
 
-  faucet:
-    container_name: faucet
-    image: faucet
-    build:
-      context: .
-      dockerfile: ./faucet/Dockerfile
-    ports:
-      - 88:88
-    volumes:
-      - shared-data:/usr/share/data
-    restart: unless-stopped
-    depends_on:
-      genesis:
-        condition: service_healthy
-    environment:
-      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
-      - RECAPTCHA_SECRET=   # google reCaptcha v2
+#  faucet:
+#    container_name: faucet
+#    image: faucet
+#    build:
+#      context: .
+#      dockerfile: ./faucet/Dockerfile
+#    ports:
+#      - 88:88
+#    volumes:
+#      - shared-data:/usr/share/data
+#    restart: unless-stopped
+#    depends_on:
+#      genesis:
+#        condition: service_healthy
+#    environment:
+#      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+#      - RECAPTCHA_SECRET=   # google reCaptcha v2
 #      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
-#      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
-#      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
-      - SERVER_PORT=88              # default 80
-    healthcheck:
-      test: curl -sS http://127.0.0.1:88|| echo 1
+##      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
+##      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
+#      - SERVER_PORT=88              # default 80
+#    healthcheck:
+#      test: curl -sS http://127.0.0.1:88|| echo 1
 
 volumes:
   shared-data:

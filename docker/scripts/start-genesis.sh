@@ -205,15 +205,18 @@ else
   python3 -c 'import json; f=open("my-ton-global.config.json", "r"); config=json.loads(f.read()); f.close(); f=open("my-ton-global.config.json", "w");f.write(json.dumps(config, indent=2)); f.close()';
 
   cp my-ton-global.config.json global.config.json
-  rm my-ton-global.config.json control.new control.template ton-private-testnet.config.json.template
+  rm my-ton-global.config.json control.new control.template ton-private-testnet.config.json.template example.config.json
 
+  OLDNUM=$IPNUM
   if [ "$EXTERNAL_IP" ]; then
     IP=$EXTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
     [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
-    jq --argjson newIp $IPNUM '.liteservers[0].ip = $newIp' global.config.json > external.global.config.json
+    cp global.config.json external.global.config.json
+    sed -i "s/$OLDNUM/$IPNUM/g" external.global.config.json
   fi
 
-  jq --argjson newIp 2130706433 '.liteservers[0].ip = $newIp' global.config.json > localhost.global.config.json
+  cp global.config.json localhost.global.config.json
+  sed -i "s/$OLDNUM/2130706433/g" localhost.global.config.json
 
   echo Restart DHT server
   echo
