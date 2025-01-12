@@ -4,15 +4,17 @@ services:
     image: ghcr.io/neodix42/mylocalton-docker:dev
     restart: unless-stopped
     ports:
-      - 8000:8000   # simple-http server
-      - 8080:8080   # blockchain explorer
+      - 8000:8000   # simple file http server
       - 40004:40004 # lite-server
-      - 40003:40003 # lite-server
+      - 40003:40003 # dht-server
+      - 40002:40002 # validator-console
     volumes:
       - shared-data:/usr/share/data
     environment:
       - GENESIS=true
       - NAME=genesis
+#      - ENABLE_FILE_HTTP_SERVER=false #default true
+#      - BLOCK_GENERATION_TIME=2 #default 2000 (2 seconds)
 #      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
@@ -26,6 +28,25 @@ services:
     networks:
       default:
         ipv4_address: 172.28.1.1
+
+  blockchain-explorer:
+    container_name: blockchain-explorer
+    image: ghcr.io/neodix42/mylocalton-docker-explorer:dev
+    restart: always
+    environment:
+      - SERVER_PORT=8080
+    ports:
+      - 8080:8080
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8080/last || echo 1
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - shared-data:/usr/share/data
+    depends_on:
+      genesis:
+        condition: service_healthy
 
 #  validator-1:
 #    container_name: validator-1
@@ -101,7 +122,7 @@ services:
       - TON_API_CACHE_REDIS_TIMEOUT
       - TON_API_LOGS_JSONIFY=0
       - TON_API_LOGS_LEVEL=ERROR
-      - TON_API_TONLIB_LITESERVER_CONFIG=http://172.28.1.1:8000/global.config.json
+      - TON_API_TONLIB_LITESERVER_CONFIG=/usr/share/data/global.config.json
       - TON_API_TONLIB_KEYSTORE
       - TON_API_TONLIB_PARALLEL_REQUESTS_PER_LITESERVER
       - TON_API_TONLIB_CDLL_PATH=/usr/share/data/libtonlibjson.so

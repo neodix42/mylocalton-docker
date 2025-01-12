@@ -59,3 +59,13 @@ jobs:
           context: ./
           file: ./faucet/Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:latest
+
+      - name: Build and push blockchain-explorer
+        id: docker_build_2
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          file: ./explorer/Dockerfile
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:latest

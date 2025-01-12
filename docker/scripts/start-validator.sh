@@ -11,8 +11,8 @@ echo "Current INTERNAL_IP $INTERNAL_IP"
 if [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "waiting 90 seconds for genesis to be ready very first time..."
   sleep 90
-  echo "Downloading global.config.json from genesis..."
-  wget http://$GENESIS_IP:8000/global.config.json -P /var/ton-work/db
+  echo "Getting global.config.json from genesis via shared volume..."
+  cp /usr/share/data/global.config.json /var/ton-work/db
 else
 #  echo "waiting 20 seconds for genesis to be ready..."
 #  sleep 20

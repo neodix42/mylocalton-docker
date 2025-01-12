@@ -74,7 +74,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$10000000   // balance
+GR$1000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -94,7 +94,7 @@ Masterchain over
    false 1 i,
 b> // data
 empty_cell // no libraries
-GR$10000000   // balance
+GR$1000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -113,7 +113,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$100000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -131,7 +131,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$100000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -149,7 +149,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$100000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -167,7 +167,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$100000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -185,7 +185,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$100000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -203,7 +203,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$1000000   // balance
+GR$100000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -243,7 +243,7 @@ Masterchain swap
 // max-validators max-main-validators min-validators
 1000 100 1 config.validator_num!
 // min-stake max-stake min-total-stake max-factor
-GR$10000 GR$1000000 GR$10000 sg~10 config.validator_stake_limits!
+GR$1000000 GR$1000000 GR$10000 sg~10 config.validator_stake_limits!
 // elected-for elect-start-before elect-end-before stakes-frozen-for
 // 400000 200000 4000 400000 config.election_params!
 VALIDATION_PERIOD 900 300 180 config.election_params!  // 20min validation, 10min elections, 3min frozen
@@ -266,7 +266,7 @@ config.special!
 // mc-cc-lifetime sh-cc-lifetime sh-val-lifetime sh-val-num mc-shuffle
 250 250 5500 7 true config.catchain_params!
 // round-candidates next-cand-delay-ms consensus-timeout-ms fast-attempts attempt-duration cc-max-deps max-block-size max-collated-size new-cc-ids
-3 10000 64000 3 8 4 2 *Mi 2 *Mi true config.consensus_params!
+3 BLOCK_GENERATION_TIME 64000 3 8 4 2 *Mi 2 *Mi true config.consensus_params!
 
 128 *Ki 512 *Ki 1 *Mi triple  // [ underload soft hard ] : block bytes limit
 100000 500000 1000000 triple  // gas limits

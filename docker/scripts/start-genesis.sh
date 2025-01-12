@@ -5,7 +5,6 @@ PUBLIC_PORT=40001
 CONSOLE_PORT=40002
 DHT_PORT=40003
 LITE_PORT=40004
-EXPLORER_PORT=8080
 
 echo Current INTERNAL_IP $INTERNAL_IP
 echo Custom EXTERNAL_IP $EXTERNAL_IP
@@ -54,6 +53,14 @@ else
     echo "Without workchains"
     sed -i "s/MASTERCHAIN_ONLY//g" gen-zerostate.fif
   fi
+
+  BLOCK_GENERATION_TIME=${BLOCK_GENERATION_TIME:-"2"}
+  echo BLOCK_GENERATION_TIME=$BLOCK_GENERATION_TIME
+
+  sed -i "s/BLOCK_GENERATION_TIME/$(($BLOCK_GENERATION_TIME*1000))/g" gen-zerostate.fif
+
+  cat gen-zerostate.fif
+
   create-state gen-zerostate.fif
   test $? -eq 0 || { echo "Can't generate zero-state"; exit 1; }
 
@@ -225,30 +232,28 @@ else
 fi
 
 cp global.config.json /usr/share/data/
+cp external.global.config.json /usr/share/data/
+cp localhost.global.config.json /usr/share/data/
 
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$INTERNAL_IP:$DHT_PORT"&
 echo DHT server started at $INTERNAL_IP:$DHT_PORT
 echo
 echo Lite server started at $INTERNAL_IP:$LITE_PORT
 echo
-# start http server
-nohup python3 -m http.server&
 
-# start blockchain-explorer
-nohup blockchain-explorer -C /var/ton-work/db/global.config.json -H $EXPLORER_PORT&
+ENABLE_FILE_HTTP_SERVER=${ENABLE_FILE_HTTP_SERVER:-"true"}
+echo ENABLE_FILE_HTTP_SERVER=$ENABLE_FILE_HTTP_SERVER
 
-echo
-echo Simple HTTP server runs on:
-echo
-echo http://127.0.0.1:8000/
-echo http://$INTERNAL_IP:8000/
-echo wget http://$INTERNAL_IP:8000/global.config.json
-echo
-echo blockchain-explorer available at:
-echo
-echo http://127.0.0.1:$EXPLORER_PORT/last
-echo http://$INTERNAL_IP:$EXPLORER_PORT/last
-echo
+if [ "$ENABLE_FILE_HTTP_SERVER" == "true" ]; then
+  # start file http server
+  nohup python3 -m http.server&
+  echo Simple HTTP server runs on:
+  echo
+  echo http://127.0.0.1:8000/
+  echo http://$INTERNAL_IP:8000/
+  echo
+  echo wget http://$INTERNAL_IP:8000/global.config.json
+fi
 
 if [ ! "$VERBOSITY" ]; then
   VERBOSITY=1
