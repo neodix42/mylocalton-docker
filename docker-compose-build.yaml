@@ -38,7 +38,7 @@ services:
     build:
       context: .
       dockerfile: ./explorer/Dockerfile
-    restart: always
+    restart: unless-stopped
     environment:
       - SERVER_PORT=8080
     ports:
@@ -179,8 +179,8 @@ services:
 #      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
 #      - RECAPTCHA_SECRET=   # google reCaptcha v2
 #      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
-##      - FAUCET_REQUEST_EXPIRATION_PERIOD= #  default 86400 seconds (24h)
-##      - FAUCET_SINGLE_GIVEAWAY=    # default 10 toncoins
+##      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
+##      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
 #      - SERVER_PORT=88              # default 80
 #    healthcheck:
 #      test: curl -sS http://127.0.0.1:88|| echo 1

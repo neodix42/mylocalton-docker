@@ -56,8 +56,8 @@ else
 
   BLOCK_GENERATION_TIME=${BLOCK_GENERATION_TIME:-"2"}
   echo BLOCK_GENERATION_TIME=$BLOCK_GENERATION_TIME
-
-  sed -i "s/BLOCK_GENERATION_TIME/$(($BLOCK_GENERATION_TIME*1000))/g" gen-zerostate.fif
+  TMP_VAR=$(echo "($BLOCK_GENERATION_TIME*1000)/1" | bc)
+  sed -i "s/BLOCK_GENERATION_TIME/$TMP_VAR/g" gen-zerostate.fif
 
   cat gen-zerostate.fif
 

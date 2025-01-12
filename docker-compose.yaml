@@ -32,7 +32,7 @@ services:
   blockchain-explorer:
     container_name: blockchain-explorer
     image: ghcr.io/neodix42/mylocalton-docker-explorer:dev
-    restart: always
+    restart: unless-stopped
     environment:
       - SERVER_PORT=8080
     ports:
@@ -154,6 +154,7 @@ services:
 #    environment:
 #      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
 #      - RECAPTCHA_SECRET=   # google reCaptcha v2
+##      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
 ##      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
 ##      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
 #      - SERVER_PORT=88             # default 80

@@ -113,7 +113,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$100000000   // balance
+GR$500000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -131,7 +131,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$100000000   // balance
+GR$500000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -149,7 +149,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$100000000   // balance
+GR$500000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -167,7 +167,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$100000000   // balance
+GR$500000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -185,7 +185,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$100000000   // balance
+GR$500000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
@@ -203,7 +203,7 @@ Masterchain over
    B,
 b> // data
 empty_cell // no libraries
-GR$100000000   // balance
+GR$500000000   // balance
 0 // split_depth
 0 // ticktock
 2 // mode: create + setaddr
