@@ -9,6 +9,10 @@ LITE_PORT=40004
 echo Current INTERNAL_IP $INTERNAL_IP
 echo Custom EXTERNAL_IP $EXTERNAL_IP
 
+if [ "$EXTERNAL_IP" ]; then
+  INTERNAL_IP=$EXTERNAL_IP
+fi
+
 export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont/
 
 if ( [ -d "state" ] && [ "$(ls -A ./state)" ]); then
