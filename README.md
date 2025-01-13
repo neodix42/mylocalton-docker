@@ -31,7 +31,7 @@ Edit `docker-compose.yaml` for relevant changes.
 Specify only for `genesis` container:
 
 * `EXTERNAL_IP` - used to generate  `external.global.config.json` that allows remote users to connect to lite-server via public IP. Default `empty`, i.e. no `external.global.config.json` will be generated;
-* `BLOCK_GENERATION_TIME` - used to set blocks generation rate per second. Default value 2 (seconds), that means 1 block in 2 seconds. Can also be set to less than a seconds, e.g. 0.5;
+* `NEXT_BLOCK_GENERATION_DELAY` - used to set blocks generation rate per second. Default value 2 (seconds), that means 1 block in 2 seconds. Can also be set to less than a seconds, e.g. 0.5;
 * `VALIDATION_PERIOD` - set validation period in seconds, default `1200 (20 min)`;
 * `MASTERCHAIN_ONLY` - set to `true` if you want to have only masterchain, i.e. without workchains, default `false`;
 * `HIDE_PRIVATE_KEYS` - set to `true` if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;

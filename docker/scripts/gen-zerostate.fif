@@ -266,7 +266,7 @@ config.special!
 // mc-cc-lifetime sh-cc-lifetime sh-val-lifetime sh-val-num mc-shuffle
 250 250 5500 7 true config.catchain_params!
 // round-candidates next-cand-delay-ms consensus-timeout-ms fast-attempts attempt-duration cc-max-deps max-block-size max-collated-size new-cc-ids
-3 BLOCK_GENERATION_TIME 64000 3 8 4 2 *Mi 2 *Mi true config.consensus_params!
+3 NEXT_BLOCK_GENERATION_DELAY 64000 3 8 4 2 *Mi 2 *Mi true config.consensus_params!
 
 128 *Ki 512 *Ki 1 *Mi triple  // [ underload soft hard ] : block bytes limit
 100000 500000 1000000 triple  // gas limits
