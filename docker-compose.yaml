@@ -1,7 +1,7 @@
 services:
   genesis:
     container_name: genesis
-    image: ghcr.io/neodix42/mylocalton-docker:dev
+    image: ghcr.io/neodix42/mylocalton-docker:latest
     restart: unless-stopped
     ports:
       - 8000:8000         # simple file http server
@@ -32,7 +32,7 @@ services:
 
   blockchain-explorer:
     container_name: blockchain-explorer
-    image: ghcr.io/neodix42/mylocalton-docker-explorer:dev
+    image: ghcr.io/neodix42/mylocalton-docker-explorer:latest
     restart: unless-stopped
     environment:
       - SERVER_PORT=8080
@@ -51,7 +51,7 @@ services:
 
 #  validator-1:
 #    container_name: validator-1
-#    image: ghcr.io/neodix42/mylocalton-docker:dev
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -63,7 +63,7 @@ services:
 #
 #  validator-2:
 #    container_name: validator-2
-#    image: ghcr.io/neodix42/mylocalton-docker:dev
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -75,7 +75,7 @@ services:
 #
 #  validator-3:
 #    container_name: validator-3
-#    image: ghcr.io/neodix42/mylocalton-docker:dev
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -87,7 +87,7 @@ services:
 #
 #  validator-4:
 #    container_name: validator-4
-#    image: ghcr.io/neodix42/mylocalton-docker:dev
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -99,7 +99,7 @@ services:
 #
 #  validator-5:
 #    container_name: validator-5
-#    image: ghcr.io/neodix42/mylocalton-docker:dev
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -143,7 +143,7 @@ services:
 
 #  faucet:
 #    container_name: faucet
-#    image: ghcr.io/neodix42/mylocalton-docker-faucet:dev
+#    image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
 #    ports:
 #      - 88:88
 #    volumes:
