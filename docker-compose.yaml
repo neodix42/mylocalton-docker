@@ -4,10 +4,11 @@ services:
     image: ghcr.io/neodix42/mylocalton-docker:dev
     restart: unless-stopped
     ports:
-      - 8000:8000   # simple file http server
-      - 40004:40004 # lite-server
-      - 40003:40003 # dht-server
-      - 40002:40002 # validator-console
+      - 8000:8000         # simple file http server
+      - 40004:40004       # lite-server
+      - "40003:40003/udp" # dht-server
+      - 40002:40002       # validator-console
+      - "40001:40001/udp" # validator public port
     volumes:
       - shared-data:/usr/share/data
     environment:

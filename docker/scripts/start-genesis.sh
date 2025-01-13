@@ -1,10 +1,10 @@
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
 INTERNAL_IP=$(hostname -I | tr -d " ")
-PUBLIC_PORT=40001
-CONSOLE_PORT=40002
-DHT_PORT=40003
-LITE_PORT=40004
+PUBLIC_PORT=${PUBLIC_PORT:-40001}
+CONSOLE_PORT=${CONSOLE_PORT:-40002}
+DHT_PORT=${DHT_PORT:-40003}
+LITE_PORT=${LITE_PORT:-40004}
 
 echo Current INTERNAL_IP $INTERNAL_IP
 echo Custom EXTERNAL_IP $EXTERNAL_IP
