@@ -18,7 +18,7 @@ services:
       - GENESIS=true
       - NAME=genesis
 #      - ENABLE_FILE_HTTP_SERVER=false #default true
-#      - BLOCK_GENERATION_TIME=20 # default 2 seconds, adjust health-check interval
+#      - NEXT_BLOCK_GENERATION_DELAY=20 # default 2 seconds, adjust health-check interval
 #      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
