@@ -11,6 +11,7 @@ services:
       - "40001:40001/udp" # validator public port
     volumes:
       - shared-data:/usr/share/data
+#      - /home/usr/ton-db:/var/ton-work/db # docker persistent storage for ton db
     environment:
       - GENESIS=true
       - NAME=genesis

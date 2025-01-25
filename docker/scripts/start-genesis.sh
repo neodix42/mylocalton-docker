@@ -23,6 +23,7 @@ else
   echo
   echo "Creating zero state..."
   echo
+  mkdir -p /var/ton-work/db/{keyring,static,import}
   cd /var/ton-work/db/keyring
 
   read -r VAL_ID_HEX VAL_ID_BASE64 <<< $(generate-random-id -m keys -n validator)
@@ -108,6 +109,7 @@ else
 
   cd /var/ton-work/db
   rm -f my-ton-global.config.json
+  cp /scripts/ton-private-testnet.config.json.template .
   sed -e "s#ROOT_HASH#$(cat /usr/share/ton/smartcont/zerostate.rhash | base64)#g" -e "s#FILE_HASH#$(cat /usr/share/ton/smartcont/zerostate.fhash | base64)#g" ton-private-testnet.config.json.template > my-ton-global.config.json
   IP=$INTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
   [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
@@ -119,7 +121,7 @@ else
   mkdir dht-server
   cd dht-server
   cp ../my-ton-global.config.json .
-  cp ../example.config.json .
+  cp /scripts/example.config.json .
   dht-server -C example.config.json -D . -I "$INTERNAL_IP:$DHT_PORT"
 
   DHT_NODES=$(generate-random-id -m dht -k keyring/* -a "{
@@ -168,6 +170,7 @@ else
 
   # Adding client permissions
   rm -f control.new
+  cp /scripts/control.template .
   sed -e "s/CONSOLE-PORT/\"$(printf "%q" $CONSOLE_PORT)\"/g" -e "s~SERVER-ID~\"$(printf "%q" $SERVER_ID2)\"~g" -e "s~CLIENT-ID~\"$(printf "%q" $CLIENT_ID2)\"~g" control.template > control.new
   sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(cat control.new))~g" config.json > config.json.new
   mv config.json.new config.json
@@ -201,7 +204,9 @@ else
   # install lite-server using predefined lite-server keys
   #read -r LITESERVER_ID1 LITESERVER_ID2 <<< $(generate-random-id -m keys -n liteserver)
   echo "Liteserver IDs: DA46DE8CCCED9AB6F29447B334636FBE07F7F4CAE6B6833D26AF1240A1BB34B1 2kbejMztmrbylEezNGNvvgf39MrmtoM9Jq8SQKG7NLE="
-  cp liteserver /var/ton-work/db/keyring/DA46DE8CCCED9AB6F29447B334636FBE07F7F4CAE6B6833D26AF1240A1BB34B1
+  cp /scripts/liteserver /var/ton-work/db/
+  cp /scripts/liteserver.pub /var/ton-work/db/
+  cp /scripts/liteserver /var/ton-work/db/keyring/DA46DE8CCCED9AB6F29447B334636FBE07F7F4CAE6B6833D26AF1240A1BB34B1
 
   LITESERVERS=$(printf "%q" "\"liteservers\":[{\"id\":\"2kbejMztmrbylEezNGNvvgf39MrmtoM9Jq8SQKG7NLE=\",\"port\":$LITE_PORT}")
   sed -e "s~\"liteservers\"\ \:\ \[~$LITESERVERS~g" config.json > config.json.liteservers
@@ -214,7 +219,7 @@ else
   python3 -c 'import json; f=open("my-ton-global.config.json", "r"); config=json.loads(f.read()); f.close(); f=open("my-ton-global.config.json", "w");f.write(json.dumps(config, indent=2)); f.close()';
 
   cp my-ton-global.config.json global.config.json
-  rm my-ton-global.config.json control.new control.template ton-private-testnet.config.json.template example.config.json
+  rm my-ton-global.config.json control.new control.template ton-private-testnet.config.json.template
 
   OLDNUM=$IPNUM
   if [ "$EXTERNAL_IP" ]; then
