@@ -1,3 +1,4 @@
+#!/bin/bash
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
 INTERNAL_IP=$(hostname -I | tr -d " ")

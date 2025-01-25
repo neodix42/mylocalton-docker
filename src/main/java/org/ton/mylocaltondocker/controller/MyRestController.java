@@ -68,6 +68,7 @@ public class MyRestController {
         }
 
         if (addRequest(remoteIp, userAddress)) {
+          log.info("requested {}", userAddress);
           response.put("success", "true");
           response.put("message", "Request added and will be processed within 1 minute.");
           return response;

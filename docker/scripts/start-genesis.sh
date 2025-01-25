@@ -1,4 +1,4 @@
-# next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
+#!/bin/bash
 
 INTERNAL_IP=$(hostname -I | tr -d " ")
 PUBLIC_PORT=${PUBLIC_PORT:-40001}
@@ -222,6 +222,7 @@ else
     [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
     cp global.config.json external.global.config.json
     sed -i "s/$OLDNUM/$IPNUM/g" external.global.config.json
+    cp external.global.config.json /usr/share/data/
   fi
 
   cp global.config.json localhost.global.config.json
@@ -234,7 +235,6 @@ else
 fi
 
 cp global.config.json /usr/share/data/
-cp external.global.config.json /usr/share/data/
 cp localhost.global.config.json /usr/share/data/
 
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$INTERNAL_IP:$DHT_PORT"&
