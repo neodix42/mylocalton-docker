@@ -1,6 +1,17 @@
 package org.ton.mylocaltondocker.controller;
 
+import static java.util.Objects.nonNull;
+
 import com.iwebpp.crypto.TweetNaclFast;
+import java.io.File;
+import java.math.BigInteger;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -17,24 +28,12 @@ import org.ton.mylocaltondocker.db.DB;
 import org.ton.mylocaltondocker.db.WalletEntity;
 import org.ton.mylocaltondocker.db.WalletPk;
 
-import java.io.File;
-import java.math.BigInteger;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-import static java.util.Objects.nonNull;
-
 @Component
 @Slf4j
 public class StartUpTask {
 
-    private static byte[] prvKey;
-    @EventListener(ApplicationReadyEvent.class)
+  private static byte[] prvKey;
+  @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() throws InterruptedException {
 
     System.out.println("Initializing tonlib");
@@ -44,6 +43,7 @@ public class StartUpTask {
       Thread.sleep(5000);
     }
 
+    log.info("FAUCET_USE_RECAPTCHA {}", System.getenv("FAUCET_USE_RECAPTCHA").strip());
     log.info("RECAPTCHA_SITE_KEY {}", System.getenv("RECAPTCHA_SITE_KEY").strip());
     log.info("RECAPTCHA_SECRET {}", System.getenv("RECAPTCHA_SECRET").strip());
     log.info("SERVER_PORT {}", System.getenv("SERVER_PORT").strip());

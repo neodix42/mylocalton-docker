@@ -269,6 +269,7 @@ else
 fi
 
 echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT"
+echo validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
 
 

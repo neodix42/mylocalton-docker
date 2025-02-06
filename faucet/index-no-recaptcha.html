@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Public faucet (not suitable for mainnet or testnet)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-animation">
+        <!-- Animated lines -->
+        <div class="line"></div>
+        <div class="line"></div>
+        <div class="line"></div>
+        <div class="line"></div>
+        <div class="line"></div>
+        <div class="line"></div>
+    </div>
+    <h1>Get 10 Toncoins</h1>
+    <form id="validateCaptchaForm">
+        <br>
+        <label for="userAddress1">Enter wallet address</label>
+        <input type="text" id="userAddress1" name="userAddress1" required>
+        <div id="message1" class="message"></div>
+        <br><br>
+        <button type="button" id="submit-btn">Submit</button>
+    </form>
+    <h1>Check Balance</h1>
+    <form id="getBalanceForm">
+        <label for="userAddress2">Enter wallet address</label>
+        <input type="text" id="userAddress2" name="userAddress2" required>
+        <div id="message2" class="message"></div>
+        <br><br>
+        <button type="button" id="getBalanceBtn">Show balance</button>
+
+    </form>
+    <h1>Generate wallet</h1>
+    <form id="generateWalletForm">
+        <br>
+        <div id="message3" class="message"></div>
+        <br>
+        <button type="button" id="generateWalletBtn">Generate</button>
+    </form>
+    <script src="script.js"></script>
+</body>
+</html>

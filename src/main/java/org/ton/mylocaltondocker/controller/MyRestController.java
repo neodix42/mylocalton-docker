@@ -1,9 +1,17 @@
 package org.ton.mylocaltondocker.controller;
 
+import static java.util.Objects.nonNull;
+
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.Refill;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.*;
@@ -18,21 +26,14 @@ import org.ton.mylocaltondocker.db.DB;
 import org.ton.mylocaltondocker.db.WalletEntity;
 import org.ton.mylocaltondocker.db.WalletPk;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static java.util.Objects.nonNull;
-
 @RestController
 @Slf4j
 public class MyRestController {
   String error;
 
   private final ConcurrentHashMap<String, Bucket> sessionBuckets = new ConcurrentHashMap<>();
+  private static boolean useRecaptcha =
+      Boolean.parseBoolean(System.getenv("FAUCET_USE_RECAPTCHA").strip());
 
   @PostMapping("/requestTons")
   public Map<String, Object> executeJavaCode(
@@ -52,21 +53,12 @@ public class MyRestController {
 
     if (bucket.tryConsume(1)) {
 
-      String token = request.get("token");
-
       String userAddress = request.get("userAddress1");
       String remoteIp = httpServletRequest.getRemoteAddr();
 
       Map<String, Object> response = new HashMap<>();
 
-      if (validateCaptcha(token, remoteIp)) {
-
-        if (!Address.isValid(userAddress)) {
-          response.put("success", "false");
-          response.put("message", "Wrong wallet format.");
-          return response;
-        }
-
+      if (!useRecaptcha) {
         if (addRequest(remoteIp, userAddress)) {
           log.info("requested {}", userAddress);
           response.put("success", "true");
@@ -78,9 +70,30 @@ public class MyRestController {
           return response;
         }
       } else {
-        response.put("success", false);
-        response.put("message", "captcha validation failed.");
-        return response;
+        String token = request.get("token");
+        if (validateCaptcha(token, remoteIp)) {
+
+          if (!Address.isValid(userAddress)) {
+            response.put("success", "false");
+            response.put("message", "Wrong wallet format.");
+            return response;
+          }
+
+          if (addRequest(remoteIp, userAddress)) {
+            log.info("requested {}", userAddress);
+            response.put("success", "true");
+            response.put("message", "Request added and will be processed within 1 minute.");
+            return response;
+          } else {
+            response.put("success", "false");
+            response.put("message", "Request already processed, wait for the next round.");
+            return response;
+          }
+        } else {
+          response.put("success", false);
+          response.put("message", "captcha validation failed.");
+          return response;
+        }
       }
     } else {
       Map<String, Object> response = new HashMap<>();
@@ -192,36 +205,24 @@ public class MyRestController {
 
       Map<String, Object> response = new HashMap<>();
 
-      if (validateCaptcha(token, remoteIp)) {
-        try {
-          String MASTERCHAIN_ONLY = System.getenv("MASTERCHAIN_ONLY");
-          log.info("MASTERCHAIN_ONLY {}", MASTERCHAIN_ONLY); // if true create wallets only in masterchain
-
-          long walletId = Math.abs(Utils.getRandomInt());
-          WalletV3R2 walletV3R2 =
-              WalletV3R2.builder()
-                  .wc((Objects.equals(MASTERCHAIN_ONLY, "true")) ? -1 : 0)
-                  .walletId(walletId)
-                  .build();
-
-          response.put("success", true);
-          response.put(
-              "prvKey", Utils.bytesToHex(walletV3R2.getKeyPair().getSecretKey()).substring(0, 64));
-          response.put("pubKey", Utils.bytesToHex(walletV3R2.getKeyPair().getPublicKey()));
-          response.put("walletId", walletId);
-          response.put("rawAddress", walletV3R2.getAddress().toRaw());
-          log.info("generated wallet {}", walletV3R2.getAddress().toRaw());
-
-          return response;
-        } catch (Error e) {
+      if (!useRecaptcha) {
+        genWallet(response);
+        return response;
+      } else {
+        if (validateCaptcha(token, remoteIp)) {
+          try {
+            genWallet(response);
+            return response;
+          } catch (Error e) {
+            response.put("success", false);
+            response.put("message", "cannot generate wallet");
+            return response;
+          }
+        } else {
           response.put("success", false);
-          response.put("message", "cannot generate wallet");
+          response.put("message", "captcha validation failed.");
           return response;
         }
-      } else {
-        response.put("success", false);
-        response.put("message", "captcha validation failed.");
-        return response;
       }
     } else {
       Map<String, Object> response = new HashMap<>();
@@ -231,6 +232,26 @@ public class MyRestController {
       response.put("message", "rate limit, 10 requests per minute");
       return response;
     }
+  }
+
+  private static void genWallet(Map<String, Object> response) {
+    String MASTERCHAIN_ONLY = System.getenv("MASTERCHAIN_ONLY");
+    log.info("MASTERCHAIN_ONLY {}", MASTERCHAIN_ONLY); // if true create wallets only in masterchain
+
+    long walletId = Math.abs(Utils.getRandomInt());
+    WalletV3R2 walletV3R2 =
+        WalletV3R2.builder()
+            .wc((Objects.equals(MASTERCHAIN_ONLY, "true")) ? -1 : 0)
+            .walletId(walletId)
+            .build();
+
+    response.put("success", true);
+    response.put(
+        "prvKey", Utils.bytesToHex(walletV3R2.getKeyPair().getSecretKey()).substring(0, 64));
+    response.put("pubKey", Utils.bytesToHex(walletV3R2.getKeyPair().getPublicKey()));
+    response.put("walletId", walletId);
+    response.put("rawAddress", walletV3R2.getAddress().toRaw());
+    log.info("generated wallet {}", walletV3R2.getAddress().toRaw());
   }
 
   private boolean addRequest(String remoteIp, String walletAddr) {

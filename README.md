@@ -36,9 +36,11 @@ Specify only for `genesis` container:
 * `MASTERCHAIN_ONLY` - set to `true` if you want to have only masterchain, i.e. without workchains, default `false`;
 * `HIDE_PRIVATE_KEYS` - set to `true` if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;
 * `DHT_PORT` - set port (udp) for dht server, default port `40004`, optional.
+* `CUSTOM_PARAMETERS` - used to specify validator's command line parameters, default - empty string (no parameters), optional.
  
 Specify only for `faucet` container:
 
+* `FAUCET_USE_RECAPTCHA` - if `false` faucet will not use recaptcha as protection, mandatory, default `true`;
 * `RECAPTCHA_SITE_KEY` - used by local http-server that runs faucet service, mandatory;
 * `RECAPTCHA_SECRET` - used by local http-server that runs faucet service, , mandatory;
 * `FAUCET_REQUEST_EXPIRATION_PERIOD` - used by local http-server that runs faucet service, default `86400` seconds (24h), optional;

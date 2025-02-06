@@ -10,6 +10,8 @@ RUN mkdir -p /scripts/web
 
 COPY faucet/index.html /scripts/web
 COPY faucet/script.js /scripts/web
+COPY faucet/index-no-recaptcha.html /scripts/web
+COPY faucet/script-no-recaptcha.js /scripts/web
 COPY faucet/style.css /scripts/web
 COPY --chmod=744 faucet/start.sh /scripts/web
 COPY target/MyLocalTonDockerWebFaucet.jar /scripts/web

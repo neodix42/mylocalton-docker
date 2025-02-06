@@ -22,6 +22,8 @@ services:
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
 #      - VERBOSITY=4
+#      - CUSTOM_PARAMETERS=--state-ttl 604800 --block-ttl 604800
+
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
       interval: 30s
@@ -142,26 +144,37 @@ services:
       timeout: 5s
       retries: 10
 
-#  faucet:
-#    container_name: faucet
-#    image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
-#    ports:
-#      - 88:88
-#    volumes:
-#      - shared-data:/usr/share/data
-#    restart: unless-stopped
-#    depends_on:
-#      genesis:
-#        condition: service_healthy
-#    environment:
-#      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
-#      - RECAPTCHA_SECRET=   # google reCaptcha v2
-##      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
-##      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
-##      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
-#      - SERVER_PORT=88             # default 80
-#    healthcheck:
-#      test: curl -sS http://127.0.0.1:88|| echo 1
+  faucet:
+    container_name: faucet
+    image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
+    ports:
+      - 88:88
+    volumes:
+      - shared-data:/usr/share/data
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - FAUCET_USE_RECAPTCHA=false # default true
+      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+      - RECAPTCHA_SECRET=   # google reCaptcha v2
+#      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
+#      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
+#      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
+      - SERVER_PORT=88             # default 80
+    healthcheck:
+      test: curl -sS http://127.0.0.1:88|| echo 1
+
+  restarter:
+    container_name: explorer-restarter
+    image: docker:cli
+    restart: unless-stopped
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    command: ["/bin/sh", "-c", "while true; do sleep 3600; echo restarted; docker restart blockchain-explorer; done"]
+    depends_on:
+      blockchain-explorer:
+        condition: service_healthy
 
 volumes:
   shared-data:
