@@ -151,7 +151,7 @@ services:
 #      - "genesis"
 
   tonhttpapi:
-    container_name: ton-http-api
+    container_name: ton-http-api-v2
     image: ghcr.io/neodix42/ton-http-api:latest
     ports:
       - 8081:8081
@@ -251,7 +251,7 @@ services:
       - event-cache
 
   index-api:
-    container_name: index-api
+    container_name: ton-http-api-v3
     image: toncenter/ton-indexer-api:v1.2.0-test
     command: -bind ":8082" -prefork -threads 4 -v2 http://tonhttpapi:8081/
     ports:

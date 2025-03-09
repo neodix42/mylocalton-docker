@@ -65,9 +65,13 @@ Clone this repo and execute:
 
 ### Access services
 
-**TON-HTTP-API** will be started at:
+**TON-HTTP-API V2** will be started at:
 
 http://127.0.0.1:8081/
+
+**TON-HTTP-API V3** will be started at:
+
+http://127.0.0.1:8082/
 
 **Blockchain explorer** will be available on localhost via:
 
@@ -108,6 +112,9 @@ docker exec -it validator-5 bash
 ```docker-compose down```
 
 the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the last state.
+
+If you want to access TON working directory and/or to keep database state even after rebuilding images, uncomment and adjust the volume section for `ton-db` in main yaml file.
+
 
 ### Reset network and remove all data:
 

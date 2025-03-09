@@ -1,6 +1,6 @@
 FROM ghcr.io/ton-blockchain/ton:latest
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt install --no-install-recommends -y python3 cron bc
+RUN apt -y update && apt install --no-install-recommends -y python3 cron bc
 
 RUN mkdir -p /scripts/web  \
     /usr/share/data \
