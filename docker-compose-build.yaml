@@ -78,9 +78,6 @@ services:
 #  validator-1:
 #    container_name: validator-1
 #    image: mylocaltondocker
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -93,9 +90,6 @@ services:
 #  validator-2:
 #    container_name: validator-2
 #    image: mylocaltondocker
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -108,9 +102,6 @@ services:
 #  validator-3:
 #    container_name: validator-3
 #    image: mylocaltondocker
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -123,9 +114,6 @@ services:
 #  validator-4:
 #    container_name: validator-4
 #    image: mylocaltondocker
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
@@ -138,9 +126,6 @@ services:
 #  validator-5:
 #    container_name: validator-5
 #    image: mylocaltondocker
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
 #    restart: unless-stopped
 #    volumes:
 #      - shared-data:/usr/share/data
