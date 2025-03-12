@@ -67,6 +67,7 @@ if [ ! -f "config.json" ]; then
 
   # Adding client permissions
   rm -f control.new
+  cp /scripts/control.template .
   sed -e "s/CONSOLE-PORT/\"$(printf "%q" $CONSOLE_PORT)\"/g" -e "s~SERVER-ID~\"$(printf "%q" $SERVER_ID2)\"~g" -e "s~CLIENT-ID~\"$(printf "%q" $CLIENT_ID2)\"~g" control.template > control.new
   sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(cat control.new))~g" config.json > config.json.new
   mv config.json.new config.json
