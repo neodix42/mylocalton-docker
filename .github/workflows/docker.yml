@@ -36,13 +36,8 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Java projects
+      - name: Build Java Projects
         run: |
-          mvn clean compile package -DskipTests
-
-      - name: Build Java Faucet
-        run: |
-          cd faucet-app
           mvn clean compile package -DskipTests
 
       - name: Build and push
