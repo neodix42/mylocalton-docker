@@ -31,14 +31,14 @@ services:
     environment:
       - GENESIS=true
       - NAME=genesis
-    #      - ENABLE_FILE_HTTP_SERVER=false #default true
-    #      - NEXT_BLOCK_GENERATION_DELAY=2 #default 2000 (2 seconds)
-    #      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
-    #      - VALIDATION_PERIOD=86400 # 24h, default 20min
-    #      - MASTERCHAIN_ONLY=true   # default false
-    #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
-    #      - VERBOSITY=4
-    #      - CUSTOM_PARAMETERS=--state-ttl 604800 --block-ttl 604800
+#      - ENABLE_FILE_HTTP_SERVER=false #default true
+#      - NEXT_BLOCK_GENERATION_DELAY=2 #default 2000 (2 seconds)
+#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
+#      - VALIDATION_PERIOD=86400 # 24h, default 20min
+#      - MASTERCHAIN_ONLY=true   # default false
+#      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
+#      - VERBOSITY=4
+#      - CUSTOM_PARAMETERS=--state-ttl 604800 --block-ttl 604800
 
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
@@ -68,65 +68,65 @@ services:
       genesis:
         condition: service_healthy
 
-  #  validator-1:
-  #    container_name: validator-1
-  #    image: ghcr.io/neodix42/mylocalton-docker:latest
-  #    restart: unless-stopped
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    environment:
-  #      - NAME=validator-1
-  #      - GENESIS_IP=172.28.1.1
-  #    depends_on:
-  #      - "genesis"
-  #
-  #  validator-2:
-  #    container_name: validator-2
-  #    image: ghcr.io/neodix42/mylocalton-docker:latest
-  #    restart: unless-stopped
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    environment:
-  #      - NAME=validator-2
-  #      - GENESIS_IP=172.28.1.1
-  #    depends_on:
-  #      - "genesis"
-  #
-  #  validator-3:
-  #    container_name: validator-3
-  #    image: ghcr.io/neodix42/mylocalton-docker:latest
-  #    restart: unless-stopped
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    environment:
-  #      - NAME=validator-3
-  #      - GENESIS_IP=172.28.1.1
-  #    depends_on:
-  #      - "genesis"
-  #
-  #  validator-4:
-  #    container_name: validator-4
-  #    image: ghcr.io/neodix42/mylocalton-docker:latest
-  #    restart: unless-stopped
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    environment:
-  #      - NAME=validator-4
-  #      - GENESIS_IP=172.28.1.1
-  #    depends_on:
-  #      - "genesis"
-  #
-  #  validator-5:
-  #    container_name: validator-5
-  #    image: ghcr.io/neodix42/mylocalton-docker:latest
-  #    restart: unless-stopped
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    environment:
-  #      - NAME=validator-5
-  #      - GENESIS_IP=172.28.1.1
-  #    depends_on:
-  #      - "genesis"
+#  validator-1:
+#    container_name: validator-1
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#    environment:
+#      - NAME=validator-1
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-2:
+#    container_name: validator-2
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#    environment:
+#      - NAME=validator-2
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-3:
+#    container_name: validator-3
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#    environment:
+#      - NAME=validator-3
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-4:
+#    container_name: validator-4
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#    environment:
+#      - NAME=validator-4
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
+#
+#  validator-5:
+#    container_name: validator-5
+#    image: ghcr.io/neodix42/mylocalton-docker:latest
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#    environment:
+#      - NAME=validator-5
+#      - GENESIS_IP=172.28.1.1
+#    depends_on:
+#      - "genesis"
 
   tonhttpapi:
     container_name: ton-http-api
@@ -175,29 +175,29 @@ services:
       - FAUCET_USE_RECAPTCHA=false # default true
       - RECAPTCHA_SITE_KEY= # google reCaptcha v2
       - RECAPTCHA_SECRET=   # google reCaptcha v2
-      #      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
-      #      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
-      #      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
-      - SERVER_PORT=88             # default 80
+#      - MASTERCHAIN_ONLY=true   # default false, if true generates new addresses only in masterchain (-1)
+#      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
+#      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
+      - SERVER_PORT=88
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
-  #  data:
-  #    container_name: data
-  #    image: ghcr.io/neodix42/mylocalton-docker-data:latest
-  #    ports:
-  #      - 99:99
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    restart: unless-stopped
-  #    depends_on:
-  #      genesis:
-  #        condition: service_healthy
-  #    environment:
-  #      - SERVER_PORT=99
-  #      - PERIOD=5
-  #    healthcheck:
-  #      test: curl -sS http://127.0.0.1:99|| echo 1
+#  data:
+#    container_name: data
+#    image: ghcr.io/neodix42/mylocalton-docker-data:latest
+#    ports:
+#      - 99:99
+#    volumes:
+#      - shared-data:/usr/share/data
+#    restart: unless-stopped
+#    depends_on:
+#      genesis:
+#        condition: service_healthy
+#    environment:
+#      - SERVER_PORT=99
+#      - PERIOD=5
+#    healthcheck:
+#      test: curl -sS http://127.0.0.1:99|| echo 1
 
   restarter:
     container_name: explorer-restarter
@@ -272,12 +272,12 @@ volumes:
   postgres-data:
   index-workdir:
   ton-db:
-  # # uncomment if you want to mount this image in folder
-  # driver: local
-  # driver_opts:
-  #   o: bind
-  #   type: none
-  #   device: /home/user/ton-db
+# # uncomment if you want to mount this image in folder
+# driver: local
+# driver_opts:
+#   o: bind
+#   type: none
+#   device: /home/user/ton-db
 
 networks:
   default:
