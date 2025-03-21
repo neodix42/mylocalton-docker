@@ -182,22 +182,22 @@ services:
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
-  data:
-    container_name: data
-    image: ghcr.io/neodix42/mylocalton-docker-data:latest
-    ports:
-      - 99:99
-    volumes:
-      - shared-data:/usr/share/data
-    restart: unless-stopped
-    depends_on:
-      genesis:
-        condition: service_healthy
-    environment:
-      - SERVER_PORT=99
-      - PERIOD=5
-    healthcheck:
-      test: curl -sS http://127.0.0.1:99|| echo 1
+  #  data:
+  #    container_name: data
+  #    image: ghcr.io/neodix42/mylocalton-docker-data:latest
+  #    ports:
+  #      - 99:99
+  #    volumes:
+  #      - shared-data:/usr/share/data
+  #    restart: unless-stopped
+  #    depends_on:
+  #      genesis:
+  #        condition: service_healthy
+  #    environment:
+  #      - SERVER_PORT=99
+  #      - PERIOD=5
+  #    healthcheck:
+  #      test: curl -sS http://127.0.0.1:99|| echo 1
 
   restarter:
     container_name: explorer-restarter
