@@ -18,7 +18,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>19</java.version>
         <maven.compiler.release>11</maven.compiler.release>
-        <maven.compiler.version>3.8.1</maven.compiler.version>
+        <maven.compiler.version>3.14.0</maven.compiler.version>
+        <spring.boot.version>3.4.3</spring.boot.version>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.assembly.plugin.version>3.6.0</maven.assembly.plugin.version>
         <javafx.maven.plugin.version>0.0.8</javafx.maven.plugin.version>
@@ -122,7 +123,7 @@
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-starter-web</artifactId>
-                <version>3.4.1</version>
+                <version>${spring.boot.version}</version>
                 <!--            <exclusions>-->
                 <!--                <exclusion>-->
                 <!--                    <groupId>ch.qos.logback</groupId>-->
@@ -133,7 +134,7 @@
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>3.4.1</version>
+                <version>${spring.boot.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.code.gson</groupId>
@@ -217,7 +218,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>3.4.1</version>
+                <version>${spring.boot.version}</version>
             </plugin>
         </plugins>
     </build>
