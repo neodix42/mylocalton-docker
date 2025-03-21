@@ -14,7 +14,7 @@ COPY faucet/index-no-recaptcha.html /scripts/web
 COPY faucet/script-no-recaptcha.js /scripts/web
 COPY faucet/style.css /scripts/web
 COPY --chmod=744 faucet/start.sh /scripts/web
-COPY target/MyLocalTonDockerWebFaucet.jar /scripts/web
+COPY faucet-app/target/MyLocalTonDockerWebFaucet.jar /scripts/web
 
 WORKDIR "/scripts/web"
 ENTRYPOINT ["./start.sh"]

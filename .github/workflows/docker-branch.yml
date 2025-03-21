@@ -19,7 +19,7 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -38,6 +38,7 @@ jobs:
 
       - name: Build Java Faucet
         run: |
+          cd faucet-app
           mvn clean compile package -DskipTests
 
       - name: Get tag-1 as branch name
@@ -70,6 +71,21 @@ jobs:
           context: ./
           file: ./faucet/Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:${{ steps.tag2.outputs.TAG }}
+
+      - name: Get tag-4 as branch name
+        id: tag4
+        run: |
+          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+
+      - name: Build and push data
+        id: docker_build_4
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          file: ./data/Dockerfile
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:${{ steps.tag4.outputs.TAG }}
 
       - name: Get tag-3 as branch name
         id: tag3

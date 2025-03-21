@@ -104,6 +104,25 @@ Masterchain over
 2dup ."faucet-highload address = " .addr cr 2dup 6 .Addr cr
 "faucet-highload.addr" save-address-verbose
 
+// new-highload-wallet-v2.fif
+"highload-wallet-v2-code.fif" include
+// code
+<b 42 32 i, 0 64 u,
+   "data-highload.pk" load-generate-keypair constant data_hl_pk
+   B,
+   false 1 i,
+b> // data
+empty_cell // no libraries
+GR$1000000   // balance
+0 // split_depth
+0 // ticktock
+2 // mode: create + setaddr
+register_smc
+dup make_special dup constant faucet_addr
+Masterchain over
+2dup ."data-highload address = " .addr cr 2dup 6 .Addr cr
+"data-highload.addr" save-address-verbose
+
 
 // validator-0 wallet-v3 - validator on genesis node
 "wallet-v3-code.fif" include
