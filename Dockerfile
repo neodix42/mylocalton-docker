@@ -7,6 +7,7 @@ RUN mkdir -p /scripts/web  \
     /var/ton-work/logs
 
 COPY --chmod=744 docker/scripts/start-genesis.sh /scripts
+COPY --chmod=744 docker/scripts/post-genesis.sh /scripts
 COPY --chmod=744 docker/scripts/start-validator.sh /scripts
 COPY --chmod=744 docker/scripts/start-node.sh /scripts
 COPY --chmod=744 docker/scripts/cron.sh /scripts
@@ -17,7 +18,9 @@ COPY docker/scripts/ton-private-testnet.config.json.template /scripts
 COPY docker/scripts/example.config.json /scripts
 COPY docker/scripts/control.template /scripts
 COPY docker/scripts/faucet.pk /usr/share/ton/smartcont
+COPY docker/scripts/faucet-basechain.pk /usr/share/ton/smartcont
 COPY docker/scripts/faucet-highload.pk /usr/share/ton/smartcont
+COPY docker/scripts/faucet-highload-basechain.pk /usr/share/ton/smartcont
 COPY docker/scripts/data-highload.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-1.pk /usr/share/ton/smartcont

@@ -14,10 +14,13 @@ if [ "$EXTERNAL_IP" ]; then
 fi
 
 export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont/
+echo "pwd $(pwd)"
 
-if ( [ -d "state" ] && [ "$(ls -A ./state)" ]); then
+initialized=0
+if [ -f "/var/ton-work/db/state/IDENTITY" ]; then
   echo
   echo "Found non-empty state; Skip initialization";
+  initialized=1
   echo
 else
   echo
@@ -367,6 +370,7 @@ else
   sleep 1
 fi
 
+cd /var/ton-work/db
 cp global.config.json /usr/share/data/
 cp localhost.global.config.json /usr/share/data/
 
@@ -394,6 +398,10 @@ if [ ! "$VERBOSITY" ]; then
   VERBOSITY=1
 else
   VERBOSITY=$VERBOSITY
+fi
+
+if [ $initialized -eq 0 ]; then
+  /scripts/post-genesis.sh &
 fi
 
 echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
