@@ -38,7 +38,7 @@ services:
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
 #      - VERBOSITY=4
-#      - CUSTOM_PARAMETERS=--state-ttl 604800 --block-ttl 604800
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
