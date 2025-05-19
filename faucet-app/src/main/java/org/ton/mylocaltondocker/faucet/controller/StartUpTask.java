@@ -67,7 +67,7 @@ public class StartUpTask {
 
       log.info(Main.tonlib.getLast().toString());
 
-      prvKey = FileUtils.readFileToByteArray(new File("/usr/share/data/faucet-highload.pk"));
+      prvKey = FileUtils.readFileToByteArray(new File("/scripts/web/faucet-highload.pk"));
       log.info(Utils.bytesToHex(prvKey));
       TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
@@ -90,7 +90,7 @@ public class StartUpTask {
           DB.getWalletsToSend().size(),
           DB.getTotalWallets());
     } catch (Exception e) {
-      log.error("cant read /usr/share/data/faucet-highload.pk or " + e.getMessage());
+      log.error("cant read /scripts/web/faucet-highload.pk or " + e.getMessage());
     }
 
     runFaucetSendScheduler();
