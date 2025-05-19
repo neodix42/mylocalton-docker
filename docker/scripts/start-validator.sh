@@ -7,13 +7,14 @@ export CONSOLE_PORT=${CONSOLE_PORT:-40002}
 LITE_PORT=${LITE_PORT:-40004}
 
 echo "Current INTERNAL_IP $INTERNAL_IP"
+echo "Current GENESIS_IP $GENESIS_IP"
 
 
 if [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "waiting 90 seconds for genesis to be ready very first time..."
   sleep 90
-  echo "Getting global.config.json from genesis via shared volume..."
-  cp /usr/share/data/global.config.json /var/ton-work/db
+  echo "Getting global.config.json from genesis via http server..."
+  wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/global.config.json
 else
 #  echo "waiting 20 seconds for genesis to be ready..."
 #  sleep 20
@@ -25,20 +26,20 @@ cd /usr/share/ton
 if [ ! -f "validator.pk" ]; then
   echo "copying validator.pk from genesis /usr/share/data to $NAME..."
   if [ "$NAME" = "validator-1" ]; then
-    cp /usr/share/data/validator-1.pk validator.pk
-    cp /usr/share/data/validator-1.addr validator.addr
+    wget -O validator.pk http://$GENESIS_IP:8000/validator-1.pk
+    wget -O validator.addr http://$GENESIS_IP:8000/validator-1.addr
   elif [ "$NAME" = "validator-2" ]; then
-    cp /usr/share/data/validator-2.pk validator.pk
-    cp /usr/share/data/validator-2.addr validator.addr
+    wget -O validator.pk http://$GENESIS_IP:8000/validator-2.pk
+    wget -O validator.addr http://$GENESIS_IP:8000/validator-2.addr
   elif [ "$NAME" = "validator-3" ]; then
-    cp /usr/share/data/validator-3.pk validator.pk
-    cp /usr/share/data/validator-3.addr validator.addr
+    wget -O validator.pk http://$GENESIS_IP:8000/validator-3.pk
+    wget -O validator.addr http://$GENESIS_IP:8000/validator-3.addr
   elif [ "$NAME" = "validator-4" ]; then
-    cp /usr/share/data/validator-4.pk validator.pk
-    cp /usr/share/data/validator-4.addr validator.addr
+    wget -O validator.pk http://$GENESIS_IP:8000/validator-4.pk
+    wget -O validator.addr http://$GENESIS_IP:8000/validator-4.addr
   elif [ "$NAME" = "validator-5" ]; then
-    cp /usr/share/data/validator-5.pk validator.pk
-    cp /usr/share/data/validator-5.addr validator.addr
+    wget -O validator.pk http://$GENESIS_IP:8000/validator-5.pk
+    wget -O validator.addr http://$GENESIS_IP:8000/validator-5.addr
   fi
 else
   echo "validator.pk already received/copied."

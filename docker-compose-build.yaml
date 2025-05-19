@@ -62,6 +62,7 @@ services:
     restart: unless-stopped
     environment:
       - SERVER_PORT=8080
+      - GENESIS_IP=172.28.1.1
     ports:
       - 8080:8080
     healthcheck:
@@ -69,23 +70,19 @@ services:
       interval: 15s
       timeout: 10s
       retries: 3
-    volumes:
-      - shared-data:/usr/share/data
     depends_on:
       genesis:
         condition: service_healthy
 
-#  validator-1:
-#    container_name: validator-1
-#    image: mylocaltondocker
-#    restart: unless-stopped
-#    volumes:
-#      - shared-data:/usr/share/data
-#    environment:
-#      - NAME=validator-1
-#      - GENESIS_IP=172.28.1.1
-#    depends_on:
-#      - "genesis"
+  validator-1:
+    container_name: validator-1
+    image: mylocaltondocker
+    restart: unless-stopped
+    environment:
+      - NAME=validator-1
+      - GENESIS_IP=172.28.1.1
+    depends_on:
+      - "genesis"
 #
 #  validator-2:
 #    container_name: validator-2
@@ -175,13 +172,12 @@ services:
       dockerfile: ./faucet/Dockerfile
     ports:
       - 88:88
-    volumes:
-      - shared-data:/usr/share/data
     restart: unless-stopped
     depends_on:
       genesis:
         condition: service_healthy
     environment:
+      - GENESIS_IP=172.28.1.1
       - FAUCET_USE_RECAPTCHA=false # default true
       - RECAPTCHA_SITE_KEY= # google reCaptcha v2
       - RECAPTCHA_SECRET=   # google reCaptcha v2
@@ -192,25 +188,24 @@ services:
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
-#  data:
-#    container_name: data
-#    image: data
-#    build:
-#      context: .
-#      dockerfile: ./data/Dockerfile
-#    ports:
-#      - 99:99
-#    volumes:
-#      - shared-data:/usr/share/data
-#    restart: unless-stopped
-#    depends_on:
-#      genesis:
-#        condition: service_healthy
-#    environment:
-#      - SERVER_PORT=99
-#      - PERIOD=5
-#    healthcheck:
-#      test: curl -sS http://127.0.0.1:99|| echo 1
+  data:
+    container_name: data
+    image: data
+    build:
+      context: .
+      dockerfile: ./data/Dockerfile
+    ports:
+      - 99:99
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - GENESIS_IP=172.28.1.1
+      - SERVER_PORT=99
+      - PERIOD=5
+    healthcheck:
+      test: curl -sS http://127.0.0.1:99|| echo 1
 
   restarter:
     container_name: explorer-restarter

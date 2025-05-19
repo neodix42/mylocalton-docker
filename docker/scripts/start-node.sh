@@ -10,6 +10,8 @@ if [ "$GENESIS" = "true" ]; then
   echo starting genesis...
   cp /usr/local/bin/libtonlibjson.so /usr/share/data
   cp /usr/local/bin/libemulator.so /usr/share/data
+  cp /usr/local/bin/libtonlibjson.so /var/ton-work/db # available via http
+  cp /usr/local/bin/libemulator.so /var/ton-work/db   # available via http
   /scripts/start-genesis.sh
 else
   echo starting validator...

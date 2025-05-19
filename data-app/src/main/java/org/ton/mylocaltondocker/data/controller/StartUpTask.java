@@ -52,8 +52,8 @@ public class StartUpTask {
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() {
 
-    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
-      System.out.println("data-app is waiting for /usr/share/data/global.config.json");
+    while (!Files.exists(Paths.get("/scripts/web/global.config.json"))) {
+      System.out.println("data-app is waiting for /scripts/web/global.config.json");
       Utils.sleep(5);
     }
 
@@ -66,10 +66,8 @@ public class StartUpTask {
 
       Main.tonlib =
           Tonlib.builder()
-              .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
-              .pathToGlobalConfig("/usr/share/data/global.config.json")
-              //              .pathToTonlibSharedLib("g:/libs/master-tonlibjson.dll")
-              // .pathToGlobalConfig("http://127.0.0.1:8000/localhost.global.config.json")
+              .pathToTonlibSharedLib("/scripts/web/libtonlibjson.so")
+              .pathToGlobalConfig("/scripts/web/global.config.json")
               .ignoreCache(false)
               .receiveRetryTimes(10)
               .build();

@@ -39,9 +39,9 @@ public class StartUpTask {
 
     System.out.println("Initializing tonlib");
 
-    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
-      System.out.println("faucet-app is waiting for /usr/share/data/global.config.json");
-      Thread.sleep(5000);
+    while (!Files.exists(Paths.get("/scripts/web/global.config.json"))) {
+      System.out.println("faucet-app is waiting for /scripts/web/global.config.json");
+      Utils.sleep(5);
     }
 
     log.info("FAUCET_USE_RECAPTCHA {}", System.getenv("FAUCET_USE_RECAPTCHA").strip());
@@ -59,10 +59,8 @@ public class StartUpTask {
 
       Main.tonlib =
           Tonlib.builder()
-              .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
-              .pathToGlobalConfig("/usr/share/data/global.config.json")
-              //            .pathToTonlibSharedLib("g:/libs/master-tonlibjson.dll")
-              //            .pathToGlobalConfig("g:/libs/global.config-mlt.json")
+              .pathToTonlibSharedLib("/scripts/web/libtonlibjson.so")
+              .pathToGlobalConfig("/scripts/web/global.config.json")
               .ignoreCache(false)
               .receiveRetryTimes(10)
               .build();

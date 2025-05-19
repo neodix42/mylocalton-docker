@@ -12,4 +12,7 @@ else
   cp /scripts/web/script-no-recaptcha.js /scripts/web/script.js
 fi
 
+wget -O /scripts/web/global.config.json http://$GENESIS_IP:8000/global.config.json
+wget -O /scripts/web/libtonlibjson.so http://$GENESIS_IP:8000/libtonlibjson.so
+
 java -jar /scripts/web/MyLocalTonDockerWebFaucet.jar
