@@ -68,6 +68,30 @@ services:
       genesis:
         condition: service_healthy
 
+  lite-server:
+    container_name: lite-server
+    image: ghcr.io/neodix42/mylocalton-liteserver:latest
+    build:
+      context: .
+      dockerfile: ./lite-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      - LITE_SERVER_PORT=30004
+      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+    ports:
+      - 30004:30004       # lite-server
+      - "30001:30001/udp" # full node public port
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      genesis:
+        condition: service_healthy
+
 #  validator-1:
 #    container_name: validator-1
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
@@ -77,6 +101,7 @@ services:
 #    environment:
 #      - NAME=validator-1
 #      - GENESIS_IP=172.28.1.1
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #

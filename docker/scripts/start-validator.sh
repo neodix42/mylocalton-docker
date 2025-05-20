@@ -73,6 +73,7 @@ if [ ! -f "config.json" ]; then
   sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(cat control.new))~g" config.json > config.json.new
   mv config.json.new config.json
 
+
   # install lite-server
   #
   read -r LITESERVER_ID1 LITESERVER_ID2 <<< $(generate-random-id -m keys -n liteserver)
@@ -98,4 +99,5 @@ else
 fi
 
 echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT"
+echo validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS

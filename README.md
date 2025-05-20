@@ -142,15 +142,16 @@ Clone this repo, build Java projects and execute:
 
 ### Access services
 
-| Service name        | Link                                                                                     | 
-|---------------------|------------------------------------------------------------------------------------------|
-| TON-HTTP-API V2     | http://127.0.0.1:8081/                                                                   | 
-| TON-HTTP-API V3     | http://127.0.0.1:8082/                                                                   |
-| Blockchain explorer | http://127.0.0.1:8080/last                                                               |
-| Faucet              | http://127.0.0.1:88                                                                      |
-| Traffic generation  | http://127.0.0.1:99/                                                                     |
-| Simple HTTP server  | http://127.0.0.1:8000/                                                                   |
-| Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
+| Service name         | Link                                                                                     | 
+|----------------------|------------------------------------------------------------------------------------------|
+| TON-HTTP-API V2      | http://127.0.0.1:8081/                                                                   | 
+| TON-HTTP-API V3      | http://127.0.0.1:8082/                                                                   |
+| Blockchain explorer  | http://127.0.0.1:8080/last                                                               |
+| Faucet               | http://127.0.0.1:88                                                                      |
+| Traffic generation   | http://127.0.0.1:99/                                                                     |
+| Simple HTTP server   | http://127.0.0.1:8000/                                                                   |                                                              |
+| Lite-server          | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
+| Lite-server separate | `lite-client -a <node-ip>:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -c last` |
 
 Global network configuration file available at:
 
@@ -215,6 +216,8 @@ adjust the volume section for `ton-db` in main yaml file.
     * predefined validators' wallet addresses (`V3R2`, subWalletId = `42`)
 * Predefined lite-server
     * `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last`
+* Predefined lite-server (standalone, used when containers deployed on a different servers)
+    * `lite-client -a <node-ip>:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -c last`
 * Faucet web server with reCaptcha V2 functionality
     * uncomment section in `docker-compose.yaml` to enable;
     * specify RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET reCaptcha parameters;

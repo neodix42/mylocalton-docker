@@ -334,6 +334,8 @@ else
   # current dir /var/ton-work/db
   # install lite-server using predefined lite-server keys
   #read -r LITESERVER_ID1 LITESERVER_ID2 <<< $(generate-random-id -m keys -n liteserver)
+  #echo "Liteserver IDs: $LITESERVER_ID1 $LITESERVER_ID2"
+  #cp liteserver /var/ton-work/db/keyring/$LITESERVER_ID1
   echo "Liteserver IDs: DA46DE8CCCED9AB6F29447B334636FBE07F7F4CAE6B6833D26AF1240A1BB34B1 2kbejMztmrbylEezNGNvvgf39MrmtoM9Jq8SQKG7NLE="
   cp /scripts/liteserver /var/ton-work/db/
   cp /scripts/liteserver.pub /var/ton-work/db/
