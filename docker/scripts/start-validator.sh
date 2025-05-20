@@ -1,7 +1,18 @@
 #!/bin/bash
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
-INTERNAL_IP=$(hostname -I | tr -d " ")
+get_preferred_ip() {
+  for ip in $(hostname -I); do
+    if [[ $ip == 172.28.* ]]; then
+      echo "$ip"
+      return
+    fi
+  done
+  # Fallback to the first IP if no 172.28.* IP found
+  echo "$(hostname -I | awk '{print $1}')"
+}
+
+INTERNAL_IP=$(get_preferred_ip)
 export PUBLIC_PORT=${PUBLIC_PORT:-40001}
 export CONSOLE_PORT=${CONSOLE_PORT:-40002}
 LITE_PORT=${LITE_PORT:-40004}

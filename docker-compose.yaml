@@ -70,9 +70,6 @@ services:
   lite-server:
     container_name: lite-server
     image: ghcr.io/neodix42/mylocalton-docker-liteserver:latest
-    build:
-      context: .
-      dockerfile: ./lite-server/Dockerfile
     restart: unless-stopped
     environment:
       - LITE_SERVER_PORT=30004
