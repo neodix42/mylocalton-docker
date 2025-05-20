@@ -55,6 +55,7 @@ services:
     restart: unless-stopped
     environment:
       - SERVER_PORT=8080
+      - GENESIS_IP=172.28.1.1
     ports:
       - 8080:8080
     healthcheck:
@@ -62,15 +63,13 @@ services:
       interval: 15s
       timeout: 10s
       retries: 3
-    volumes:
-      - shared-data:/usr/share/data
     depends_on:
       genesis:
         condition: service_healthy
 
   lite-server:
     container_name: lite-server
-    image: ghcr.io/neodix42/mylocalton-liteserver:latest
+    image: ghcr.io/neodix42/mylocalton-docker-liteserver:latest
     build:
       context: .
       dockerfile: ./lite-server/Dockerfile
@@ -92,25 +91,21 @@ services:
       genesis:
         condition: service_healthy
 
-#  validator-1:
-#    container_name: validator-1
-#    image: ghcr.io/neodix42/mylocalton-docker:latest
-#    restart: unless-stopped
-#    volumes:
-#      - shared-data:/usr/share/data
-#    environment:
-#      - NAME=validator-1
-#      - GENESIS_IP=172.28.1.1
-#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
-#    depends_on:
-#      - "genesis"
+  validator-1:
+    container_name: validator-1
+    image: ghcr.io/neodix42/mylocalton-docker:latest
+    restart: unless-stopped
+    environment:
+      - NAME=validator-1
+      - GENESIS_IP=172.28.1.1
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+    depends_on:
+      - "genesis"
 #
 #  validator-2:
 #    container_name: validator-2
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
-#    volumes:
-#      - shared-data:/usr/share/data
 #    environment:
 #      - NAME=validator-2
 #      - GENESIS_IP=172.28.1.1
@@ -133,8 +128,6 @@ services:
 #    container_name: validator-4
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
-#    volumes:
-#      - shared-data:/usr/share/data
 #    environment:
 #      - NAME=validator-4
 #      - GENESIS_IP=172.28.1.1
@@ -145,8 +138,6 @@ services:
 #    container_name: validator-5
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
 #    restart: unless-stopped
-#    volumes:
-#      - shared-data:/usr/share/data
 #    environment:
 #      - NAME=validator-5
 #      - GENESIS_IP=172.28.1.1
@@ -190,8 +181,6 @@ services:
     image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
     ports:
       - 88:88
-    volumes:
-      - shared-data:/usr/share/data
     restart: unless-stopped
     depends_on:
       genesis:
@@ -207,22 +196,20 @@ services:
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
-#  data:
-#    container_name: data
-#    image: ghcr.io/neodix42/mylocalton-docker-data:latest
-#    ports:
-#      - 99:99
-#    volumes:
-#      - shared-data:/usr/share/data
-#    restart: unless-stopped
-#    depends_on:
-#      genesis:
-#        condition: service_healthy
-#    environment:
-#      - SERVER_PORT=99
-#      - PERIOD=5
-#    healthcheck:
-#      test: curl -sS http://127.0.0.1:99|| echo 1
+  data:
+    container_name: data
+    image: ghcr.io/neodix42/mylocalton-docker-data:latest
+    ports:
+      - 99:99
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=99
+      - PERIOD=5
+    healthcheck:
+      test: curl -sS http://127.0.0.1:99|| echo 1
 
   restarter:
     container_name: explorer-restarter
