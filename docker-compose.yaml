@@ -190,6 +190,7 @@ services:
 #      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
 #      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
       - SERVER_PORT=88
+      - GENESIS_IP=172.28.1.1
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
@@ -205,6 +206,7 @@ services:
     environment:
       - SERVER_PORT=99
       - PERIOD=5
+      - GENESIS_IP=172.28.1.1
     healthcheck:
       test: curl -sS http://127.0.0.1:99|| echo 1
 

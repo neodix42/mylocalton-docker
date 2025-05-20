@@ -1,6 +1,17 @@
 #!/bin/bash
 
-INTERNAL_IP=$(hostname -I | tr -d " ")
+get_preferred_ip() {
+  for ip in $(hostname -I); do
+    if [[ $ip == 172.28.* ]]; then
+      echo "$ip"
+      return
+    fi
+  done
+  # Fallback to the first IP if no 172.28.* IP found
+  echo "$(hostname -I | awk '{print $1}')"
+}
+
+INTERNAL_IP=$(get_preferred_ip)
 
 echo $(date)
 if [ -f "/usr/share/ton/validator.pk" ] && [ -f "/var/ton-work/db/global.config.json" ]; then
