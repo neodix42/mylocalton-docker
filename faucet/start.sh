@@ -12,8 +12,19 @@ else
   cp /scripts/web/script-no-recaptcha.js /scripts/web/script.js
 fi
 
-wget -O /scripts/web/global.config.json http://$GENESIS_IP:8000/global.config.json
+
+if [ "$EXTERNAL_IP" ]; then
+  wget -O /scripts/web/global.config.json http://$GENESIS_IP:8000/external.global.config.json
+elif [ "$GENESIS_IP" ]; then
+  wget -O /scripts/web/global.config.json http://$GENESIS_IP:8000/global.config.json
+else
+  echo Neither EXTERNAL_IP nor GENESIS_IP specified.
+  exit 11
+fi
+
 wget -O /scripts/web/libtonlibjson.so http://$GENESIS_IP:8000/libtonlibjson.so
 wget -O /scripts/web/faucet-highload.pk http://$GENESIS_IP:8000/faucet-highload.pk
+
+
 
 java -jar /scripts/web/MyLocalTonDockerWebFaucet.jar

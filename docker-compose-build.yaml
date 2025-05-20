@@ -105,6 +105,7 @@ services:
     environment:
       - NAME=validator-1
       - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     depends_on:
       - "genesis"
@@ -118,6 +119,8 @@ services:
 #    environment:
 #      - NAME=validator-2
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #
@@ -130,6 +133,8 @@ services:
 #    environment:
 #      - NAME=validator-3
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #
@@ -142,6 +147,8 @@ services:
 #    environment:
 #      - NAME=validator-4
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #
@@ -154,6 +161,8 @@ services:
 #    environment:
 #      - NAME=validator-5
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 
@@ -210,6 +219,7 @@ services:
 #      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
 #      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
       - SERVER_PORT=88
+#      - EXTERNAL_IP= # just a flag that we require external.global.config.json
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
@@ -229,6 +239,7 @@ services:
 #      - GENESIS_IP=172.28.1.1
 #      - SERVER_PORT=99
 #      - PERIOD=5
+#      - EXTERNAL_IP= # just a flag that we require external.global.config.json
 #    healthcheck:
 #      test: curl -sS http://127.0.0.1:99|| echo 1
 

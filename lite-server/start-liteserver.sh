@@ -19,13 +19,29 @@ LITE_PORT=${LITE_SERVER_PORT:-30004}
 
 echo "Current INTERNAL_IP $INTERNAL_IP"
 echo "Current GENESIS_IP $GENESIS_IP"
+echo "Current EXTERNAL_IP $EXTERNAL_IP"
 
+if [ "$EXTERNAL_IP" ]; then
+  INTERNAL_IP=$EXTERNAL_IP
+fi
+
+echo "Current INTERNAL_IP $INTERNAL_IP"
+echo "Current GENESIS_IP $GENESIS_IP"
+echo "Current EXTERNAL_IP $EXTERNAL_IP"
 
 if [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "genesis is ready..."
   sleep 10
-  echo "Getting global.config.json from genesis via http server..."
-  wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/global.config.json
+  if [ "$EXTERNAL_IP" ]; then
+    echo "Getting external.global.config.json from genesis $GENESIS_IP via http server..."
+    wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/external.global.config.json
+  elif [ "$GENESIS_IP" ]; then
+    echo "Getting global.config.json from genesis $GENESIS_IP via http server..."
+    wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/global.config.json
+  else
+    echo Neither EXTERNAL_IP nor GENESIS_IP specified.
+    exit 11
+  fi
 else
 #  echo "waiting 20 seconds for genesis to be ready..."
 #  sleep 20

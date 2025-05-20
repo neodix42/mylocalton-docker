@@ -56,6 +56,7 @@ services:
     environment:
       - SERVER_PORT=8080
       - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # just a flag that we require external.global.config.json from genesis, used for multinode deployment
     ports:
       - 8080:8080
     healthcheck:
@@ -95,6 +96,7 @@ services:
     environment:
       - NAME=validator-1
       - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-1 node will be located and that we require external.global.config.json from genesis, used for multinode deployment
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     depends_on:
       - "genesis"
@@ -106,6 +108,8 @@ services:
 #    environment:
 #      - NAME=validator-2
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-2 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #
@@ -118,6 +122,8 @@ services:
 #    environment:
 #      - NAME=validator-3
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-3 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #
@@ -128,6 +134,8 @@ services:
 #    environment:
 #      - NAME=validator-4
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-4 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 #
@@ -138,6 +146,8 @@ services:
 #    environment:
 #      - NAME=validator-5
 #      - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - "genesis"
 
@@ -191,6 +201,7 @@ services:
 #      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
       - SERVER_PORT=88
       - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # just a flag that we require external.global.config.json
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
@@ -207,6 +218,7 @@ services:
       - SERVER_PORT=99
       - PERIOD=5
       - GENESIS_IP=172.28.1.1
+#      - EXTERNAL_IP= # just a flag that we require external.global.config.json
     healthcheck:
       test: curl -sS http://127.0.0.1:99|| echo 1
 
