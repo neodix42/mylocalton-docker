@@ -17,9 +17,10 @@ CONSOLE_PORT=${CONSOLE_PORT:-40002}
 DHT_PORT=${DHT_PORT:-40003}
 LITE_PORT=${LITE_PORT:-40004}
 
-echo Current INTERNAL_IP $INTERNAL_IP
-echo Custom EXTERNAL_IP $EXTERNAL_IP
+echo "Current INTERNAL_IP $INTERNAL_IP"
+echo "Custom EXTERNAL_IP $EXTERNAL_IP"
 
+ORIGINAL_INTERNAL_IP=$INTERNAL_IP
 if [ "$EXTERNAL_IP" ]; then
   INTERNAL_IP=$EXTERNAL_IP
 fi
@@ -318,29 +319,29 @@ else
   mv config.json.new config.json
 
   # start the full node for some time to add validation keys
-  (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT")&
+  (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$ORIGINAL_INTERNAL_IP:$PUBLIC_PORT")&
   PRELIMINARY_VALIDATOR_RUN=$!
   sleep 4;
 
-  echo Adding keys to validator-engine-console...
+  echo "Adding keys to validator-engine-console..."
 
-  read -r t1 t2 t3 NEW_NODE_KEY <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
-  read -r t1 t2 t3 NEW_VAL_ADNL <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
+  read -r t1 t2 t3 NEW_NODE_KEY <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
+  read -r t1 t2 t3 NEW_VAL_ADNL <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
 
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addpermkey $VAL_ID_HEX 0 $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addtempkey $VAL_ID_HEX $VAL_ID_HEX $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_VAL_ADNL 0" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $VAL_ID_HEX 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addpermkey $VAL_ID_HEX 0 $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addtempkey $VAL_ID_HEX $VAL_ID_HEX $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_VAL_ADNL 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $VAL_ID_HEX 0" 2>&1
 
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addvalidatoraddr $VAL_ID_HEX $NEW_VAL_ADNL $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_NODE_KEY 0" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "changefullnodeaddr $NEW_NODE_KEY" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a "$INTERNAL_IP:$CONSOLE_PORT" -rc "importf keyring/$VAL_ID_HEX" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addvalidatoraddr $VAL_ID_HEX $NEW_VAL_ADNL $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_NODE_KEY 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "changefullnodeaddr $NEW_NODE_KEY" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "importf keyring/$VAL_ID_HEX" 2>&1
   kill $PRELIMINARY_VALIDATOR_RUN;
 
   rm -rf /var/ton-work/log*
 
-  echo Genesis node initilized
+  echo "Genesis node initialized"
   echo
   # current dir /var/ton-work/db
   # install lite-server using predefined lite-server keys
