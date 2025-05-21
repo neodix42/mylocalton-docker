@@ -50,8 +50,6 @@ else
   echo "/var/ton-work/db/global.config.json from genesis already exists"
 fi
 
-cd /usr/share/ton
-
 cd /var/ton-work/db
 
 if [ ! -f "config.json" ]; then
@@ -106,13 +104,17 @@ if [ ! -f "config.json" ]; then
   sed -e "s~\"liteservers\"\ \:\ \[~$LITESERVERS~g" config.json > config.json.liteservers
   mv config.json.liteservers config.json
 
-  # replace genesis lite-server by our lite-server in global.config.json
+  cat global.config.json
+  echo
+  echo "Replace genesis lite-server by our lite-server in global.config.json"
   IP=$INTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
   [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
   LITESERVERSCONFIG=$(printf "%q" "\"liteservers\":[{\"id\":{\"key\":\"Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI=\", \"@type\":\"pub.ed25519\"}, \"port\":$LITE_PORT, \"ip\":$IPNUM }]}")
   sed -i -e "\$s#\(.*\)\}#\1,$LITESERVERSCONFIG#" global.config.json
   python3 -c 'import json; f=open("global.config.json", "r"); config=json.loads(f.read()); f.close(); f=open("global.config.json", "w");f.write(json.dumps(config, indent=2)); f.close()';
 
+  echo "cat global.config.json"
+  cat global.config.json
 #  cp my-ton-global.config.json global.config.json
   rm control.new control.template
 
@@ -123,6 +125,8 @@ if [ ! -f "config.json" ]; then
     cp global.config.json external.global.config.json
     sed -i "s/$OLDNUM/$IPNUM/g" external.global.config.json
   fi
+  echo "cat external.global.config.json"
+  cat external.global.config.json
 
   cp global.config.json localhost.global.config.json
   sed -i "s/$OLDNUM/2130706433/g" localhost.global.config.json

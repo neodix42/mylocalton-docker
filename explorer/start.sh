@@ -31,4 +31,5 @@ else
   echo "Started at http://$INTERNAL_IP:$SERVER_PORT/last"
   IP=$INTERNAL_IP
 if
+echo blockchain-explorer -C /usr/src/global.config.json -a $IP:$SERVER_PORT
 blockchain-explorer -C /usr/src/global.config.json -a $IP:$SERVER_PORT
