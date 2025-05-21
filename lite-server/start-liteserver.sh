@@ -41,7 +41,7 @@ if [ ! -f "/var/ton-work/db/global.config.json" ]; then
     wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/global.config.json
     test $? -eq 0 || { echo "Can't download http://$GENESIS_IP:8000/global.config.json "; exit 14; }
   else
-    echo Neither EXTERNAL_IP nor GENESIS_IP specified.
+    echo "Neither EXTERNAL_IP nor GENESIS_IP specified."
     exit 11
   fi
 else
@@ -133,10 +133,10 @@ if [ ! -f "config.json" ]; then
 
 fi
 
-echo NODE IP           $INTERNAL_IP
-echo NODE_PORT         $PUBLIC_PORT
-echo VALIDATOR_CONSOLE $CONSOLE_PORT
-echo LITESERVER_PORT   $LITE_PORT
+echo "NODE IP           $INTERNAL_IP"
+echo "NODE_PORT         $PUBLIC_PORT"
+echo "VALIDATOR_CONSOLE $CONSOLE_PORT"
+echo "LITESERVER_PORT   $LITE_PORT"
 echo "lite-client -a $INTERNAL_IP:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -c last"
 echo
 

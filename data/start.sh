@@ -10,7 +10,7 @@ elif [ "$GENESIS_IP" ]; then
   wget -O /scripts/web/global.config.json http://$GENESIS_IP:8000/global.config.json
   test $? -eq 0 || { echo "Can't download http://$GENESIS_IP:8000/global.config.json "; exit 14; }
 else
-  echo Neither EXTERNAL_IP nor GENESIS_IP specified.
+  echo "Neither EXTERNAL_IP nor GENESIS_IP specified."
   exit 11
 fi
 wget -O /scripts/web/libtonlibjson.so http://$GENESIS_IP:8000/libtonlibjson.so
