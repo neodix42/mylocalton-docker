@@ -32,7 +32,7 @@ COPY docker/scripts/liteserver /scripts
 COPY docker/scripts/liteserver.pub /scripts
 
 RUN echo 'alias getstats="validator-engine-console -k /var/ton-work/db/client -p /var/ton-work/db/server.pub -a $(hostname -I | tr -d " "):$(jq .control[].port <<< cat /var/ton-work/db/config.json) -c getstats"' >> ~/.bashrc
-RUN echo 'alias last="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c last"' >> ~/.bashrc
+RUN echo 'alias last="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | awk \"{for(i=1;i<=NF;i++) if ($i ~ /^172\.28\./) {print $i; exit} print $1; exit}\"):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c last"' >> ~/.bashrc
 RUN echo 'alias config32="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c \"getconfig 32\""' >> ~/.bashrc
 RUN echo 'alias config34="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c \"getconfig 34\""' >> ~/.bashrc
 RUN echo 'alias config36="lite-client -p /var/ton-work/db/liteserver.pub -a $(hostname -I | tr -d " "):$(jq .liteservers[].port <<< cat /var/ton-work/db/config.json) -c \"getconfig 36\""' >> ~/.bashrc

@@ -11,4 +11,24 @@ else
   exit 11
 fi
 
-blockchain-explorer -C /usr/src/global.config.json -H $SERVER_PORT_VAR
+get_preferred_ip() {
+  for ip in $(hostname -I); do
+    if [[ $ip == 172.28.* ]]; then
+      echo "$ip"
+      return
+    fi
+  done
+  # Fallback to the first IP if no 172.28.* IP found
+  echo "$(hostname -I | awk '{print $1}')"
+}
+
+INTERNAL_IP=$(get_preferred_ip)
+
+if [ "$EXTERNAL_IP" ]; then
+  echo "Started at http://$EXTERNAL_IP:$SERVER_PORT/last"
+  IP=$EXTERNAL_IP
+else
+  echo "Started at http://$INTERNAL_IP:$SERVER_PORT/last"
+  IP=$INTERNAL_IP
+if
+blockchain-explorer -C /usr/src/global.config.json -a $IP:$SERVER_PORT
