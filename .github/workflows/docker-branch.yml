@@ -114,4 +114,4 @@ jobs:
           push: true
           context: ./
           file: ./lite-server/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-liteserver:${{ steps.tag3.outputs.TAG }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-liteserver:${{ steps.tag5.outputs.TAG }}

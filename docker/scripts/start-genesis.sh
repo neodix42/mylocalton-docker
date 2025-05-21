@@ -408,6 +408,8 @@ if [ "$ENABLE_FILE_HTTP_SERVER" == "true" ]; then
   echo wget http://$INTERNAL_IP:8000/global.config.json
 fi
 
+echo "lite-client -a $INTERNAL_IP:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last"
+
 if [ ! "$VERBOSITY" ]; then
   VERBOSITY=1
 else
