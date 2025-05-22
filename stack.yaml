@@ -13,12 +13,24 @@ x-indexer-environment: &indexer-env
   TON_WORKER_BINARY: ton-index-postgres-v2
   TON_WORKER_ADDITIONAL_ARGS:
 
+# Define global variables for node placement
+x-node-placement:
+  indexer-node: &indexer-node-placement
+    placement:
+      constraints:
+        - node.hostname == ${GENESIS_NODE_NAME:-manager}
+
+version: '3.8'
 
 services:
   genesis:
-    container_name: genesis
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: unless-stopped
+    image: ghcr.io/neodix42/mylocalton-docker:dev
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${GENESIS_NODE_NAME:-manager}
+      restart_policy:
+        condition: on-failure
     ports:
       - 8000:8000         # simple file http server
       - 40004:40004       # lite-server
@@ -31,32 +43,34 @@ services:
     environment:
       - GENESIS=true
       - NAME=genesis
-#      - ENABLE_FILE_HTTP_SERVER=false #default true
+      - ENABLE_FILE_HTTP_SERVER=true
 #      - NEXT_BLOCK_GENERATION_DELAY=2 #default 2000 (2 seconds)
-#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
+      - EXTERNAL_IP=100.100.100.10 # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
 #      - VERBOSITY=4
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
-
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c last
       interval: 30s
       timeout: 20s
       retries: 10
     networks:
-      default:
-        ipv4_address: 172.28.1.1
+      - default
 
   blockchain-explorer:
-    container_name: blockchain-explorer
-    image: ghcr.io/neodix42/mylocalton-docker-explorer:latest
-    restart: unless-stopped
+    image: ghcr.io/neodix42/mylocalton-docker-explorer:dev
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${EXPLORER_NODE_NAME:-manager}
+      restart_policy:
+        condition: on-failure
     environment:
       - SERVER_PORT=8080
-      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # just a flag that we require external.global.config.json from genesis, used for multinode deployment
+      - GENESIS_IP=100.100.100.10
+      - EXTERNAL_IP=100.100.100.11 # ip where blockchain-explorer node will be located and that we require external.global.config.json from genesis
     ports:
       - 8080:8080
     healthcheck:
@@ -65,93 +79,112 @@ services:
       timeout: 10s
       retries: 3
     depends_on:
-      genesis:
-        condition: service_healthy
+      - genesis
 
   lite-server:
     container_name: lite-server
-    image: ghcr.io/neodix42/mylocalton-docker-liteserver:latest
+    image: ghcr.io/neodix42/mylocalton-docker-liteserver:dev
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${LITESERVER_NODE_NAME:-manager}
     restart: unless-stopped
     environment:
       - LITE_SERVER_PORT=30004
-      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
+      - GENESIS_IP=100.100.100.10
+      - EXTERNAL_IP=100.100.100.12 # ip where lite-server node will be located and that we require external.global.config.json from genesis
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     ports:
       - 30004:30004       # lite-server
-      - "30001:30001/udp" # full node public port
+      - "30001:30001/udp" # validator public port
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -t 3 -c last
       interval: 15s
       timeout: 10s
       retries: 3
     depends_on:
-      genesis:
-        condition: service_healthy
+      - genesis
 
   validator-1:
-    container_name: validator-1
-    image: ghcr.io/neodix42/mylocalton-docker:latest
-    restart: unless-stopped
+    image: ghcr.io/neodix42/mylocalton-docker:dev
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${VALIDATOR1_NODE_NAME:-manager}
+      restart_policy:
+        condition: on-failure
     environment:
       - NAME=validator-1
-      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # ip where validator-1 node will be located and that we require external.global.config.json from genesis, used for multinode deployment
+      - GENESIS_IP=100.100.100.10
+      - EXTERNAL_IP=100.100.100.13 # ip where validator-1 node will be located and that we require external.global.config.json from genesis
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+      - VERBOSITY=3
     depends_on:
-      - "genesis"
-#
+      - genesis
+
 #  validator-2:
-#    container_name: validator-2
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
-#    restart: unless-stopped
+#    deploy:
+#      placement:
+#        constraints:
+#          - node.hostname == ${VALIDATOR2_NODE_NAME:-manager}
+#      restart_policy:
+#        condition: on-failure
 #    environment:
 #      - NAME=validator-2
-#      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # ip where validator-2 node will be located and that we require external.global.config.json from genesis
-#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#      - GENESIS_IP=100.100.100.10
+#      - EXTERNAL_IP=100.100.100.14 # ip where validator-2 node will be located and that we require external.global.config.json from genesis
 #    depends_on:
-#      - "genesis"
+#      - genesis
 #
 #  validator-3:
-#    container_name: validator-3
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
-#    restart: unless-stopped
+#    deploy:
+#      placement:
+#        constraints:
+#          - node.hostname == ${VALIDATOR3_NODE_NAME:-manager}
+#      restart_policy:
+#        condition: on-failure
 #    environment:
 #      - NAME=validator-3
-#      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # ip where validator-3 node will be located and that we require external.global.config.json from genesis
-#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#      - GENESIS_IP=100.100.100.10
+#      - EXTERNAL_IP=100.100.100.15 # ip where validator-3 node will be located and that we require external.global.config.json from genesis
 #    depends_on:
-#      - "genesis"
+#      - genesis
 #
 #  validator-4:
-#    container_name: validator-4
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
-#    restart: unless-stopped
+#    deploy:
+#      placement:
+#        constraints:
+#          - node.hostname == ${VALIDATOR4_NODE_NAME:-manager}
+#      restart_policy:
+#        condition: on-failure
 #    environment:
 #      - NAME=validator-4
-#      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # ip where validator-4 node will be located and that we require external.global.config.json from genesis
-#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#      - GENESIS_IP=100.100.100.10
+#      - EXTERNAL_IP=100.100.100.16 # ip where validator-4 node will be located and that we require external.global.config.json from genesis
 #    depends_on:
-#      - "genesis"
+#      - genesis
 #
 #  validator-5:
-#    container_name: validator-5
 #    image: ghcr.io/neodix42/mylocalton-docker:latest
-#    restart: unless-stopped
+#    deploy:
+#      placement:
+#        constraints:
+#          - node.hostname == ${VALIDATOR5_NODE_NAME:-manager}
+#      restart_policy:
+#        condition: on-failure
 #    environment:
 #      - NAME=validator-5
-#      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # ip where validator-5 node will be located and that we require external.global.config.json from genesis
-#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#      - GENESIS_IP=100.100.100.10
+#      - EXTERNAL_IP=100.100.100.17 # ip where validator-5 node will be located and that we require external.global.config.json from genesis
 #    depends_on:
-#      - "genesis"
+#      - genesis
 
   tonhttpapi:
-    container_name: ton-http-api
     image: ghcr.io/neodix42/ton-http-api:latest
+    deploy: *indexer-node-placement
     ports:
       - 8081:8081
     volumes:
@@ -170,10 +203,8 @@ services:
       - TON_API_TONLIB_REQUEST_TIMEOUT
       - TON_API_GET_METHODS_ENABLED=1
       - TON_API_JSON_RPC_ENABLED=1
-    restart: unless-stopped
     depends_on:
-      genesis:
-        condition: service_healthy
+      - genesis
     command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8081 pyTON.main:app"
     healthcheck:
       test: curl -sS http://127.0.0.1:8081/healthcheck || echo 1
@@ -182,14 +213,17 @@ services:
       retries: 10
 
   faucet:
-    container_name: faucet
-    image: ghcr.io/neodix42/mylocalton-docker-faucet:latest
+    image: ghcr.io/neodix42/mylocalton-docker-faucet:dev
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${FAUCET_NODE_NAME:-manager}
+      restart_policy:
+        condition: on-failure
     ports:
       - 88:88
-    restart: unless-stopped
     depends_on:
-      genesis:
-        condition: service_healthy
+      - genesis
     environment:
       - FAUCET_USE_RECAPTCHA=false # default true
       - RECAPTCHA_SITE_KEY= # google reCaptcha v2
@@ -198,49 +232,53 @@ services:
 #      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
 #      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
       - SERVER_PORT=88
-      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # just a flag that we require external.global.config.json
+      - GENESIS_IP=100.100.100.10
+      - EXTERNAL_IP=100.100.100.18 # ip where faucet node will be located and that we require external.global.config.json from genesis
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
 
-  data:
-    container_name: data
-    image: ghcr.io/neodix42/mylocalton-docker-data:latest
-    ports:
-      - 99:99
-    restart: unless-stopped
-    depends_on:
-      genesis:
-        condition: service_healthy
-    environment:
-      - SERVER_PORT=99
-      - PERIOD=5
-      - GENESIS_IP=172.28.1.1
-#      - EXTERNAL_IP= # just a flag that we require external.global.config.json
-    healthcheck:
-      test: curl -sS http://127.0.0.1:99|| echo 1
+#  data:
+#    image: ghcr.io/neodix42/mylocalton-docker-data:dev
+#    deploy:
+#      placement:
+#        constraints:
+#          - node.hostname == ${DATA_NODE_NAME:-manager}
+#      restart_policy:
+#        condition: on-failure
+#    ports:
+#      - 99:99
+#    depends_on:
+#      - genesis
+#    environment:
+#      - SERVER_PORT=99
+#      - PERIOD=5
+#      - GENESIS_IP=100.100.100.10
+#      - EXTERNAL_IP=1100.100.100.19 # ip where data node will be located and that we require external.global.config.json from genesis
+#    healthcheck:
+#      test: curl -sS http://127.0.0.1:99|| echo 1
 
   restarter:
-    container_name: explorer-restarter
     image: docker:cli
-    restart: unless-stopped
-    volumes: [ "/var/run/docker.sock:/var/run/docker.sock" ]
-    command: [ "/bin/sh", "-c", "while true; do sleep 3600; echo restarted; docker restart blockchain-explorer; done" ]
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${EXPLORER_NODE_NAME:-manager}
+      restart_policy:
+        condition: on-failure
+    volumes: 
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: [ "/bin/sh", "-c", "while true; do sleep 3600; echo restarted; docker restart $$(docker ps -q --filter name={{.Service.Name}}_blockchain-explorer); done" ]
     depends_on:
-      blockchain-explorer:
-        condition: service_healthy
+      - blockchain-explorer
 
   # toncenter api v3
   event-cache:
-    container_name: event-cache
     image: redis:latest
-    restart: unless-stopped
+    deploy: *indexer-node-placement
 
   index-postgres:
-    container_name: index-postgres
     image: postgres:17
-    # ports:
-    #   - 5432:5432
+    deploy: *indexer-node-placement
     environment: *indexer-env
     command: postgres -c max_connections=1024 -c shared_buffers=4GB -c work_mem=64MB -c max_wal_size=1GB -c tcp_keepalives_idle=60 -c tcp_keepalives_interval=60 -c tcp_keepalives_count=60
     healthcheck:
@@ -249,59 +287,53 @@ services:
       timeout: 5s
       retries: 5
     shm_size: 2G
-    restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
   event-classifier:
-    container_name: event-classifier
     image: toncenter/ton-indexer-classifier:v1.2.0-test
+    deploy: *indexer-node-placement
     command: --pool-size 4 --prefetch-size 1000 --batch-size 100
     environment: *indexer-env
-    restart: unless-stopped
     depends_on:
       - index-worker
       - event-cache
 
   index-api:
-    container_name: index-api
     image: toncenter/ton-indexer-api:v1.2.0-test
+    deploy: *indexer-node-placement
     command: -bind ":8082" -prefork -threads 4 -v2 http://tonhttpapi:8081/
     ports:
       - 8082:8082
     environment: *indexer-env
-    restart: unless-stopped
     depends_on:
       - index-worker
 
   index-worker:
-    container_name: index-worker
     image: toncenter/ton-indexer-worker:v1.2.0-test
+    deploy: *indexer-node-placement
     volumes:
       - ton-db:/tondb
       - index-workdir:/workdir
     environment: *indexer-env
     command: --working-dir /workdir --from 1 --threads 8
-    restart: unless-stopped
     depends_on:
-      genesis:
-        condition: service_healthy
-      index-postgres:
-        condition: service_healthy
+      - genesis
+      - index-postgres
+
 volumes:
   shared-data:
+    driver: local
   postgres-data:
+    driver: local
   index-workdir:
+    driver: local
   ton-db:
-# # uncomment if you want to mount this image in folder
-# driver: local
-# driver_opts:
-#   o: bind
-#   type: none
-#   device: /home/user/ton-db
+    driver: local
 
 networks:
   default:
+    driver: overlay
     ipam:
       driver: default
       config:
