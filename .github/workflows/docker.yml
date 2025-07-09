@@ -47,6 +47,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
+          no-cache: true
           file: ./Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
