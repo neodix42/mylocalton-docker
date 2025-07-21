@@ -1,7 +1,6 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
-import static java.util.Objects.isNull;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.*;
@@ -26,7 +25,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.websocket.EndpointConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +35,9 @@ import org.ton.mylocaltondocker.timemachine.Main;
 @RestController
 @Slf4j
 public class MyRestController {
+  public static final String CONTAINER_GENESIS = "genesis";
+  public static final String CONTAINER_DB_PATH = "/var/ton-work/db";
+  public static final String GENESIS_IMAGE_NAME = "mylocaltondocker";
   String error;
 
   private final ConcurrentHashMap<String, Bucket> sessionBuckets = new ConcurrentHashMap<>();
@@ -166,14 +167,28 @@ public class MyRestController {
     }
   }
 
-  @GetMapping("/seqno")
+  @GetMapping("/seqno-volume")
   public Map<String, Object> getSeqno() {
     try {
-      MasterChainInfo masterChainInfo= Main.tonlib.getMasterChainInfo();
+      log.info("Getting seqno-volume");
 
+      DockerClient dockerClient = createDockerClient();
+      String containerXId =
+          dockerClient
+              .listContainersCmd()
+              .withNameFilter(List.of(CONTAINER_GENESIS))
+              .exec()
+              .stream()
+              .findFirst()
+              .map(c -> c.getId())
+              .orElseThrow(() -> new RuntimeException("Container not found"));
+
+      MasterChainInfo masterChainInfo = Main.tonlib.getMasterChainInfo();
+      String volume = getCurrentVolume(dockerClient, containerXId);
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("seqno", masterChainInfo.getLast().getSeqno());
+      response.put("volume", volume);
       return response;
     } catch (Exception e) {
       log.error("Error getting seqno", e);
@@ -183,6 +198,7 @@ public class MyRestController {
       return response;
     }
   }
+
   // Graph management endpoints
   @GetMapping("/graph")
   public Map<String, Object> getGraph() {
@@ -250,8 +266,6 @@ public class MyRestController {
       log.info("Creating snapshot (backup only)");
 
       DockerClient dockerClient = createDockerClient();
-      String containerXName = "genesis";
-      String containerXMountPath = "/var/ton-work/db";
 
       // Get sequential snapshot number from request or generate next one
       int snapshotNumber;
@@ -261,27 +275,22 @@ public class MyRestController {
         // Fallback: generate next sequential number by counting existing volumes
         snapshotNumber = getNextSnapshotNumber(dockerClient);
       }
-      
+
       String snapshotId = "snapshot-" + snapshotNumber;
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
       // Find container
       String containerXId =
-          dockerClient.listContainersCmd().withNameFilter(List.of(containerXName)).exec().stream()
+          dockerClient
+              .listContainersCmd()
+              .withNameFilter(List.of(CONTAINER_GENESIS))
+              .exec()
+              .stream()
               .findFirst()
               .map(c -> c.getId())
               .orElseThrow(() -> new RuntimeException("Container not found"));
 
-      // Get current volume
-      InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerXId).exec();
-      String volumeName = null;
-      for (var mount : inspectX.getMounts()) {
-        if (mount.getSource() != null
-            && mount.getDestination().getPath().equals(containerXMountPath)) {
-          volumeName = mount.getName();
-          break;
-        }
-      }
+      String volumeName = getCurrentVolume(dockerClient, containerXId);
 
       if (volumeName == null) {
         throw new RuntimeException("Volume not found");
@@ -344,6 +353,19 @@ public class MyRestController {
     }
   }
 
+  private static String getCurrentVolume(DockerClient dockerClient, String containerXId) {
+    // Get current volume
+    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerXId).exec();
+    String volumeName = null;
+    for (var mount : inspectX.getMounts()) {
+      if (mount.getSource() != null && mount.getDestination().getPath().equals(CONTAINER_DB_PATH)) {
+        volumeName = mount.getName();
+        break;
+      }
+    }
+    return volumeName;
+  }
+
   @PostMapping("/restore-snapshot")
   public Map<String, Object> restoreSnapshot(@RequestBody Map<String, String> request) {
     try {
@@ -353,14 +375,15 @@ public class MyRestController {
       log.info("Restoring snapshot: {}", snapshotId);
 
       DockerClient dockerClient = createDockerClient();
-      String containerXName = "genesis";
-      String containerXMountPath = "/var/ton-work/db";
-      String imageName = "mylocaltondocker";
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
       // Find and stop current container
       String containerXId =
-          dockerClient.listContainersCmd().withNameFilter(List.of(containerXName)).exec().stream()
+          dockerClient
+              .listContainersCmd()
+              .withNameFilter(List.of(CONTAINER_GENESIS))
+              .exec()
+              .stream()
               .findFirst()
               .map(c -> c.getId())
               .orElseThrow(() -> new RuntimeException("Container not found"));
@@ -391,9 +414,9 @@ public class MyRestController {
       // Create new container with snapshot volume
       CreateContainerResponse newContainer =
           dockerClient
-              .createContainerCmd(imageName)
-              .withName(containerXName)
-              .withVolumes(new Volume(containerXMountPath), new Volume("/usr/share/data"))
+              .createContainerCmd(GENESIS_IMAGE_NAME)
+              .withName(CONTAINER_GENESIS)
+              .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
               .withEnv(envs)
               .withExposedPorts(exposedPorts)
               .withIpv4Address("172.28.1.10")
@@ -403,7 +426,7 @@ public class MyRestController {
                       .withNetworkMode(networkMode)
                       .withPortBindings(portBindings)
                       .withBinds(
-                          new Bind(backupVolumeName, new Volume(containerXMountPath)),
+                          new Bind(backupVolumeName, new Volume(CONTAINER_DB_PATH)),
                           new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))))
               .exec();
 
@@ -437,7 +460,7 @@ public class MyRestController {
       // List all volumes with snapshot prefix to determine next sequential number
       List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
       int maxSnapshotNumber = 0;
-      
+
       for (InspectVolumeResponse volume : volumes) {
         String volumeName = volume.getName();
         if (volumeName.startsWith("ton-db-snapshot-")) {
@@ -451,7 +474,7 @@ public class MyRestController {
           }
         }
       }
-      
+
       return maxSnapshotNumber + 1;
     } catch (Exception e) {
       log.error("Error determining next snapshot number", e);
@@ -485,22 +508,23 @@ public class MyRestController {
     return DockerClientBuilder.getInstance(defaultConfig).withDockerHttpClient(httpClient).build();
   }
 
-  // Function to check if IP is available
-  public boolean isIpAvailable(DockerClient dockerClient, String ipAddress, String networkName) {
-    // List all containers
-    List<Container> containers = dockerClient.listContainersCmd().withShowAll(true).exec();
-
-    // Check each container's network settings for IP address conflicts
-    for (Container container : containers) {
-      InspectContainerResponse containerDetails =
-          dockerClient.inspectContainerCmd(container.getId()).exec();
-      Map<String, ContainerNetwork> networks = containerDetails.getNetworkSettings().getNetworks();
-      ContainerNetwork containerNetwork = networks.get(networkName);
-      //      log.info("container network {}, container {}", containerNetwork, container);
-      if (containerNetwork != null && ipAddress.equals(containerNetwork.getIpAddress())) {
-        return false; // IP is in use
-      }
-    }
-    return true; // IP is available
-  }
+  //  public boolean isIpAvailable(DockerClient dockerClient, String ipAddress, String networkName)
+  // {
+  //    // List all containers
+  //    List<Container> containers = dockerClient.listContainersCmd().withShowAll(true).exec();
+  //
+  //    // Check each container's network settings for IP address conflicts
+  //    for (Container container : containers) {
+  //      InspectContainerResponse containerDetails =
+  //          dockerClient.inspectContainerCmd(container.getId()).exec();
+  //      Map<String, ContainerNetwork> networks =
+  // containerDetails.getNetworkSettings().getNetworks();
+  //      ContainerNetwork containerNetwork = networks.get(networkName);
+  //      //      log.info("container network {}, container {}", containerNetwork, container);
+  //      if (containerNetwork != null && ipAddress.equals(containerNetwork.getIpAddress())) {
+  //        return false; // IP is in use
+  //      }
+  //    }
+  //    return true; // IP is available
+  //  }
 }
