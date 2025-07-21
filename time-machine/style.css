@@ -207,9 +207,8 @@ body {
 /* Action buttons */
 .action-buttons {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    top: 0px;
+    left: -170px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -229,13 +228,16 @@ body {
     gap: 8px;
     padding: 12px 20px;
     border: none;
-    border-radius: 25px;
+    border-radius: 8px;
     font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s ease;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(10px);
+    width: 160px;
+    justify-content: flex-start;
+    white-space: nowrap;
 }
 
 .action-btn:hover {

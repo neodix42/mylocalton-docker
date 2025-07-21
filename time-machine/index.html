@@ -28,18 +28,6 @@
 
 <div class="graph-container">
     <svg id="graph-svg"></svg>
-    
-    <!-- Action buttons that appear when a node is selected -->
-    <div id="action-buttons" class="action-buttons hidden">
-        <button id="take-snapshot-btn" class="action-btn primary">
-            <span class="btn-icon">📸</span>
-            Take Snapshot
-        </button>
-        <button id="restore-snapshot-btn" class="action-btn secondary">
-            <span class="btn-icon">⏮️</span>
-            Restore Snapshot
-        </button>
-    </div>
 </div>
 
 <div class="blockchain-status-panel">
@@ -57,6 +45,16 @@
 </div>
 
 <div class="info-panel">
+    <!-- Action buttons that appear when a node is selected -->
+    <div id="action-buttons" class="action-buttons hidden">
+        <button id="take-snapshot-btn" class="action-btn primary">
+            Take Snapshot
+        </button>
+        <button id="restore-snapshot-btn" class="action-btn secondary">
+            Restore Snapshot
+        </button>
+    </div>
+    
     <div class="node-info" id="node-info">
         <h3>Node Information</h3>
         <div id="node-details">

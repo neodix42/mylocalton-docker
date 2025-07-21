@@ -478,11 +478,6 @@ class BlockchainGraph {
         
         actionButtons.classList.remove('hidden');
         
-        // Position buttons to the right of the selected node
-        actionButtons.style.left = `${node.x + 80}px`;
-        actionButtons.style.top = `${node.y - 30}px`;
-        actionButtons.style.transform = 'none';
-        
         // Show/hide appropriate buttons
         takeSnapshotBtn.style.display = 'flex';
         restoreSnapshotBtn.style.display = node.isRoot ? 'none' : 'flex';
@@ -521,10 +516,20 @@ class BlockchainGraph {
         const timestamp = new Date(node.timestamp).toLocaleString();
         const displayName = node.isRoot ? 'ROOT' : (node.customName || `S${node.snapshotNumber}`);
         
+        // For active node, show current seqno from left panel, otherwise show stored seqno
+        let displaySeqno = 'N/A';
+        if (node.id === this.activeNodeId) {
+            // Get current seqno from left panel
+            const currentSeqnoElement = document.getElementById('current-seqno');
+            displaySeqno = currentSeqnoElement ? currentSeqnoElement.textContent : (node.seqno !== undefined ? node.seqno : 'N/A');
+        } else {
+            displaySeqno = node.seqno !== undefined ? node.seqno : 'N/A';
+        }
+        
         nodeDetails.innerHTML = `
             <p><strong>ID:</strong> ${node.id}</p>
             <p><strong>Name:</strong> ${displayName}</p>
-            <p><strong>Block Sequence:</strong> ${node.blockSequence}</p>
+            <p><strong>Seqno:</strong> ${displaySeqno}</p>
             <p><strong>Created:</strong> ${timestamp}</p>
             ${node.parentId ? `<p><strong>Parent:</strong> ${node.parentId}</p>` : ''}
         `;
@@ -545,6 +550,34 @@ class BlockchainGraph {
             const existingSnapshots = this.nodes.filter(n => !n.isRoot);
             const nextSnapshotNumber = existingSnapshots.length + 1;
             
+            // Determine seqno for the new snapshot
+            let snapshotSeqno = 0;
+            
+            if (this.selectedNode.id === this.activeNodeId) {
+                // Taking snapshot from active (running) node - get current seqno
+                try {
+                    const seqnoResponse = await fetch('/seqno-volume', {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+                    
+                    if (seqnoResponse.ok) {
+                        const seqnoData = await seqnoResponse.json();
+                        if (seqnoData.success && seqnoData.seqno) {
+                            snapshotSeqno = seqnoData.seqno;
+                        }
+                    }
+                } catch (seqnoError) {
+                    console.error('Error fetching current seqno:', seqnoError);
+                    // Continue with seqno = 0 if fetch fails
+                }
+            } else {
+                // Taking snapshot from non-active node - inherit seqno from parent
+                snapshotSeqno = this.selectedNode.seqno || 0;
+            }
+            
             const response = await fetch('/take-snapshot', {
                 method: 'POST',
                 headers: {
@@ -559,11 +592,12 @@ class BlockchainGraph {
             const data = await response.json();
             
             if (data.success) {
-                // Create new node with sequential numbering
+                // Create new node with sequential numbering and seqno
                 const newNode = {
                     id: `snapshot-${nextSnapshotNumber}`,
                     snapshotNumber: nextSnapshotNumber,
                     blockSequence: data.blockSequence,
+                    seqno: snapshotSeqno,
                     timestamp: new Date().toISOString(),
                     parentId: this.selectedNode.id,
                     isRoot: false,
@@ -583,7 +617,7 @@ class BlockchainGraph {
                 this.renderGraph();
                 this.updateStats();
                 
-                this.showMessage(`Snapshot ${nextSnapshotNumber} created successfully`, 'success');
+                this.showMessage(`Snapshot ${nextSnapshotNumber} created successfully (seqno: ${snapshotSeqno})`, 'success');
             } else {
                 this.showMessage(`Error creating snapshot: ${data.message}`, 'error');
             }
@@ -603,6 +637,34 @@ class BlockchainGraph {
         this.updateStatus("Restoring snapshot...");
         
         try {
+            // Get current seqno before restoring to store it in the previous active node
+            let currentSeqno = 0;
+            try {
+                const seqnoResponse = await fetch('/seqno-volume', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (seqnoResponse.ok) {
+                    const seqnoData = await seqnoResponse.json();
+                    if (seqnoData.success && seqnoData.seqno) {
+                        currentSeqno = seqnoData.seqno;
+                    }
+                }
+            } catch (seqnoError) {
+                console.error('Error fetching current seqno before restore:', seqnoError);
+            }
+            
+            // Store current seqno in the previous active node
+            if (this.activeNodeId) {
+                const previousActiveNode = this.nodes.find(n => n.id === this.activeNodeId);
+                if (previousActiveNode) {
+                    previousActiveNode.seqno = currentSeqno;
+                }
+            }
+            
             const response = await fetch('/restore-snapshot', {
                 method: 'POST',
                 headers: {
@@ -625,17 +687,26 @@ class BlockchainGraph {
                 this.renderGraph();
                 this.updateStats();
                 
+                // Show success message briefly, then show "Starting blockchain..."
                 this.showMessage(`Snapshot restored successfully: ${this.selectedNode.id}`, 'success');
+                
+                // After a short delay, show "Starting blockchain..." and wait for valid seqno
+                setTimeout(() => {
+                    this.isWaitingForBlockchain = true;
+                    this.updateStatus("Starting blockchain...");
+                    this.waitForValidSeqno();
+                }, 2000); // Wait 2 seconds to let user see the success message
             } else {
                 this.showMessage(`Error restoring snapshot: ${data.message}`, 'error');
+                this.showLoading(false);
+                this.updateStatus("Not Ready");
             }
         } catch (error) {
             console.error('Error restoring snapshot:', error);
             this.showMessage('Failed to restore snapshot. Please try again.', 'error');
+            this.showLoading(false);
+            this.updateStatus("Not Ready");
         }
-        
-        this.showLoading(false);
-        this.updateStatus("Ready");
     }
 
     async saveGraph() {
@@ -699,11 +770,13 @@ class BlockchainGraph {
             statusText.style.color = '#555';
         }
         
-        // Auto-reset to "Ready" after 3 seconds
-        setTimeout(() => {
-            this.updateStatus("Ready");
-            statusText.style.color = '#555';
-        }, 3000);
+        // Only auto-reset for error messages, not for success messages during blockchain operations
+        if (type === 'error') {
+            setTimeout(() => {
+                this.updateStatus("Ready");
+                statusText.style.color = '#555';
+            }, 3000);
+        }
     }
 
     hideMessage() {
@@ -741,6 +814,11 @@ class BlockchainGraph {
                     
                     // Update active node if it changed
                     this.updateActiveNodeFromVolume(data.volume);
+                    
+                    // If active node is selected, update the right panel with current seqno
+                    if (this.selectedNode && this.selectedNode.id === this.activeNodeId) {
+                        this.showNodeInfo(this.selectedNode);
+                    }
                 } else {
                     document.getElementById('current-seqno').textContent = 'Error';
                     document.getElementById('current-snapshot-name').textContent = 'Error';
@@ -803,6 +881,48 @@ class BlockchainGraph {
             this.renderGraph();
             this.updateStats();
         }
+    }
+
+    waitForValidSeqno() {
+        const checkSeqno = async () => {
+            try {
+                const response = await fetch('/seqno-volume', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.seqno && data.seqno > 0) {
+                        // Valid seqno received, blockchain is ready
+                        this.isWaitingForBlockchain = false;
+                        this.showLoading(false);
+                        this.updateStatus("Ready");
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking seqno during startup:', error);
+            }
+            return false;
+        };
+        
+        // Check every 2 seconds for valid seqno
+        const intervalId = setInterval(async () => {
+            const isReady = await checkSeqno();
+            if (isReady) {
+                clearInterval(intervalId);
+            }
+        }, 2000);
+        
+        // Also check immediately
+        checkSeqno().then(isReady => {
+            if (isReady) {
+                clearInterval(intervalId);
+            }
+        });
     }
 
     handleResize() {
