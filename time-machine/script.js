@@ -295,40 +295,102 @@ class BlockchainGraph {
             .append("g")
             .attr("class", "node-group");
             
-        // Add circle
-        nodeEnter.append("circle")
-            .attr("class", "node")
-            .attr("r", 20);
+        // Add rectangle
+        nodeEnter.append("rect")
+            .attr("class", "node");
             
         // Add label
         nodeEnter.append("text")
             .attr("class", "node-label")
-            .attr("dy", "0.35em");
+            .attr("dy", "0.35em")
+            .attr("text-anchor", "middle");
             
         const nodeUpdate = nodeSelection.merge(nodeEnter);
         
         // Update positions
         nodeUpdate
             .attr("transform", d => `translate(${d.x},${d.y})`);
-            
-        // Update circles
-        nodeUpdate.select(".node")
-            .attr("class", d => {
-                let classes = "node";
-                if (d.isRoot) classes += " root";
-                else classes += " snapshot";
-                if (d.id === this.activeNodeId) classes += " active";
-                if (d.id === this.selectedNode?.id) classes += " selected";
-                return classes;
-            })
+        
+        // Update text content first
+        nodeUpdate.select(".node-label")
+            .text(d => d.isRoot ? "ROOT" : (d.customName || `S${d.snapshotNumber}`))
+            .attr("x", 0)
+            .attr("y", 0)
             .on("click", (event, d) => {
                 event.stopPropagation();
-                this.selectNode(d);
+                if (!d.isRoot) {
+                    this.editNodeName(d);
+                }
             });
+
+        // Store reference to the class instance
+        const self = this;
+        
+        // Update rectangles with safe text measurement
+        nodeUpdate.each(function(d) {
+            const group = d3.select(this);
+            const text = group.select(".node-label");
+            const rect = group.select(".node");
             
-        // Update labels
-        nodeUpdate.select(".node-label")
-            .text(d => d.isRoot ? "ROOT" : `S${d.snapshotNumber}`);
+            // Safe text dimension calculation
+            let textWidth = 40; // Default width
+            let textHeight = 16; // Default height
+            
+            try {
+                const textNode = text.node();
+                if (textNode) {
+                    const textBBox = textNode.getBBox();
+                    if (textBBox && textBBox.width > 0) {
+                        textWidth = textBBox.width;
+                        textHeight = textBBox.height;
+                    }
+                }
+            } catch (error) {
+                // Fallback to estimated dimensions based on text length
+                const displayText = d.isRoot ? "ROOT" : (d.customName || `S${d.snapshotNumber}`);
+                textWidth = displayText.length * 8; // Rough estimate
+                textHeight = 16;
+            }
+            
+            const padding = 16;
+            const minWidth = 60;
+            const minHeight = 30;
+            
+            // Calculate rectangle dimensions
+            const rectWidth = Math.max(minWidth, textWidth + padding);
+            const rectHeight = Math.max(minHeight, textHeight + padding);
+            
+            // Store dimensions on node for layout calculations
+            d.width = rectWidth;
+            d.height = rectHeight;
+            
+            // Update rectangle
+            rect
+                .attr("x", -rectWidth / 2)
+                .attr("y", -rectHeight / 2)
+                .attr("width", rectWidth)
+                .attr("height", rectHeight)
+                .attr("rx", 8)
+                .attr("ry", 8)
+                .attr("class", () => {
+                    let classes = "node";
+                    if (d.isRoot) classes += " root";
+                    else classes += " snapshot";
+                    if (d.id === self.activeNodeId) classes += " active";
+                    if (d.id === self.selectedNode?.id) classes += " selected";
+                    return classes;
+                })
+                .on("click", (event, nodeData) => {
+                    event.stopPropagation();
+                    self.selectNode(nodeData);
+                })
+                .on("dblclick", (event, nodeData) => {
+                    event.stopPropagation();
+                    if (!nodeData.isRoot) {
+                        self.editNodeName(nodeData);
+                    }
+                });
+        });
             
         // Add spinning arrows for active nodes
         this.renderActiveNodeArrows();
@@ -401,13 +463,35 @@ class BlockchainGraph {
         document.getElementById('action-buttons').classList.add('hidden');
     }
 
+    editNodeName(node) {
+        if (node.isRoot) return;
+        
+        const currentName = node.customName || `S${node.snapshotNumber}`;
+        const newName = prompt(`Enter new name for snapshot:`, currentName);
+        
+        if (newName !== null && newName.trim() !== '' && newName !== currentName) {
+            node.customName = newName.trim();
+            this.saveGraph();
+            this.renderNodes();
+            
+            // Update info panel if this node is selected
+            if (this.selectedNode && this.selectedNode.id === node.id) {
+                this.showNodeInfo(node);
+            }
+            
+            // Update stats panel
+            this.updateStats();
+        }
+    }
+
     showNodeInfo(node) {
         const nodeDetails = document.getElementById('node-details');
         const timestamp = new Date(node.timestamp).toLocaleString();
+        const displayName = node.isRoot ? 'ROOT' : (node.customName || `S${node.snapshotNumber}`);
         
         nodeDetails.innerHTML = `
             <p><strong>ID:</strong> ${node.id}</p>
-            <p><strong>Snapshot #:</strong> ${node.snapshotNumber}</p>
+            <p><strong>Name:</strong> ${displayName}</p>
             <p><strong>Block Sequence:</strong> ${node.blockSequence}</p>
             <p><strong>Created:</strong> ${timestamp}</p>
             ${node.parentId ? `<p><strong>Parent:</strong> ${node.parentId}</p>` : ''}
@@ -553,7 +637,7 @@ class BlockchainGraph {
         
         document.getElementById('total-snapshots').textContent = totalSnapshots;
         document.getElementById('active-node').textContent = 
-            activeNode ? (activeNode.isRoot ? 'Root' : `Snapshot ${activeNode.snapshotNumber}`) : 'None';
+            activeNode ? (activeNode.isRoot ? 'Root' : (activeNode.customName || `S${activeNode.snapshotNumber}`)) : 'None';
     }
 
     showLoading(show) {
@@ -598,7 +682,7 @@ class BlockchainGraph {
     startBlockchainStatusUpdates() {
         // Update immediately
         this.updateBlockchainStatus();
-        
+
         // Then update every 2 seconds
         setInterval(() => {
             this.updateBlockchainStatus();
@@ -618,7 +702,13 @@ class BlockchainGraph {
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('current-seqno').textContent = data.seqno || 'N/A';
-                    document.getElementById('current-snapshot-id').textContent = data.volume || 'N/A';
+                    
+                    // Convert volume name to snapshot name
+                    const snapshotName = this.getSnapshotNameFromVolume(data.volume);
+                    document.getElementById('current-snapshot-name').textContent = snapshotName;
+                    
+                    // Update active node if it changed
+                    this.updateActiveNodeFromVolume(data.volume);
                 } else {
                     document.getElementById('current-seqno').textContent = 'Error';
                     document.getElementById('current-snapshot-id').textContent = 'Error';
@@ -631,6 +721,57 @@ class BlockchainGraph {
             console.error('Error fetching blockchain status:', error);
             document.getElementById('current-seqno').textContent = 'Error';
             document.getElementById('current-snapshot-id').textContent = 'Error';
+        }
+        
+        // Schedule next update
+        this.scheduleNextStatusUpdate();
+    }
+
+    getSnapshotNameFromVolume(volumeName) {
+        if (!volumeName) return 'N/A';
+        
+        if (volumeName.startsWith('ton-db-snapshot-')) {
+            // Extract snapshot number from volume name
+            const numberPart = volumeName.substring('ton-db-snapshot-'.length());
+            const snapshotNumber = parseInt(numberPart);
+            
+            // Find the node with this snapshot number
+            const node = this.nodes.find(n => n.snapshotNumber === snapshotNumber);
+            if (node && node.customName) {
+                return node.customName;
+            } else {
+                return `S${snapshotNumber}`;
+            }
+        } else {
+            return 'Root'; // Using root/original volume
+        }
+    }
+
+    updateActiveNodeFromVolume(volumeName) {
+        if (!volumeName) return;
+        
+        let newActiveNodeId = null;
+        
+        if (volumeName.startsWith('ton-db-snapshot-')) {
+            // Extract snapshot number from volume name
+            const numberPart = volumeName.substring('ton-db-snapshot-'.length());
+            const snapshotNumber = parseInt(numberPart);
+            
+            // Find the node with this snapshot number
+            const node = this.nodes.find(n => n.snapshotNumber === snapshotNumber);
+            if (node) {
+                newActiveNodeId = node.id;
+            }
+        } else {
+            // Using root volume
+            newActiveNodeId = 'root';
+        }
+        
+        // Update active node if it changed
+        if (newActiveNodeId && newActiveNodeId !== this.activeNodeId) {
+            this.activeNodeId = newActiveNodeId;
+            this.renderGraph();
+            this.updateStats();
         }
     }
 

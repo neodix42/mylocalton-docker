@@ -130,21 +130,21 @@ body {
 
 .node.selected {
     stroke: #ff6b35;
-    stroke-width: 5px;
+    stroke-width: 3px;
     filter: drop-shadow(0 0 15px rgba(255, 107, 53, 0.8));
     animation: selectedPulse 1.5s ease-in-out infinite;
 }
 
 @keyframes selectedPulse {
-    0% { stroke-width: 5px; }
-    50% { stroke-width: 7px; }
-    100% { stroke-width: 5px; }
+    0% { stroke-width: 3px; }
+    50% { stroke-width: 4px; }
+    100% { stroke-width: 3px; }
 }
 
 .node.root {
     fill: #28a745;
     stroke: #1e7e34;
-    stroke-width: 3px;
+    stroke-width: 2px;
 }
 
 .node.snapshot {
@@ -156,13 +156,13 @@ body {
 .node.active {
     fill: #ffc107;
     stroke: #e0a800;
-    stroke-width: 3px;
+    stroke-width: 2px;
     animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
     0% { transform: scale(1); }
-    50% { transform: scale(1.1); }
+    50% { transform: scale(1.05); }
     100% { transform: scale(1); }
 }
 

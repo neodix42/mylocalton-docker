@@ -170,32 +170,32 @@ services:
 #      timeout: 5s
 #      retries: 10
 
-  faucet:
-    container_name: faucet
-    image: faucet
-    build:
-      context: .
-      dockerfile: ./faucet/Dockerfile
-    ports:
-      - 88:88
-    volumes:
-      - shared-data:/usr/share/data
-    restart: unless-stopped
-    depends_on:
-      genesis:
-        condition: service_healthy
-    environment:
-      - FAUCET_USE_RECAPTCHA=false # default true
-      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
-      - RECAPTCHA_SECRET=   # google reCaptcha v2
-#      - MASTERCHAIN_ONLY=false   # default false, if true generates new addresses only in masterchain (-1)
-#      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
-#      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
-      - SERVER_PORT=88
-    healthcheck:
-      test: curl -sS http://127.0.0.1:88|| echo 1
-    networks:
-      main:
+#  faucet:
+#    container_name: faucet
+#    image: faucet
+#    build:
+#      context: .
+#      dockerfile: ./faucet/Dockerfile
+#    ports:
+#      - 88:88
+#    volumes:
+#      - shared-data:/usr/share/data
+#    restart: unless-stopped
+#    depends_on:
+#      genesis:
+#        condition: service_healthy
+#    environment:
+#      - FAUCET_USE_RECAPTCHA=false # default true
+#      - RECAPTCHA_SITE_KEY= # google reCaptcha v2
+#      - RECAPTCHA_SECRET=   # google reCaptcha v2
+##      - MASTERCHAIN_ONLY=false   # default false, if true generates new addresses only in masterchain (-1)
+##      - FAUCET_REQUEST_EXPIRATION_PERIOD=3600 #  default 86400 seconds (24h)
+##      - FAUCET_SINGLE_GIVEAWAY=100    # default 10 toncoins
+#      - SERVER_PORT=88
+#    healthcheck:
+#      test: curl -sS http://127.0.0.1:88|| echo 1
+#    networks:
+#      main:
 
 #  data:
 #    container_name: data
