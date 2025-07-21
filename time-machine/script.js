@@ -11,6 +11,7 @@ class BlockchainGraph {
         this.initializeGraph();
         this.setupEventListeners();
         this.loadGraphData();
+        this.startBlockchainStatusUpdates();
     }
 
     initializeGraph() {
@@ -592,6 +593,45 @@ class BlockchainGraph {
     hideMessage() {
         // No longer needed since we're not using modal dialogs
         // Keep method for compatibility
+    }
+
+    startBlockchainStatusUpdates() {
+        // Update immediately
+        this.updateBlockchainStatus();
+        
+        // Then update every 2 seconds
+        setInterval(() => {
+            this.updateBlockchainStatus();
+        }, 2000);
+    }
+
+    async updateBlockchainStatus() {
+        try {
+            const response = await fetch('/seqno-volume', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('current-seqno').textContent = data.seqno || 'N/A';
+                    document.getElementById('current-snapshot-id').textContent = data.volume || 'N/A';
+                } else {
+                    document.getElementById('current-seqno').textContent = 'Error';
+                    document.getElementById('current-snapshot-id').textContent = 'Error';
+                }
+            } else {
+                document.getElementById('current-seqno').textContent = 'Error';
+                document.getElementById('current-snapshot-id').textContent = 'Error';
+            }
+        } catch (error) {
+            console.error('Error fetching blockchain status:', error);
+            document.getElementById('current-seqno').textContent = 'Error';
+            document.getElementById('current-snapshot-id').textContent = 'Error';
+        }
     }
 
     handleResize() {

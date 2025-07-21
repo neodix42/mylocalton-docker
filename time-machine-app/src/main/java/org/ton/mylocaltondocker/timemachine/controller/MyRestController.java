@@ -366,6 +366,34 @@ public class MyRestController {
     return volumeName;
   }
 
+  private String getCurrentlyUsedSnapshotId() {
+    try {
+      DockerClient dockerClient = createDockerClient();
+      String containerXId =
+          dockerClient
+              .listContainersCmd()
+              .withNameFilter(List.of(CONTAINER_GENESIS))
+              .exec()
+              .stream()
+              .findFirst()
+              .map(c -> c.getId())
+              .orElseThrow(() -> new RuntimeException("Container not found"));
+
+      String volumeName = getCurrentVolume(dockerClient, containerXId);
+      
+      if (volumeName != null && volumeName.startsWith("ton-db-snapshot-")) {
+        // Extract snapshot number from volume name
+        String numberPart = volumeName.substring("ton-db-snapshot-".length());
+        return "snapshot-" + numberPart;
+      } else {
+        return "root"; // Using root/original volume
+      }
+    } catch (Exception e) {
+      log.error("Error getting currently used snapshot ID", e);
+      return "unknown";
+    }
+  }
+
   @PostMapping("/restore-snapshot")
   public Map<String, Object> restoreSnapshot(@RequestBody Map<String, String> request) {
     try {
