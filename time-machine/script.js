@@ -165,15 +165,25 @@ class BlockchainGraph {
     calculateTreeLayout(root) {
         if (!root) return [];
         
-        const nodeSize = 50; // Node diameter + spacing
         const levelHeight = 80; // Vertical spacing between levels
-        const minHorizontalSpacing = 60; // Minimum horizontal spacing
+        const minHorizontalSpacing = 20; // Minimum horizontal spacing between nodes
         
-        // First pass: calculate subtree widths
+        // First pass: calculate estimated node widths based on text content
+        const estimateNodeWidth = (node) => {
+            const displayText = node.isRoot ? "ROOT" : (node.customName || `S${node.snapshotNumber}`);
+            const estimatedTextWidth = displayText.length * 8; // Rough estimate: 8px per character
+            const padding = 16;
+            const minWidth = 60;
+            return Math.max(minWidth, estimatedTextWidth + padding);
+        };
+        
+        // Calculate subtree widths considering actual node sizes
         const calculateSubtreeWidth = (node) => {
+            const nodeWidth = estimateNodeWidth(node);
+            
             if (node.children.length === 0) {
-                node.subtreeWidth = nodeSize;
-                return nodeSize;
+                node.subtreeWidth = nodeWidth;
+                return nodeWidth;
             }
             
             let totalChildWidth = 0;
@@ -181,16 +191,22 @@ class BlockchainGraph {
                 totalChildWidth += calculateSubtreeWidth(child);
             });
             
-            node.subtreeWidth = Math.max(nodeSize, totalChildWidth);
+            // Add spacing between children
+            if (node.children.length > 1) {
+                totalChildWidth += (node.children.length - 1) * minHorizontalSpacing;
+            }
+            
+            // Subtree width is the maximum of node width and total children width
+            node.subtreeWidth = Math.max(nodeWidth, totalChildWidth);
             return node.subtreeWidth;
         };
         
         calculateSubtreeWidth(root);
         
-        // Second pass: assign positions
+        // Second pass: assign positions with proper spacing
         const layout = [];
         const assignPositions = (node, x, y, availableWidth) => {
-            // Position current node
+            // Position current node at center of available width
             node.x = x + availableWidth / 2;
             node.y = y;
             layout.push({
@@ -201,11 +217,24 @@ class BlockchainGraph {
             
             // Position children
             if (node.children.length > 0) {
-                let currentX = x;
+                // Calculate total width needed for all children
+                let totalChildrenWidth = 0;
+                node.children.forEach(child => {
+                    totalChildrenWidth += child.subtreeWidth;
+                });
+                
+                // Add spacing between children
+                if (node.children.length > 1) {
+                    totalChildrenWidth += (node.children.length - 1) * minHorizontalSpacing;
+                }
+                
+                // Start position for children (centered under parent)
+                let currentX = x + (availableWidth - totalChildrenWidth) / 2;
+                
                 node.children.forEach(child => {
                     const childWidth = child.subtreeWidth;
                     assignPositions(child, currentX, y + levelHeight, childWidth);
-                    currentX += childWidth;
+                    currentX += childWidth + minHorizontalSpacing;
                 });
             }
         };
@@ -472,7 +501,10 @@ class BlockchainGraph {
         if (newName !== null && newName.trim() !== '' && newName !== currentName) {
             node.customName = newName.trim();
             this.saveGraph();
-            this.renderNodes();
+            
+            // Recalculate layout to prevent overlapping after name change
+            this.calculateLayout();
+            this.renderGraph();
             
             // Update info panel if this node is selected
             if (this.selectedNode && this.selectedNode.id === node.id) {
@@ -711,20 +743,18 @@ class BlockchainGraph {
                     this.updateActiveNodeFromVolume(data.volume);
                 } else {
                     document.getElementById('current-seqno').textContent = 'Error';
-                    document.getElementById('current-snapshot-id').textContent = 'Error';
+                    document.getElementById('current-snapshot-name').textContent = 'Error';
                 }
             } else {
                 document.getElementById('current-seqno').textContent = 'Error';
-                document.getElementById('current-snapshot-id').textContent = 'Error';
+                document.getElementById('current-snapshot-name').textContent = 'Error';
             }
         } catch (error) {
             console.error('Error fetching blockchain status:', error);
             document.getElementById('current-seqno').textContent = 'Error';
-            document.getElementById('current-snapshot-id').textContent = 'Error';
+            document.getElementById('current-snapshot-name').textContent = 'Error';
         }
         
-        // Schedule next update
-        this.scheduleNextStatusUpdate();
     }
 
     getSnapshotNameFromVolume(volumeName) {
@@ -732,7 +762,7 @@ class BlockchainGraph {
         
         if (volumeName.startsWith('ton-db-snapshot-')) {
             // Extract snapshot number from volume name
-            const numberPart = volumeName.substring('ton-db-snapshot-'.length());
+            const numberPart = volumeName.substring('ton-db-snapshot-'.length);
             const snapshotNumber = parseInt(numberPart);
             
             // Find the node with this snapshot number
@@ -754,7 +784,7 @@ class BlockchainGraph {
         
         if (volumeName.startsWith('ton-db-snapshot-')) {
             // Extract snapshot number from volume name
-            const numberPart = volumeName.substring('ton-db-snapshot-'.length());
+            const numberPart = volumeName.substring('ton-db-snapshot-'.length);
             const snapshotNumber = parseInt(numberPart);
             
             // Find the node with this snapshot number
