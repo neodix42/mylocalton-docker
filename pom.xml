@@ -11,15 +11,16 @@
     <modules>
         <module>faucet-app</module>
         <module>data-app</module>
+        <module>time-machine-app</module>
     </modules>
 
     <properties>
         <ton4j.version>0.9.5</ton4j.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <java.version>19</java.version>
-        <maven.compiler.release>11</maven.compiler.release>
-        <maven.compiler.version>3.14.0</maven.compiler.version>
-        <spring.boot.version>3.4.3</spring.boot.version>
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.version>3.13.0</maven.compiler.version>
+        <spring.boot.version>3.5.3</spring.boot.version>
         <maven.clean.plugin.version>3.4.1</maven.clean.plugin.version>
         <maven.assembly.plugin.version>3.6.0</maven.assembly.plugin.version>
         <javafx.maven.plugin.version>0.0.8</javafx.maven.plugin.version>
@@ -161,9 +162,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven.compiler.version}</version>
                 <configuration>
-                    <release>${maven.compiler.release}</release>
-                    <source>19</source>
-                    <target>19</target>
+                    <source>21</source>
+                    <target>21</target>
                 </configuration>
             </plugin>
             <plugin>

@@ -8,10 +8,26 @@
         <version>1.0</version>
     </parent>
 
-    <artifactId>FaucetApp</artifactId>
+    <artifactId>TimeMachineApp</artifactId>
     <version>1.0</version>
 
     <dependencies>
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java</artifactId>
+            <version>3.5.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-transport-okhttp</artifactId>
+            <version>3.5.3</version>
+        </dependency>
         <dependency>
             <groupId>io.github.neodix42</groupId>
             <artifactId>smartcontract</artifactId>
@@ -19,13 +35,6 @@
         <dependency>
             <groupId>io.github.neodix42</groupId>
             <artifactId>tonlib</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.objectdb</groupId>
-            <artifactId>objectdb</artifactId>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/objectdb-${objectdb.version}.jar</systemPath>
-            <version>${objectdb.version}</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.persistence</groupId>
@@ -103,7 +112,7 @@
     <build>
         <resources>
             <resource>
-                <directory>faucet-app/src/main/resources</directory>
+                <directory>time-machine-app/src/main/resources</directory>
             </resource>
         </resources>
         <plugins>
@@ -111,6 +120,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven.compiler.version}</version>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -123,11 +136,11 @@
                             <goal>single</goal>
                         </goals>
                         <configuration>
-                            <finalName>MyLocalTonDockerWebFaucet</finalName>
+                            <finalName>MyLocalTonTimeMachine</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                             <archive>
                                 <manifest>
-                                    <mainClass>org.ton.mylocaltondocker.faucet.Main</mainClass>
+                                    <mainClass>org.ton.mylocaltondocker.timemachine.Main</mainClass>
                                 </manifest>
                             </archive>
                             <descriptorRefs>

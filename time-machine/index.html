@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>TON Time Machine</title>
+    <link href="style.css" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+<div class="background-animation">
+    <!-- Animated lines -->
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+</div>
+
+<div class="header">
+    <h1>TON TIME MACHINE</h1>
+    <div class="status-bar">
+        <span id="status-text">Loading blockchain state...</span>
+        <div class="loading-spinner" id="loading-spinner"></div>
+    </div>
+</div>
+
+<div class="graph-container">
+    <svg id="graph-svg"></svg>
+    
+    <!-- Action buttons that appear when a node is selected -->
+    <div id="action-buttons" class="action-buttons hidden">
+        <button id="take-snapshot-btn" class="action-btn primary">
+            <span class="btn-icon">📸</span>
+            Take Snapshot
+        </button>
+        <button id="restore-snapshot-btn" class="action-btn secondary">
+            <span class="btn-icon">⏮️</span>
+            Restore Snapshot
+        </button>
+    </div>
+</div>
+
+<div class="info-panel">
+    <div class="node-info" id="node-info">
+        <h3>Node Information</h3>
+        <div id="node-details">
+            <p>Select a node to view details</p>
+        </div>
+    </div>
+    
+    <div class="graph-stats" id="graph-stats">
+        <h3>Graph Statistics</h3>
+        <div class="stat-item">
+            <span class="stat-label">Total Snapshots:</span>
+            <span class="stat-value" id="total-snapshots">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Active Node:</span>
+            <span class="stat-value" id="active-node">None</span>
+        </div>
+    </div>
+</div>
+
+<div id="message-overlay" class="message-overlay hidden">
+    <div class="message-content">
+        <div class="message-text" id="message-text"></div>
+        <button class="message-close" id="message-close">×</button>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

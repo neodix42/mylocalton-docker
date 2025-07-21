@@ -22,15 +22,12 @@ public class AppErrorController implements ErrorController {
   private static final String PATH = "/error";
 
   public ResponseEntity<Map<String, Object>> handleError(WebRequest webRequest) {
-    // Retrieve error details
     Map<String, Object> errorDetails =
         errorAttributes.getErrorAttributes(
             webRequest, ErrorAttributeOptions.of(ErrorAttributeOptions.Include.MESSAGE));
 
-    // Log the error message
     System.err.println("Error occurred: " + errorDetails);
 
-    // Return a custom error response
     return ResponseEntity.status(
             (int) errorDetails.getOrDefault("status", HttpStatus.INTERNAL_SERVER_ERROR.value()))
         .body(errorDetails);

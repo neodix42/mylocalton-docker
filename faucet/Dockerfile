@@ -1,6 +1,6 @@
 FROM ghcr.io/ton-blockchain/ton:latest
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt install --no-install-recommends -y openjdk-19-jdk-headless
+RUN apt update && apt install --no-install-recommends -y openjdk-21-jdk-headless
 
 ENV SERVER_PORT=80
 ENV FAUCET_REQUEST_EXPIRATION_PERIOD=86400
