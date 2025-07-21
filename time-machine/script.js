@@ -820,17 +820,17 @@ class BlockchainGraph {
                         this.showNodeInfo(this.selectedNode);
                     }
                 } else {
-                    document.getElementById('current-seqno').textContent = 'Error';
-                    document.getElementById('current-snapshot-name').textContent = 'Error';
+                    document.getElementById('current-seqno').textContent = 'N/A';
+                    document.getElementById('current-snapshot-name').textContent = 'N/A';
                 }
             } else {
-                document.getElementById('current-seqno').textContent = 'Error';
-                document.getElementById('current-snapshot-name').textContent = 'Error';
+                document.getElementById('current-seqno').textContent = 'N/A';
+                document.getElementById('current-snapshot-name').textContent = 'N/A';
             }
         } catch (error) {
             console.error('Error fetching blockchain status:', error);
-            document.getElementById('current-seqno').textContent = 'Error';
-            document.getElementById('current-snapshot-name').textContent = 'Error';
+            document.getElementById('current-seqno').textContent = 'N/A';
+            document.getElementById('current-snapshot-name').textContent = 'N/A';
         }
         
     }

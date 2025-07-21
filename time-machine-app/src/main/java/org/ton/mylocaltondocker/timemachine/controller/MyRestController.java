@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
+import org.codehaus.plexus.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.ton.java.tonlib.types.MasterChainInfo;
 import org.ton.java.utils.Utils;
@@ -180,10 +181,26 @@ public class MyRestController {
               .exec()
               .stream()
               .findFirst()
-              .map(c -> c.getId())
-              .orElseThrow(() -> new RuntimeException("Container not found"));
+              .map(c -> c.getId()).get();
+//                  .orElseThrow(() -> new RuntimeException("Container not found"));
+
+      if ( StringUtils.isEmpty(containerXId)) {
+        log.error("Container not found");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Container not found");
+        return response;
+      }
 
       MasterChainInfo masterChainInfo = Main.tonlib.getMasterChainInfo();
+      if (masterChainInfo == null) {
+        log.error("masterChainInfo is null");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "masterChainInfo is null");
+        return response;
+      }
+
       String volume = getCurrentVolume(dockerClient, containerXId);
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
@@ -366,33 +383,33 @@ public class MyRestController {
     return volumeName;
   }
 
-  private String getCurrentlyUsedSnapshotId() {
-    try {
-      DockerClient dockerClient = createDockerClient();
-      String containerXId =
-          dockerClient
-              .listContainersCmd()
-              .withNameFilter(List.of(CONTAINER_GENESIS))
-              .exec()
-              .stream()
-              .findFirst()
-              .map(c -> c.getId())
-              .orElseThrow(() -> new RuntimeException("Container not found"));
-
-      String volumeName = getCurrentVolume(dockerClient, containerXId);
-      
-      if (volumeName != null && volumeName.startsWith("ton-db-snapshot-")) {
-        // Extract snapshot number from volume name
-        String numberPart = volumeName.substring("ton-db-snapshot-".length());
-        return "snapshot-" + numberPart;
-      } else {
-        return "root"; // Using root/original volume
-      }
-    } catch (Exception e) {
-      log.error("Error getting currently used snapshot ID", e);
-      return "unknown";
-    }
-  }
+//  private String getCurrentlyUsedSnapshotId() {
+//    try {
+//      DockerClient dockerClient = createDockerClient();
+//      String containerXId =
+//          dockerClient
+//              .listContainersCmd()
+//              .withNameFilter(List.of(CONTAINER_GENESIS))
+//              .exec()
+//              .stream()
+//              .findFirst()
+//              .map(c -> c.getId())
+//              .orElseThrow(() -> new RuntimeException("Container not found"));
+//
+//      String volumeName = getCurrentVolume(dockerClient, containerXId);
+//
+//      if (volumeName != null && volumeName.startsWith("ton-db-snapshot-")) {
+//        // Extract snapshot number from volume name
+//        String numberPart = volumeName.substring("ton-db-snapshot-".length());
+//        return "snapshot-" + numberPart;
+//      } else {
+//        return "root"; // Using root/original volume
+//      }
+//    } catch (Exception e) {
+//      log.error("Error getting currently used snapshot ID", e);
+//      return "unknown";
+//    }
+//  }
 
   @PostMapping("/restore-snapshot")
   public Map<String, Object> restoreSnapshot(@RequestBody Map<String, String> request) {
