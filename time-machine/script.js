@@ -852,13 +852,11 @@ class BlockchainGraph {
     }
 
     startAutoSave() {
-        // Auto-save immediately
-        this.autoSaveGraph();
 
-        // Then auto-save every 10 seconds
+        // Then auto-save every 15 seconds
         setInterval(() => {
             this.autoSaveGraph();
-        }, 10000);
+        }, 15000);
     }
 
     async autoSaveGraph() {
