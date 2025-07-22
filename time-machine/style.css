@@ -293,6 +293,77 @@ body {
     padding-bottom: 8px;
 }
 
+/* Node legend panel */
+.node-legend-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 320px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    z-index: 15;
+}
+
+.node-legend-panel h3 {
+    margin: 0 0 15px 0;
+    color: #0e84b8;
+    font-size: 1.1rem;
+    border-bottom: 2px solid rgba(14, 132, 184, 0.2);
+    padding-bottom: 8px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: flex-start;
+    margin: 12px 0;
+    gap: 12px;
+}
+
+.legend-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.legend-icon.root-icon {
+    background: #28a745;
+    border: 2px solid #1e7e34;
+}
+
+.legend-icon.snapshot-icon {
+    background: #007bff;
+    border: 2px solid #0056b3;
+}
+
+.legend-icon.instance-icon {
+    background: #ff6b35;
+    border: 2px solid #e55a2b;
+}
+
+.legend-icon.active-icon {
+    background: #ffc107;
+    border: 2px solid #e0a800;
+    animation: legendPulse 2s infinite;
+}
+
+@keyframes legendPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.legend-text {
+    color: #555;
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 500;
+}
+
 /* Info panel */
 .info-panel {
     position: absolute;
@@ -462,12 +533,28 @@ body {
         font-size: 1.4rem;
     }
     
+    .blockchain-status-panel {
+        position: relative;
+        top: auto;
+        left: auto;
+        width: calc(100% - 40px);
+        margin: 20px 20px 10px 20px;
+    }
+    
+    .node-legend-panel {
+        position: relative;
+        bottom: auto;
+        left: auto;
+        width: calc(100% - 40px);
+        margin: 10px 20px 20px 20px;
+    }
+    
     .info-panel {
         position: relative;
         top: auto;
         right: auto;
         width: calc(100% - 40px);
-        margin: 20px;
+        margin: 10px 20px 20px 20px;
     }
     
     .action-buttons {
@@ -477,6 +564,10 @@ body {
     
     .action-btn {
         padding: 10px 16px;
+        font-size: 12px;
+    }
+    
+    .legend-text {
         font-size: 12px;
     }
 }
