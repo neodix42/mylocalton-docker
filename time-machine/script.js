@@ -549,6 +549,8 @@ class BlockchainGraph {
     async takeSnapshot() {
         if (!this.selectedNode) return;
         
+        // Clear any previous error state when starting a new action
+        this.clearErrorState();
         this.showLoading(true);
         this.updateStatus("Creating snapshot...");
         
@@ -640,6 +642,8 @@ class BlockchainGraph {
     async restoreSnapshot() {
         if (!this.selectedNode || this.selectedNode.isRoot) return;
         
+        // Clear any previous error state when starting a new action
+        this.clearErrorState();
         this.showLoading(true);
         this.updateStatus("Restoring snapshot...");
         
@@ -795,6 +799,10 @@ class BlockchainGraph {
     }
 
     updateStatus(message) {
+        // Don't overwrite error messages with "Ready" unless error state is cleared
+        if (this.hasError && message === "Ready") {
+            return;
+        }
         document.getElementById('status-text').textContent = message;
     }
 
@@ -808,17 +816,21 @@ class BlockchainGraph {
             statusText.style.color = '#28a745';
         } else if (type === 'error') {
             statusText.style.color = '#dc3545';
+            // Store error state to prevent automatic reset to "Ready"
+            this.hasError = true;
         } else {
             statusText.style.color = '#555';
         }
         
-        // Only auto-reset for error messages, not for success messages during blockchain operations
-        if (type === 'error') {
-            setTimeout(() => {
-                this.updateStatus("Ready");
-                statusText.style.color = '#555';
-            }, 3000);
-        }
+        // Don't auto-reset error messages - they should persist until a new action
+        // Success messages during blockchain operations also don't auto-reset
+    }
+
+    clearErrorState() {
+        // Clear error state and reset status text color when starting a new action
+        this.hasError = false;
+        const statusText = document.getElementById('status-text');
+        statusText.style.color = '#555';
     }
 
     hideMessage() {
@@ -850,12 +862,25 @@ class BlockchainGraph {
                 if (data.success) {
                     document.getElementById('current-seqno').textContent = data.seqno || 'N/A';
                     
-                    // Convert volume name to snapshot name
-                    const snapshotName = this.getSnapshotNameFromVolume(data.volume);
-                    document.getElementById('current-snapshot-name').textContent = snapshotName;
-                    
                     // Update active node if it changed
                     this.updateActiveNodeFromVolume(data.volume);
+                    
+                    // Get the actual snapshot name from the active node
+                    const activeNode = this.nodes.find(n => n.id === this.activeNodeId);
+                    let snapshotName = 'N/A';
+                    
+                    if (activeNode) {
+                        if (activeNode.isRoot) {
+                            snapshotName = 'ROOT';
+                        } else {
+                            snapshotName = activeNode.customName || `S${activeNode.snapshotNumber}`;
+                            if (activeNode.type === "instance") {
+                                snapshotName += `-${activeNode.instanceNumber || "1"}`;
+                            }
+                        }
+                    }
+                    
+                    document.getElementById('current-snapshot-name').textContent = snapshotName;
                     
                     // If active node is selected, update the right panel with current seqno
                     if (this.selectedNode && this.selectedNode.id === this.activeNodeId) {
