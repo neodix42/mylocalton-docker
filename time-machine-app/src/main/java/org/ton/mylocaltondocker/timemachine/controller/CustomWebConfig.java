@@ -1,6 +1,7 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -13,7 +14,14 @@ public class CustomWebConfig implements WebMvcConfigurer {
 
   @Override
   public void addResourceHandlers(ResourceHandlerRegistry registry) {
-    registry.addResourceHandler("/**").addResourceLocations(CUSTOM_STATIC_DIR);
+    // Serve static files with lower priority than REST controllers
+    registry.addResourceHandler("/**")
+            .addResourceLocations(CUSTOM_STATIC_DIR)
+            .setCachePeriod(0)
+            .resourceChain(false);
+    
+    // Set lower priority for static resources
+    registry.setOrder(Ordered.LOWEST_PRECEDENCE);
   }
 
   @Override

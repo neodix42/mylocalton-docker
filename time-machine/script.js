@@ -846,6 +846,77 @@ class BlockchainGraph {
         setInterval(() => {
             this.updateBlockchainStatus();
         }, 2000);
+        
+        // Start auto-save functionality - save graph state every 10 seconds
+        this.startAutoSave();
+    }
+
+    startAutoSave() {
+        // Auto-save immediately
+        this.autoSaveGraph();
+
+        // Then auto-save every 10 seconds
+        setInterval(() => {
+            this.autoSaveGraph();
+        }, 10000);
+    }
+
+    async autoSaveGraph() {
+        try {
+            // First, update the active node with current seqno before saving
+            if (this.activeNodeId) {
+                const activeNode = this.nodes.find(n => n.id === this.activeNodeId);
+                if (activeNode) {
+                    try {
+                        const seqnoResponse = await fetch('/seqno-volume', {
+                            method: 'GET',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            }
+                        });
+                        
+                        if (seqnoResponse.ok) {
+                            const seqnoData = await seqnoResponse.json();
+                            if (seqnoData.success && seqnoData.seqno) {
+                                // Update the active node's seqno with current blockchain state
+                                activeNode.seqno = seqnoData.seqno;
+                                activeNode.lastSeqnoUpdate = new Date().toISOString();
+                            }
+                        }
+                    } catch (seqnoError) {
+                        console.warn('Could not fetch current seqno during auto-save:', seqnoError);
+                    }
+                }
+            }
+            
+            const graphData = {
+                nodes: this.nodes,
+                edges: this.edges,
+                activeNodeId: this.activeNodeId,
+                lastUpdated: new Date().toISOString()
+            };
+            
+            const response = await fetch('/graph', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ graph: graphData })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    console.log('Graph auto-saved successfully with current seqno');
+                } else {
+                    console.warn('Auto-save failed:', data.message);
+                }
+            } else {
+                console.warn('Auto-save request failed with status:', response.status);
+            }
+        } catch (error) {
+            console.error('Error during auto-save:', error);
+        }
     }
 
     async updateBlockchainStatus() {
@@ -1028,7 +1099,7 @@ class BlockchainGraph {
                 }
             }
         };
-        
+
         checkSeqno();
     }
 
