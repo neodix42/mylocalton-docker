@@ -56,6 +56,10 @@ class BlockchainGraph {
             this.restoreSnapshot();
         });
         
+        document.getElementById('delete-snapshot-btn').addEventListener('click', () => {
+            this.deleteSnapshot();
+        });
+        
         // Message overlay close
         document.getElementById('message-close').addEventListener('click', () => {
             this.hideMessage();
@@ -480,12 +484,14 @@ class BlockchainGraph {
         const actionButtons = document.getElementById('action-buttons');
         const takeSnapshotBtn = document.getElementById('take-snapshot-btn');
         const restoreSnapshotBtn = document.getElementById('restore-snapshot-btn');
+        const deleteSnapshotBtn = document.getElementById('delete-snapshot-btn');
         
         actionButtons.classList.remove('hidden');
         
         // Show/hide appropriate buttons
         takeSnapshotBtn.style.display = 'flex';
         restoreSnapshotBtn.style.display = node.isRoot ? 'none' : 'flex';
+        deleteSnapshotBtn.style.display = node.isRoot ? 'none' : 'flex';
     }
 
     hideActionButtons() {
@@ -753,6 +759,157 @@ class BlockchainGraph {
             this.showLoading(false);
             this.updateStatus("Not Ready");
         }
+    }
+
+    async deleteSnapshot() {
+        if (!this.selectedNode || this.selectedNode.isRoot) return;
+        
+        // Check if the selected node is currently active
+        if (this.selectedNode.id === this.activeNodeId) {
+            this.showMessage('Cannot delete the currently active snapshot. Please switch to a different snapshot first.', 'error');
+            return;
+        }
+        
+        // Get all descendants (children, grandchildren, etc.) that would be deleted
+        const allDescendants = this.collectNodeAndDescendants(this.selectedNode.id);
+        
+        // Check if any descendant (including the selected node itself) is currently active
+        const activeDescendant = allDescendants.find(node => node.id === this.activeNodeId);
+        if (activeDescendant) {
+            const activeNodeName = activeDescendant.customName || `S${activeDescendant.snapshotNumber}${activeDescendant.type === "instance" ? `-${activeDescendant.instanceNumber}` : ""}`;
+            if (activeDescendant.id === this.selectedNode.id) {
+                this.showMessage('Cannot delete the currently active snapshot. Please switch to a different snapshot first.', 'error');
+            } else {
+                this.showMessage(`Cannot delete snapshot because its descendant "${activeNodeName}" is currently active. Please switch to a different snapshot first.`, 'error');
+            }
+            return;
+        }
+        
+        // Check if this node has children (siblings)
+        const children = this.nodes.filter(n => n.parentId === this.selectedNode.id);
+        const hasChildren = children.length > 0;
+        
+        let confirmMessage = `Are you sure you want to delete snapshot "${this.selectedNode.customName || `S${this.selectedNode.snapshotNumber}`}"?`;
+        
+        if (hasChildren) {
+            const childNames = children.map(child => 
+                child.customName || `S${child.snapshotNumber}${child.type === "instance" ? `-${child.instanceNumber}` : ""}`
+            ).join(", ");
+            confirmMessage += `\n\nWARNING: This snapshot has ${children.length} child snapshot(s): ${childNames}.\nDeleting this snapshot will also delete all its children. This action cannot be undone.`;
+        }
+        
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        // Clear any previous error state when starting a new action
+        this.clearErrorState();
+        this.showLoading(true);
+        this.updateStatus("Deleting snapshot...");
+        
+        try {
+            // Collect all nodes that will be deleted (selected node + all descendants)
+            const nodesToDelete = this.collectNodeAndDescendants(this.selectedNode.id);
+            
+            const response = await fetch('/delete-snapshot', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    snapshotId: this.selectedNode.id,
+                    snapshotNumber: this.selectedNode.snapshotNumber,
+                    nodeType: this.selectedNode.type || "snapshot",
+                    instanceNumber: this.selectedNode.instanceNumber,
+                    hasChildren: hasChildren,
+                    nodesToDelete: nodesToDelete
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Remove the node and all its descendants from the graph
+                this.removeNodeAndDescendants(this.selectedNode.id);
+                
+                // If the deleted node was active, set active to root
+                if (this.activeNodeId === this.selectedNode.id || 
+                    (hasChildren && children.some(child => child.id === this.activeNodeId))) {
+                    this.activeNodeId = "root";
+                }
+                
+                // Clear selection
+                this.selectedNode = null;
+                this.hideActionButtons();
+                this.hideNodeInfo();
+                
+                // Save graph and re-render
+                await this.saveGraph();
+                this.calculateLayout();
+                this.renderGraph();
+                this.updateStats();
+                
+                this.showMessage(`Snapshot deleted successfully`, 'success');
+            } else {
+                this.showMessage(`Error deleting snapshot: ${data.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting snapshot:', error);
+            this.showMessage('Failed to delete snapshot. Please try again.', 'error');
+        }
+        
+        this.showLoading(false);
+        this.updateStatus("Ready");
+    }
+
+    collectNodeAndDescendants(nodeId) {
+        // Find all descendants recursively and return their details
+        const toRemove = new Set([nodeId]);
+        let changed = true;
+        
+        while (changed) {
+            changed = false;
+            this.nodes.forEach(node => {
+                if (!toRemove.has(node.id) && node.parentId && toRemove.has(node.parentId)) {
+                    toRemove.add(node.id);
+                    changed = true;
+                }
+            });
+        }
+        
+        // Return node details for all nodes to be deleted
+        return this.nodes
+            .filter(node => toRemove.has(node.id))
+            .map(node => ({
+                id: node.id,
+                snapshotNumber: node.snapshotNumber,
+                instanceNumber: node.instanceNumber,
+                type: node.type || "snapshot"
+            }));
+    }
+
+    removeNodeAndDescendants(nodeId) {
+        // Find all descendants recursively
+        const toRemove = new Set([nodeId]);
+        let changed = true;
+        
+        while (changed) {
+            changed = false;
+            this.nodes.forEach(node => {
+                if (!toRemove.has(node.id) && node.parentId && toRemove.has(node.parentId)) {
+                    toRemove.add(node.id);
+                    changed = true;
+                }
+            });
+        }
+        
+        // Remove nodes
+        this.nodes = this.nodes.filter(node => !toRemove.has(node.id));
+        
+        // Remove edges
+        this.edges = this.edges.filter(edge => 
+            !toRemove.has(edge.source) && !toRemove.has(edge.target)
+        );
     }
 
     async saveGraph() {

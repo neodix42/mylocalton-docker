@@ -261,6 +261,11 @@ body {
     color: white;
 }
 
+.action-btn.danger {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+}
+
 .action-btn:disabled {
     background: linear-gradient(135deg, #6c757d, #adb5bd);
     cursor: not-allowed;

@@ -446,6 +446,146 @@ public class MyRestController {
     return FileUtils.sizeOfDirectory(volumeDir);
   }
 
+  @PostMapping("/delete-snapshot")
+  public Map<String, Object> deleteSnapshot(@RequestBody Map<String, Object> request) {
+    try {
+      String snapshotId = (String) request.get("snapshotId");
+      String snapshotNumber = String.valueOf(request.get("snapshotNumber"));
+      String nodeType = (String) request.get("nodeType");
+      String instanceNumber = request.get("instanceNumber") != null ? String.valueOf(request.get("instanceNumber")) : null;
+      Boolean hasChildren = (Boolean) request.get("hasChildren");
+
+      log.info("Deleting snapshot: {} (type: {}, hasChildren: {})", snapshotId, nodeType, hasChildren);
+
+      // Check if any of the volumes to delete are currently in use
+      String genesisContainerId = getGenesisContainerId();
+      String currentVolume = null;
+      
+      if (!StringUtils.isEmpty(genesisContainerId)) {
+        currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
+      }
+
+      // Build list of volumes to delete from nodesToDelete list
+      List<String> volumesToDelete = new ArrayList<>();
+      
+      @SuppressWarnings("unchecked")
+      List<Map<String, Object>> nodesToDelete = (List<Map<String, Object>>) request.get("nodesToDelete");
+      
+      if (nodesToDelete != null && !nodesToDelete.isEmpty()) {
+        // Delete volumes for all nodes in the list
+        for (Map<String, Object> nodeToDelete : nodesToDelete) {
+          String nodeSnapshotNumber = String.valueOf(nodeToDelete.get("snapshotNumber"));
+          String nodeInstanceNumber = nodeToDelete.get("instanceNumber") != null ? 
+              String.valueOf(nodeToDelete.get("instanceNumber")) : null;
+          String nodeNodeType = (String) nodeToDelete.get("type");
+          
+          if ("instance".equals(nodeNodeType) && nodeInstanceNumber != null) {
+            // Delete instance volume
+            String instanceVolumeName = "ton-db-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
+            volumesToDelete.add(instanceVolumeName);
+          } else {
+            // Delete base snapshot volume
+            String baseVolumeName = "ton-db-snapshot-" + nodeSnapshotNumber;
+            volumesToDelete.add(baseVolumeName);
+          }
+        }
+      } else {
+        // Fallback to old logic if nodesToDelete is not provided
+        if ("instance".equals(nodeType) && instanceNumber != null) {
+          // Delete instance volume
+          String instanceVolumeName = "ton-db-snapshot-" + snapshotNumber + "-" + instanceNumber;
+          volumesToDelete.add(instanceVolumeName);
+        } else {
+          // Delete base snapshot volume
+          String baseVolumeName = "ton-db-snapshot-" + snapshotNumber;
+          volumesToDelete.add(baseVolumeName);
+          
+          // If has children, also delete all instance volumes for this snapshot
+          if (hasChildren != null && hasChildren) {
+            // Find all instance volumes for this snapshot
+            List<InspectVolumeResponse> allVolumes = dockerClient.listVolumesCmd().exec().getVolumes();
+            String instancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
+            
+            for (InspectVolumeResponse volume : allVolumes) {
+              String volumeName = volume.getName();
+              if (volumeName.startsWith(instancePrefix)) {
+                volumesToDelete.add(volumeName);
+              }
+            }
+          }
+        }
+      }
+
+      boolean deletingActiveVolume = false;
+      if (currentVolume != null && volumesToDelete.contains(currentVolume)) {
+        deletingActiveVolume = true;
+        log.warn("Attempting to delete currently active volume: {}", currentVolume);
+        
+        // If trying to delete active volume, return error immediately
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Cannot delete currently active snapshot. Please switch to a different snapshot first.");
+        response.put("deletingActiveVolume", true);
+        return response;
+      }
+
+      // Delete the volumes
+      List<String> deletedVolumes = new ArrayList<>();
+      List<String> failedVolumes = new ArrayList<>();
+      
+      for (String volumeName : volumesToDelete) {
+        try {
+          // Check if volume exists
+          dockerClient.inspectVolumeCmd(volumeName).exec();
+          
+          // If this is the active volume, we cannot delete it
+          if (volumeName.equals(currentVolume)) {
+            log.error("Cannot delete active volume: {}", volumeName);
+            failedVolumes.add(volumeName + " (currently active)");
+            continue;
+          }
+          
+          // Delete the volume
+          dockerClient.removeVolumeCmd(volumeName).exec();
+          deletedVolumes.add(volumeName);
+          log.info("Successfully deleted volume: {}", volumeName);
+          
+        } catch (NotFoundException e) {
+          log.warn("Volume not found (already deleted?): {}", volumeName);
+          // Consider this a success since the volume is gone
+          deletedVolumes.add(volumeName + " (not found)");
+        } catch (Exception e) {
+          log.error("Failed to delete volume: {}", volumeName, e);
+          failedVolumes.add(volumeName + " (" + e.getMessage() + ")");
+        }
+      }
+
+      Map<String, Object> response = new HashMap<>();
+      
+      if (failedVolumes.isEmpty()) {
+        response.put("success", true);
+        response.put("message", "Snapshot deleted successfully");
+        response.put("deletedVolumes", deletedVolumes);
+        response.put("deletingActiveVolume", deletingActiveVolume);
+      } else {
+        response.put("success", false);
+        response.put("message", "Failed to delete some volumes: " + String.join(", ", failedVolumes));
+        response.put("deletedVolumes", deletedVolumes);
+        response.put("failedVolumes", failedVolumes);
+        response.put("deletingActiveVolume", deletingActiveVolume);
+      }
+      
+      return response;
+
+    } catch (Exception e) {
+      log.error("Error deleting snapshot", e);
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", false);
+      response.put("message", "Failed to delete snapshot: " + e.getMessage());
+      return response;
+    }
+  }
+
   public static DockerClient createDockerClient() {
 //    log.info("Env DOCKER_HOST: {}", System.getenv("DOCKER_HOST"));
     DefaultDockerClientConfig defaultConfig =
