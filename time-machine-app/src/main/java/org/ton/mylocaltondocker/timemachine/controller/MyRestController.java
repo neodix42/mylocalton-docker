@@ -274,10 +274,36 @@ public class MyRestController {
     try {
       String snapshotId = request.get("snapshotId");
       String snapshotNumber = request.get("snapshotNumber");
+      String nodeType = request.get("nodeType"); // "snapshot" or "instance"
 
-      log.info("Restoring snapshot: {}", snapshotId);
+      log.info("Restoring snapshot: {} (type: {})", snapshotId, nodeType);
 
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
+      String targetVolumeName;
+      int instanceNumber = 0;
+      boolean isNewInstance = false;
+
+      if ("instance".equals(nodeType)) {
+        // Restoring from instance node - reuse existing volume
+        String instanceNumberStr = request.get("instanceNumber");
+        if (instanceNumberStr != null) {
+          instanceNumber = Integer.parseInt(instanceNumberStr);
+          targetVolumeName = backupVolumeName + "-" + instanceNumber;
+        } else {
+          // Fallback for old format
+          targetVolumeName = backupVolumeName + "-latest";
+        }
+        log.info("Reusing existing instance volume: {}", targetVolumeName);
+      } else {
+        // Restoring from snapshot node - create new instance
+        instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
+        targetVolumeName = backupVolumeName + "-" + instanceNumber;
+        isNewInstance = true;
+        
+        // Copy the backup volume to preserve the original
+        log.info("Copying volume {} to {}", backupVolumeName, targetVolumeName);
+        copyVolumes(dockerClient, backupVolumeName, targetVolumeName);
+      }
 
       String genesisContainerId = getGenesisContainerId();
 
@@ -323,17 +349,21 @@ public class MyRestController {
                       .withNetworkMode(networkMode)
                       .withPortBindings(portBindings)
                       .withBinds(
-                          new Bind(backupVolumeName, new Volume(CONTAINER_DB_PATH)),
+                          new Bind(targetVolumeName, new Volume(CONTAINER_DB_PATH)),
                           new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))))
               .exec();
 
       dockerClient.startContainerCmd(newContainer.getId()).exec();
 
-      log.info("Snapshot restored: {}", snapshotId);
+      log.info("Snapshot restored: {} using volume: {}", snapshotId, targetVolumeName);
 
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("message", "Snapshot restored successfully");
+      response.put("volumeName", targetVolumeName);
+      response.put("originalVolumeName", backupVolumeName);
+      response.put("instanceNumber", instanceNumber);
+      response.put("isNewInstance", isNewInstance);
       return response;
 
     } catch (Exception e) {
@@ -375,6 +405,39 @@ public class MyRestController {
       log.error("Error determining next snapshot number", e);
       // Fallback to timestamp-based number if volume listing fails
       return Utils.getRandomInt();
+    }
+  }
+
+  private int getNextInstanceNumber(int snapshotNumber) {
+    try {
+      // List all volumes with instance prefix for this snapshot to determine next sequential number
+      List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
+      int maxInstanceNumber = 0;
+      String instancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
+
+      for (InspectVolumeResponse volume : volumes) {
+        String volumeName = volume.getName();
+        if (volumeName.startsWith(instancePrefix)) {
+          try {
+            String numberPart = volumeName.substring(instancePrefix.length());
+            // Skip if it's the old "-latest" format
+            if ("latest".equals(numberPart)) {
+              continue;
+            }
+            int instanceNumber = Integer.parseInt(numberPart);
+            maxInstanceNumber = Math.max(maxInstanceNumber, instanceNumber);
+          } catch (NumberFormatException e) {
+            // Skip volumes that don't have valid number suffix
+            log.warn("Invalid instance volume name format: {}", volumeName);
+          }
+        }
+      }
+
+      return maxInstanceNumber + 1;
+    } catch (Exception e) {
+      log.error("Error determining next instance number for snapshot {}", snapshotNumber, e);
+      // Fallback to 1 if volume listing fails
+      return 1;
     }
   }
 

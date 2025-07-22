@@ -153,6 +153,12 @@ body {
     stroke-width: 2px;
 }
 
+.node.instance {
+    fill: #ff6b35;
+    stroke: #e55a2b;
+    stroke-width: 2px;
+}
+
 .node.active {
     fill: #ffc107;
     stroke: #e0a800;

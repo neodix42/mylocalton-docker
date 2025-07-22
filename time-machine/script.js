@@ -342,7 +342,11 @@ class BlockchainGraph {
         
         // Update text content first
         nodeUpdate.select(".node-label")
-            .text(d => d.isRoot ? "ROOT" : (d.customName || `S${d.snapshotNumber}`))
+            .text(d => {
+                if (d.isRoot) return "ROOT";
+                if (d.type === "instance") return (d.customName || `S${d.snapshotNumber}`) + "-" + (d.instanceNumber || "1");
+                return d.customName || `S${d.snapshotNumber}`;
+            })
             .attr("x", 0)
             .attr("y", 0)
             .on("click", (event, d) => {
@@ -404,6 +408,7 @@ class BlockchainGraph {
                 .attr("class", () => {
                     let classes = "node";
                     if (d.isRoot) classes += " root";
+                    else if (d.type === "instance") classes += " instance";
                     else classes += " snapshot";
                     if (d.id === self.activeNodeId) classes += " active";
                     if (d.id === self.selectedNode?.id) classes += " selected";
@@ -514,7 +519,8 @@ class BlockchainGraph {
     showNodeInfo(node) {
         const nodeDetails = document.getElementById('node-details');
         const timestamp = new Date(node.timestamp).toLocaleString();
-        const displayName = node.isRoot ? 'ROOT' : (node.customName || `S${node.snapshotNumber}`);
+        let displayName = node.isRoot ? 'ROOT' : (node.customName || `S${node.snapshotNumber}`);
+        if (node.type === "instance") displayName += "-" + (node.instanceNumber || "1");
         
         // For active node, show current seqno from left panel, otherwise show stored seqno
         let displaySeqno = 'N/A';
@@ -529,6 +535,7 @@ class BlockchainGraph {
         nodeDetails.innerHTML = `
             <p><strong>ID:</strong> ${node.id}</p>
             <p><strong>Name:</strong> ${displayName}</p>
+            <p><strong>Type:</strong> ${node.type || 'snapshot'}</p>
             <p><strong>Seqno:</strong> ${displaySeqno}</p>
             <p><strong>Created:</strong> ${timestamp}</p>
             ${node.parentId ? `<p><strong>Parent:</strong> ${node.parentId}</p>` : ''}
@@ -672,18 +679,53 @@ class BlockchainGraph {
                 },
                 body: JSON.stringify({
                     snapshotId: this.selectedNode.id,
-                    snapshotNumber: this.selectedNode.snapshotNumber
+                    snapshotNumber: this.selectedNode.snapshotNumber,
+                    nodeType: this.selectedNode.type || "snapshot",
+                    instanceNumber: this.selectedNode.instanceNumber
                 })
             });
             
             const data = await response.json();
             
             if (data.success) {
-                // Update active node
-                this.activeNodeId = this.selectedNode.id;
+                if (data.isNewInstance) {
+                    // Restoring from snapshot node - create new instance node
+                    const instanceNumber = data.instanceNumber || 1;
+                    
+                    // Create new instance node with clean ID (no timestamp)
+                    const instanceNodeId = this.selectedNode.id + "-" + instanceNumber;
+                    
+                    // Create new instance node
+                    const instanceNode = {
+                        id: instanceNodeId,
+                        snapshotNumber: this.selectedNode.snapshotNumber,
+                        instanceNumber: instanceNumber,
+                        blockSequence: this.selectedNode.blockSequence,
+                        seqno: this.selectedNode.seqno,
+                        timestamp: new Date().toISOString(),
+                        parentId: this.selectedNode.id,
+                        isRoot: false,
+                        type: "instance",
+                        customName: this.selectedNode.customName
+                    };
+                    
+                    // Add instance node and edge
+                    this.nodes.push(instanceNode);
+                    this.edges.push({
+                        source: this.selectedNode.id,
+                        target: instanceNodeId
+                    });
+                    
+                    // Update active node to the new instance
+                    this.activeNodeId = instanceNodeId;
+                } else {
+                    // Restoring from instance node - reuse existing node, just update active
+                    this.activeNodeId = this.selectedNode.id;
+                }
                 
                 // Save graph and re-render
                 await this.saveGraph();
+                this.calculateLayout();
                 this.renderGraph();
                 this.updateStats();
                 
@@ -828,58 +870,104 @@ class BlockchainGraph {
                 document.getElementById('current-snapshot-name').textContent = 'N/A';
             }
         } catch (error) {
-            console.error('Error fetching blockchain status:', error);
+            console.error('Error updating blockchain status:', error);
             document.getElementById('current-seqno').textContent = 'N/A';
             document.getElementById('current-snapshot-name').textContent = 'N/A';
         }
-        
     }
 
     getSnapshotNameFromVolume(volumeName) {
         if (!volumeName) return 'N/A';
         
-        if (volumeName.startsWith('ton-db-snapshot-')) {
-            // Extract snapshot number from volume name
-            const numberPart = volumeName.substring('ton-db-snapshot-'.length);
-            const snapshotNumber = parseInt(numberPart);
-            
-            // Find the node with this snapshot number
-            const node = this.nodes.find(n => n.snapshotNumber === snapshotNumber);
-            if (node && node.customName) {
-                return node.customName;
-            } else {
-                return `S${snapshotNumber}`;
+        // Handle different volume name formats
+        if (volumeName.includes('ton-db-snapshot-')) {
+            const parts = volumeName.split('ton-db-snapshot-');
+            if (parts.length > 1) {
+                const numberPart = parts[1];
+                // Check for new numbered instance format: ton-db-snapshot-10-1
+                const instanceMatch = numberPart.match(/^(\d+)-(\d+)$/);
+                if (instanceMatch) {
+                    const snapshotNum = instanceMatch[1];
+                    const instanceNum = instanceMatch[2];
+                    return `S${snapshotNum}-${instanceNum}`;
+                }
+                // Check for old "-latest" format for backward compatibility
+                else if (numberPart.endsWith('-latest')) {
+                    return `S${numberPart.replace('-latest', '')}-latest`;
+                }
+                // Plain snapshot number
+                else {
+                    return `S${numberPart}`;
+                }
             }
-        } else {
-            return 'Root'; // Using root/original volume
         }
+        
+        return volumeName;
     }
 
     updateActiveNodeFromVolume(volumeName) {
         if (!volumeName) return;
         
-        let newActiveNodeId = null;
+        let targetNodeId = null;
         
-        if (volumeName.startsWith('ton-db-snapshot-')) {
-            // Extract snapshot number from volume name
-            const numberPart = volumeName.substring('ton-db-snapshot-'.length);
-            const snapshotNumber = parseInt(numberPart);
-            
-            // Find the node with this snapshot number
-            const node = this.nodes.find(n => n.snapshotNumber === snapshotNumber);
-            if (node) {
-                newActiveNodeId = node.id;
+        // Determine which node should be active based on volume name
+        if (volumeName.includes('ton-db-snapshot-')) {
+            const parts = volumeName.split('ton-db-snapshot-');
+            if (parts.length > 1) {
+                const numberPart = parts[1];
+                
+                // Check for new numbered instance format: ton-db-snapshot-10-1
+                const instanceMatch = numberPart.match(/^(\d+)-(\d+)$/);
+                if (instanceMatch) {
+                    const snapshotNumber = instanceMatch[1];
+                    const instanceNumber = instanceMatch[2];
+                    
+                    // Find the instance node with matching snapshot and instance numbers
+                    const instanceNodes = this.nodes.filter(n => 
+                        n.type === "instance" && 
+                        n.snapshotNumber == snapshotNumber &&
+                        n.instanceNumber == instanceNumber
+                    );
+                    
+                    if (instanceNodes.length > 0) {
+                        // Sort by timestamp and get the most recent (in case of duplicates)
+                        instanceNodes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        targetNodeId = instanceNodes[0].id;
+                    }
+                }
+                // Check for old "-latest" format for backward compatibility
+                else if (numberPart.endsWith('-latest')) {
+                    const snapshotNumber = numberPart.replace('-latest', '');
+                    // Find the most recent instance node for this snapshot
+                    const instanceNodes = this.nodes.filter(n => 
+                        n.type === "instance" && 
+                        n.id.startsWith(`snapshot-${snapshotNumber}-latest-`)
+                    );
+                    if (instanceNodes.length > 0) {
+                        // Sort by timestamp and get the most recent
+                        instanceNodes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        targetNodeId = instanceNodes[0].id;
+                    } else {
+                        // Fallback to old format if no timestamped instances exist
+                        targetNodeId = `snapshot-${snapshotNumber}-latest`;
+                    }
+                }
+                // Plain snapshot number
+                else {
+                    targetNodeId = `snapshot-${numberPart}`;
+                }
             }
         } else {
-            // Using root volume
-            newActiveNodeId = 'root';
+            // Default to root if no snapshot volume
+            targetNodeId = 'root';
         }
         
         // Update active node if it changed
-        if (newActiveNodeId && newActiveNodeId !== this.activeNodeId) {
-            this.activeNodeId = newActiveNodeId;
-            this.renderGraph();
+        if (targetNodeId && targetNodeId !== this.activeNodeId) {
+            this.activeNodeId = targetNodeId;
+            this.renderActiveNodeArrows();
             this.updateStats();
+            this.saveGraph();
         }
     }
 
@@ -896,33 +984,27 @@ class BlockchainGraph {
                 if (response.ok) {
                     const data = await response.json();
                     if (data.success && data.seqno && data.seqno > 0) {
-                        // Valid seqno received, blockchain is ready
+                        // Blockchain is ready
                         this.isWaitingForBlockchain = false;
                         this.showLoading(false);
                         this.updateStatus("Ready");
-                        return true;
+                        return;
                     }
                 }
+                
+                // Continue waiting if seqno is still 0 or invalid
+                if (this.isWaitingForBlockchain) {
+                    setTimeout(checkSeqno, 2000);
+                }
             } catch (error) {
-                console.error('Error checking seqno during startup:', error);
+                console.error('Error checking seqno:', error);
+                if (this.isWaitingForBlockchain) {
+                    setTimeout(checkSeqno, 2000);
+                }
             }
-            return false;
         };
         
-        // Check every 2 seconds for valid seqno
-        const intervalId = setInterval(async () => {
-            const isReady = await checkSeqno();
-            if (isReady) {
-                clearInterval(intervalId);
-            }
-        }, 2000);
-        
-        // Also check immediately
-        checkSeqno().then(isReady => {
-            if (isReady) {
-                clearInterval(intervalId);
-            }
-        });
+        checkSeqno();
     }
 
     handleResize() {
@@ -940,6 +1022,6 @@ class BlockchainGraph {
 }
 
 // Initialize the graph when the page loads
-window.addEventListener('load', () => {
+document.addEventListener('DOMContentLoaded', () => {
     new BlockchainGraph();
 });
