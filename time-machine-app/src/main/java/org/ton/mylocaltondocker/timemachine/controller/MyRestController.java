@@ -14,10 +14,7 @@ import io.github.bucket4j.Bucket;
 import io.github.bucket4j.Refill;
 import jakarta.servlet.http.HttpServletRequest;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -30,7 +27,6 @@ import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.ton.java.tonlib.types.MasterChainInfo;
-import org.ton.java.utils.Utils;
 import org.ton.mylocaltondocker.timemachine.Main;
 
 @RestController
@@ -43,96 +39,7 @@ public class MyRestController {
 
   private final ConcurrentHashMap<String, Bucket> sessionBuckets = new ConcurrentHashMap<>();
 
-  public static String getContainerId() throws IOException {
-    try (BufferedReader br =
-        new BufferedReader(
-            new InputStreamReader(new java.io.FileInputStream("/proc/self/cgroup")))) {
-      String line;
-      while ((line = br.readLine()) != null) {
-        if (line.contains("docker")) {
-          String[] parts = line.split("/");
-          String id = parts[parts.length - 1].trim();
-          if (id.length() == 64) {
-            return id; // full container ID
-          }
-          // else, might be short, handle accordingly
-          return id;
-        }
-      }
-    }
-    return null;
-  }
-
-  //  private static String getYamlFileFromCompose() throws IOException, InterruptedException {
-  //    ProcessBuilder pb = new ProcessBuilder("docker-compose", "ls");
-  //    Process process = pb.start();
-  //
-  //    try (BufferedReader reader =
-  //        new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-  //      String line;
-  //      boolean headerSkipped = false; // To skip header line
-  //      while ((line = reader.readLine()) != null) {
-  //        if (!headerSkipped) {
-  //          // Skip the header line
-  //          headerSkipped = true;
-  //          continue;
-  //        }
-  //        // Example line:
-  //        // mylocalton-docker   running(3)
-  //        // /home/neodix/IdeaProjects/mylocalton-docker/docker-compose-build.yaml
-  //        String[] parts = line.trim().split("\\s+");
-  //        if (parts.length >= 3) {
-  //          String containerName = parts[0];
-  //          String configFilePath = parts[2];
-  //          //          if (containerName.equals(targetContainerName)) {
-  //          return configFilePath;
-  //          //          }
-  //        }
-  //      }
-  //    }
-  //    process.waitFor();
-  //    return null; // Not found
-  //  }
-  //
-  //  private static void copyFileToContainer(
-  //      String containerId, String sourceFilePath, String targetDirInContainer)
-  //      throws IOException, InterruptedException {
-  //    String targetPathInContainer = targetDirInContainer; // e.g., "/tmp/"
-  //    String command =
-  //        String.format("docker cp %s %s:%s", sourceFilePath, containerId, targetPathInContainer);
-  //    System.out.println("Executing: " + command);
-  //    ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
-  //    Process process = pb.start();
-  //    int exitCode = process.waitFor();
-  //    if (exitCode != 0) {
-  //      System.err.println("Failed to copy file to container");
-  //    }
-  //  }
-  //
-  //  @PostMapping("/ls")
-  //  public Map<String, Object> executeJavaCodeLs(
-  //      @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
-  //
-  //    try {
-  //      String yaml = getYamlFileFromCompose();
-  //      log.info("found yaml on host {}", yaml);
-  //
-  //      //      String hostname = getContainerId();
-  //      String hostname = "time-machine";
-  //      log.info("hostname (container-id) {}", hostname);
-  //
-  //      copyFileToContainer(hostname, yaml, "/tmp/");
-  //      System.out.println("File copied to container's /tmp/ directory");
-  //
-  //      Map<String, Object> response = new HashMap<>();
-  //      response.put("success", false);
-  //      response.put("message", "ls");
-  //      return response;
-  //    } catch (IOException | InterruptedException e) {
-  //      e.printStackTrace();
-  //    }
-  //    return null;
-  //  }
+  DockerClient dockerClient = createDockerClient();
 
   @PostMapping("/time-machine")
   public Map<String, Object> executeJavaCode(
@@ -173,18 +80,10 @@ public class MyRestController {
     try {
       log.info("Getting seqno-volume");
 
-      DockerClient dockerClient = createDockerClient();
-      String containerXId =
-          dockerClient
-              .listContainersCmd()
-              .withNameFilter(List.of(CONTAINER_GENESIS))
-              .exec()
-              .stream()
-              .findFirst()
-              .map(c -> c.getId()).get();
-//                  .orElseThrow(() -> new RuntimeException("Container not found"));
+      String genesisContainerId = getGenesisContainerId();
+      //  .orElseThrow(() -> new RuntimeException("Container not found"));
 
-      if ( StringUtils.isEmpty(containerXId)) {
+      if (StringUtils.isEmpty(genesisContainerId)) {
         log.error("Container not found");
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
@@ -201,17 +100,18 @@ public class MyRestController {
         return response;
       }
 
-      String volume = getCurrentVolume(dockerClient, containerXId);
+      String volume = getCurrentVolume(dockerClient, genesisContainerId);
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("seqno", masterChainInfo.getLast().getSeqno());
       response.put("volume", volume);
+      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Exception e) {
-      log.error("Error getting seqno", e);
+      log.error("Error getting seqno-volume", e);
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
-      response.put("message", "Failed to get seqno: " + e.getMessage());
+      response.put("message", "Failed to get seqno-volume: " + e.getMessage());
       return response;
     }
   }
@@ -282,8 +182,6 @@ public class MyRestController {
     try {
       log.info("Creating snapshot (backup only)");
 
-      DockerClient dockerClient = createDockerClient();
-
       // Get sequential snapshot number from request or generate next one
       int snapshotNumber;
       if (request.containsKey("snapshotNumber")) {
@@ -297,66 +195,35 @@ public class MyRestController {
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
       // Find container
-      String containerXId =
-          dockerClient
-              .listContainersCmd()
-              .withNameFilter(List.of(CONTAINER_GENESIS))
-              .exec()
-              .stream()
-              .findFirst()
-              .map(c -> c.getId())
-              .orElseThrow(() -> new RuntimeException("Container not found"));
+      String genesisContainerId = getGenesisContainerId();
+      // .orElseThrow(() -> new RuntimeException("Container not found"));
 
-      String volumeName = getCurrentVolume(dockerClient, containerXId);
+      if (StringUtils.isEmpty(genesisContainerId)) {
+        log.error("Container not found");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Container not found");
+        return response;
+      }
+
+      String volumeName = getCurrentVolume(dockerClient, genesisContainerId);
 
       if (volumeName == null) {
-        throw new RuntimeException("Volume not found");
+        log.error("Current volume not found");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Current volume not found");
+        return response;
       }
 
-      // Create backup volume
-      try {
-        dockerClient.inspectVolumeCmd(backupVolumeName).exec();
-      } catch (Exception e) {
-        dockerClient.createVolumeCmd().withName(backupVolumeName).exec();
-      }
-
-      // Ensure alpine image exists
-      try {
-        dockerClient.inspectImageCmd("alpine:latest").exec();
-      } catch (NotFoundException e) {
-        dockerClient
-            .pullImageCmd("alpine")
-            .withTag("latest")
-            .exec(new PullImageResultCallback())
-            .awaitCompletion();
-      }
-
-      // Copy data to backup volume
-      String copyContainerId =
-          dockerClient
-              .createContainerCmd("alpine")
-              .withCmd("/bin/sh", "-c", "cp -rTv /from/. /to/.")
-              .withVolumes(new Volume("/from"), new Volume("/to"))
-              .withName("taking-snapshot-" + snapshotNumber)
-              .withHostConfig(
-                  newHostConfig()
-                      .withBinds(
-                          new Bind(volumeName, new Volume("/from")),
-                          new Bind(backupVolumeName, new Volume("/to"))))
-              .exec()
-              .getId();
-
-      dockerClient.startContainerCmd(copyContainerId).exec();
-      Thread.sleep(5000); // Wait for copy to complete
-      dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
-
-      log.info("Snapshot created: {}", snapshotId);
+      long lastSeqno = getCurrentBlockSequence();
+      copyVolumes(dockerClient, volumeName, backupVolumeName);
 
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("snapshotId", snapshotId);
       response.put("snapshotNumber", snapshotNumber);
-      response.put("blockSequence", getCurrentBlockSequence());
+      response.put("blockSequence", lastSeqno);
       response.put("volumeName", backupVolumeName);
       response.put("message", "Snapshot created successfully");
       return response;
@@ -370,9 +237,67 @@ public class MyRestController {
     }
   }
 
-  private static String getCurrentVolume(DockerClient dockerClient, String containerXId) {
-    // Get current volume
-    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerXId).exec();
+  private String getGenesisContainerId() {
+    return
+        dockerClient
+            .listContainersCmd()
+            .withNameFilter(List.of(CONTAINER_GENESIS))
+            .exec()
+            .stream()
+            .findFirst()
+            .map(c -> c.getId())
+            .get();
+  }
+
+  private void copyVolumes(
+      DockerClient dockerClient, String sourceVolumeName, String targetVolumeName)
+      throws InterruptedException {
+      log.info("copy volume {} to volume {}", sourceVolumeName, targetVolumeName);
+
+    try {
+      dockerClient.inspectVolumeCmd(targetVolumeName).exec();
+    } catch (Exception e) {
+      dockerClient.createVolumeCmd().withName(targetVolumeName).exec();
+    }
+
+    try {
+      dockerClient.inspectImageCmd("alpine:latest").exec();
+    } catch (NotFoundException e) {
+      dockerClient
+          .pullImageCmd("alpine")
+          .withTag("latest")
+          .exec(new PullImageResultCallback())
+          .awaitCompletion();
+    }
+
+    // Copy data to backup volume
+    String copyContainerId =
+        dockerClient
+            .createContainerCmd("alpine")
+            .withCmd("/bin/sh", "-c", "cp -rTv /from/. /to/.")
+            .withVolumes(new Volume("/from"), new Volume("/to"))
+            .withName("taking-snapshot")
+            .withHostConfig(
+                newHostConfig()
+                    .withBinds(
+                        new Bind(sourceVolumeName, new Volume("/from")),
+                        new Bind(targetVolumeName, new Volume("/to"))))
+            .exec()
+            .getId();
+
+      dockerClient.startContainerCmd(copyContainerId).exec();
+      var callback = new WaitContainerResultCallback();
+      dockerClient.waitContainerCmd(copyContainerId).exec(callback);
+      callback.awaitCompletion();
+//      Thread.sleep(5000); // Wait for copy to complete
+      dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
+
+      log.info("Volumes copied");
+  }
+
+  private static String getCurrentVolume(DockerClient dockerClient, String containerId) {
+    // Get currently used volume name that is mounted to path CONTAINER_DB_PATH
+    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerId).exec();
     String volumeName = null;
     for (var mount : inspectX.getMounts()) {
       if (mount.getSource() != null && mount.getDestination().getPath().equals(CONTAINER_DB_PATH)) {
@@ -383,34 +308,6 @@ public class MyRestController {
     return volumeName;
   }
 
-//  private String getCurrentlyUsedSnapshotId() {
-//    try {
-//      DockerClient dockerClient = createDockerClient();
-//      String containerXId =
-//          dockerClient
-//              .listContainersCmd()
-//              .withNameFilter(List.of(CONTAINER_GENESIS))
-//              .exec()
-//              .stream()
-//              .findFirst()
-//              .map(c -> c.getId())
-//              .orElseThrow(() -> new RuntimeException("Container not found"));
-//
-//      String volumeName = getCurrentVolume(dockerClient, containerXId);
-//
-//      if (volumeName != null && volumeName.startsWith("ton-db-snapshot-")) {
-//        // Extract snapshot number from volume name
-//        String numberPart = volumeName.substring("ton-db-snapshot-".length());
-//        return "snapshot-" + numberPart;
-//      } else {
-//        return "root"; // Using root/original volume
-//      }
-//    } catch (Exception e) {
-//      log.error("Error getting currently used snapshot ID", e);
-//      return "unknown";
-//    }
-//  }
-
   @PostMapping("/restore-snapshot")
   public Map<String, Object> restoreSnapshot(@RequestBody Map<String, String> request) {
     try {
@@ -419,22 +316,21 @@ public class MyRestController {
 
       log.info("Restoring snapshot: {}", snapshotId);
 
-      DockerClient dockerClient = createDockerClient();
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
       // Find and stop current container
-      String containerXId =
-          dockerClient
-              .listContainersCmd()
-              .withNameFilter(List.of(CONTAINER_GENESIS))
-              .exec()
-              .stream()
-              .findFirst()
-              .map(c -> c.getId())
-              .orElseThrow(() -> new RuntimeException("Container not found"));
+      String genesisContainerId = getGenesisContainerId();
+
+      if (StringUtils.isEmpty(genesisContainerId)) {
+        log.error("Container not found");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Container not found");
+        return response;
+      }
 
       // Get container configuration
-      InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerXId).exec();
+      InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(genesisContainerId).exec();
       ContainerConfig oldConfig = inspectX.getConfig();
       HostConfig oldHostConfig = inspectX.getHostConfig();
 
@@ -451,10 +347,10 @@ public class MyRestController {
       }
 
       // Stop and remove current container
-      dockerClient.stopContainerCmd(containerXId).exec();
-      Thread.sleep(1000);
-      dockerClient.removeContainerCmd(containerXId).withForce(true).exec();
-      Thread.sleep(1000);
+      dockerClient.stopContainerCmd(genesisContainerId).exec();
+//      Thread.sleep(1000);
+      dockerClient.removeContainerCmd(genesisContainerId).withForce(true).exec();
+//      Thread.sleep(1000);
 
       // Create new container with snapshot volume
       CreateContainerResponse newContainer =
@@ -494,10 +390,10 @@ public class MyRestController {
     }
   }
 
-  private int getCurrentBlockSequence() {
-    // This is a placeholder - in a real implementation, you would
-    // query the blockchain to get the current block sequence number
-    return Utils.getRandomInt() % 10000;
+  private long getCurrentBlockSequence() {
+    MasterChainInfo masterChainInfo = Main.tonlib.getMasterChainInfo();
+    return masterChainInfo.getLast().getSeqno();
+
   }
 
   private int getNextSnapshotNumber(DockerClient dockerClient) {
@@ -539,10 +435,10 @@ public class MyRestController {
   }
 
   public static DockerClient createDockerClient() {
-    log.info("Env DOCKER_HOST: {}", System.getenv("DOCKER_HOST"));
+//    log.info("Env DOCKER_HOST: {}", System.getenv("DOCKER_HOST"));
     DefaultDockerClientConfig defaultConfig =
         DefaultDockerClientConfig.createDefaultConfigBuilder().build();
-    log.info("Using Docker host: {}", defaultConfig.getDockerHost());
+//    log.info("Using Docker host: {}", defaultConfig.getDockerHost());
 
     var httpClient =
         new OkDockerHttpClient.Builder()
@@ -552,24 +448,4 @@ public class MyRestController {
 
     return DockerClientBuilder.getInstance(defaultConfig).withDockerHttpClient(httpClient).build();
   }
-
-  //  public boolean isIpAvailable(DockerClient dockerClient, String ipAddress, String networkName)
-  // {
-  //    // List all containers
-  //    List<Container> containers = dockerClient.listContainersCmd().withShowAll(true).exec();
-  //
-  //    // Check each container's network settings for IP address conflicts
-  //    for (Container container : containers) {
-  //      InspectContainerResponse containerDetails =
-  //          dockerClient.inspectContainerCmd(container.getId()).exec();
-  //      Map<String, ContainerNetwork> networks =
-  // containerDetails.getNetworkSettings().getNetworks();
-  //      ContainerNetwork containerNetwork = networks.get(networkName);
-  //      //      log.info("container network {}, container {}", containerNetwork, container);
-  //      if (containerNetwork != null && ipAddress.equals(containerNetwork.getIpAddress())) {
-  //        return false; // IP is in use
-  //      }
-  //    }
-  //    return true; // IP is available
-  //  }
 }

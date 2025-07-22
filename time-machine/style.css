@@ -309,6 +309,43 @@ body {
     padding-bottom: 8px;
 }
 
+/* Quick Links section */
+.quick-links {
+    margin-top: 25px;
+}
+
+.quick-links h3 {
+    margin: 0 0 15px 0;
+    color: #0e84b8;
+    font-size: 1.1rem;
+    border-bottom: 2px solid rgba(14, 132, 184, 0.2);
+    padding-bottom: 8px;
+}
+
+.link-item {
+    margin: 8px 0;
+}
+
+.quick-link {
+    display: block;
+    padding: 8px 0;
+    text-decoration: none;
+    color: #0e84b8;
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.3s ease;
+    border-bottom: 1px solid rgba(14, 132, 184, 0.1);
+}
+
+.quick-link:hover {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+.link-text {
+    display: block;
+}
+
 .node-info {
     margin-bottom: 25px;
 }
