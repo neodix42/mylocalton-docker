@@ -27,6 +27,7 @@ import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.ton.java.tonlib.types.MasterChainInfo;
+import org.ton.java.utils.Utils;
 import org.ton.mylocaltondocker.timemachine.Main;
 
 @RestController
@@ -41,47 +42,12 @@ public class MyRestController {
 
   DockerClient dockerClient = createDockerClient();
 
-  @PostMapping("/time-machine")
-  public Map<String, Object> executeJavaCode(
-      @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
-    System.out.println("running /time-machine");
-
-    String sessionId = httpServletRequest.getSession().getId();
-    sessionBuckets.computeIfAbsent(
-        sessionId,
-        id -> {
-          Refill refill = Refill.intervally(10, Duration.ofMinutes(1));
-          Bandwidth limit = Bandwidth.classic(10, refill);
-          return Bucket.builder().addLimit(limit).build();
-        });
-
-    Bucket bucket = sessionBuckets.get(sessionId);
-
-    if (bucket.tryConsume(1)) {
-
-      //      new DockerComposeContainer(new File("/tmp/docker-compose-build.yaml")).start();
-
-      Map<String, Object> response = new HashMap<>();
-      response.put("success", false);
-      response.put("message", "time-machine");
-      return response;
-
-    } else {
-      Map<String, Object> response = new HashMap<>();
-      log.info("rate limit, session {}", sessionId);
-      response.put("success", false);
-      response.put("message", "rate limit, 10 requests per minute");
-      return response;
-    }
-  }
-
   @GetMapping("/seqno-volume")
   public Map<String, Object> getSeqno() {
     try {
       log.info("Getting seqno-volume");
 
       String genesisContainerId = getGenesisContainerId();
-      //  .orElseThrow(() -> new RuntimeException("Container not found"));
 
       if (StringUtils.isEmpty(genesisContainerId)) {
         log.error("Container not found");
@@ -116,7 +82,6 @@ public class MyRestController {
     }
   }
 
-  // Graph management endpoints
   @GetMapping("/graph")
   public Map<String, Object> getGraph() {
     try {
@@ -180,8 +145,7 @@ public class MyRestController {
   @PostMapping("/take-snapshot")
   public Map<String, Object> takeSnapshot(@RequestBody Map<String, String> request) {
     try {
-      log.info("Creating snapshot (backup only)");
-
+      log.info("taking snapshot");
       // Get sequential snapshot number from request or generate next one
       int snapshotNumber;
       if (request.containsKey("snapshotNumber")) {
@@ -194,9 +158,7 @@ public class MyRestController {
       String snapshotId = "snapshot-" + snapshotNumber;
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
-      // Find container
       String genesisContainerId = getGenesisContainerId();
-      // .orElseThrow(() -> new RuntimeException("Container not found"));
 
       if (StringUtils.isEmpty(genesisContainerId)) {
         log.error("Container not found");
@@ -289,7 +251,6 @@ public class MyRestController {
       var callback = new WaitContainerResultCallback();
       dockerClient.waitContainerCmd(copyContainerId).exec(callback);
       callback.awaitCompletion();
-//      Thread.sleep(5000); // Wait for copy to complete
       dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
 
       log.info("Volumes copied");
@@ -318,7 +279,6 @@ public class MyRestController {
 
       String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
-      // Find and stop current container
       String genesisContainerId = getGenesisContainerId();
 
       if (StringUtils.isEmpty(genesisContainerId)) {
@@ -346,13 +306,9 @@ public class MyRestController {
         }
       }
 
-      // Stop and remove current container
       dockerClient.stopContainerCmd(genesisContainerId).exec();
-//      Thread.sleep(1000);
       dockerClient.removeContainerCmd(genesisContainerId).withForce(true).exec();
-//      Thread.sleep(1000);
 
-      // Create new container with snapshot volume
       CreateContainerResponse newContainer =
           dockerClient
               .createContainerCmd(GENESIS_IMAGE_NAME)
@@ -371,7 +327,6 @@ public class MyRestController {
                           new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))))
               .exec();
 
-      // Start the container
       dockerClient.startContainerCmd(newContainer.getId()).exec();
 
       log.info("Snapshot restored: {}", snapshotId);
@@ -393,7 +348,6 @@ public class MyRestController {
   private long getCurrentBlockSequence() {
     MasterChainInfo masterChainInfo = Main.tonlib.getMasterChainInfo();
     return masterChainInfo.getLast().getSeqno();
-
   }
 
   private int getNextSnapshotNumber(DockerClient dockerClient) {
@@ -420,15 +374,14 @@ public class MyRestController {
     } catch (Exception e) {
       log.error("Error determining next snapshot number", e);
       // Fallback to timestamp-based number if volume listing fails
-      return (int) (System.currentTimeMillis() % 10000);
+      return Utils.getRandomInt();
     }
   }
 
   public static long getVolumeSize(String volumeName) {
-    String volumePath = volumeName; // Docker default path
-    File volumeDir = new File(volumePath);
+    File volumeDir = new File(volumeName);
     if (!volumeDir.exists() || !volumeDir.isDirectory()) {
-      System.err.println("Volume path does not exist or is not a directory: " + volumePath);
+      System.err.println("Volume path does not exist or is not a directory: " + volumeName);
       return 0L;
     }
     return FileUtils.sizeOfDirectory(volumeDir);
