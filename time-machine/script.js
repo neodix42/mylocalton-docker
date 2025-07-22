@@ -47,16 +47,19 @@ class BlockchainGraph {
     }
 
     setupEventListeners() {
-        // Action buttons
-        document.getElementById('take-snapshot-btn').addEventListener('click', () => {
+        // Admin links
+        document.getElementById('take-snapshot-link').addEventListener('click', (e) => {
+            e.preventDefault();
             this.takeSnapshot();
         });
         
-        document.getElementById('restore-snapshot-btn').addEventListener('click', () => {
+        document.getElementById('restore-snapshot-link').addEventListener('click', (e) => {
+            e.preventDefault();
             this.restoreSnapshot();
         });
         
-        document.getElementById('delete-snapshot-btn').addEventListener('click', () => {
+        document.getElementById('delete-snapshot-link').addEventListener('click', (e) => {
+            e.preventDefault();
             this.deleteSnapshot();
         });
         
@@ -470,32 +473,40 @@ class BlockchainGraph {
         this.selectedNode = node;
         
         if (node) {
-            this.showActionButtons(node);
+            this.showAdminLinks(node);
             this.showNodeInfo(node);
         } else {
-            this.hideActionButtons();
+            this.hideAdminLinks();
             this.hideNodeInfo();
         }
         
         this.renderNodes(); // Re-render to update selection styling
     }
 
-    showActionButtons(node) {
-        const actionButtons = document.getElementById('action-buttons');
-        const takeSnapshotBtn = document.getElementById('take-snapshot-btn');
-        const restoreSnapshotBtn = document.getElementById('restore-snapshot-btn');
-        const deleteSnapshotBtn = document.getElementById('delete-snapshot-btn');
+    showAdminLinks(node) {
+        const adminLinks = document.getElementById('admin-links');
+        const adminPlaceholder = document.getElementById('admin-placeholder');
+        const takeSnapshotLink = document.getElementById('take-snapshot-link');
+        const restoreSnapshotLink = document.getElementById('restore-snapshot-link');
+        const deleteSnapshotLink = document.getElementById('delete-snapshot-link');
         
-        actionButtons.classList.remove('hidden');
+        // Show admin links and hide placeholder
+        adminLinks.classList.remove('hidden');
+        adminPlaceholder.classList.add('hidden');
         
-        // Show/hide appropriate buttons
-        takeSnapshotBtn.style.display = 'flex';
-        restoreSnapshotBtn.style.display = node.isRoot ? 'none' : 'flex';
-        deleteSnapshotBtn.style.display = node.isRoot ? 'none' : 'flex';
+        // Show/hide appropriate links based on node type
+        takeSnapshotLink.style.display = 'block';
+        restoreSnapshotLink.style.display = node.isRoot ? 'none' : 'block';
+        deleteSnapshotLink.style.display = node.isRoot ? 'none' : 'block';
     }
 
-    hideActionButtons() {
-        document.getElementById('action-buttons').classList.add('hidden');
+    hideAdminLinks() {
+        const adminLinks = document.getElementById('admin-links');
+        const adminPlaceholder = document.getElementById('admin-placeholder');
+        
+        // Hide admin links and show placeholder
+        adminLinks.classList.add('hidden');
+        adminPlaceholder.classList.remove('hidden');
     }
 
     editNodeName(node) {
@@ -840,7 +851,7 @@ class BlockchainGraph {
                 
                 // Clear selection
                 this.selectedNode = null;
-                this.hideActionButtons();
+                this.hideAdminLinks();
                 this.hideNodeInfo();
                 
                 // Save graph and re-render

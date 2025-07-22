@@ -391,6 +391,94 @@ body {
     padding-bottom: 8px;
 }
 
+/* Administration panel */
+.administration-panel {
+    margin-bottom: 25px;
+}
+
+.admin-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.admin-links.hidden {
+    display: none;
+}
+
+.admin-placeholder {
+    color: #666;
+    font-size: 14px;
+    font-style: italic;
+}
+
+.admin-placeholder.hidden {
+    display: none;
+}
+
+.admin-link {
+    display: block;
+    padding: 10px 16px;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+}
+
+.admin-link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    text-decoration: none;
+}
+
+.admin-link.primary {
+    background: linear-gradient(135deg, #ffffff, #f8f9fa);
+    color: #0e84b8;
+    border: 1px solid rgba(14, 132, 184, 0.2);
+}
+
+.admin-link.primary:hover {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    color: #0056b3;
+    border: 1px solid rgba(14, 132, 184, 0.3);
+}
+
+.admin-link.secondary {
+    background: linear-gradient(135deg, #ffffff, #f8f9fa);
+    color: #0e84b8;
+    border: 1px solid rgba(14, 132, 184, 0.2);
+}
+
+.admin-link.secondary:hover {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    color: #0056b3;
+    border: 1px solid rgba(14, 132, 184, 0.3);
+}
+
+.admin-link.danger {
+    background: linear-gradient(135deg, #ffffff, #f8f9fa);
+    color: #0e84b8;
+    border: 1px solid rgba(14, 132, 184, 0.2);
+}
+
+.admin-link.danger:hover {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    color: #0056b3;
+    border: 1px solid rgba(14, 132, 184, 0.3);
+}
+
+.admin-link:disabled {
+    background: linear-gradient(135deg, #6c757d, #adb5bd);
+    cursor: not-allowed;
+    transform: none;
+    color: white;
+}
+
 /* Quick Links section */
 .quick-links {
     margin-top: 25px;

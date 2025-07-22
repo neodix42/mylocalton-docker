@@ -19,7 +19,7 @@
 </div>
 
 <div class="header">
-    <h1>TON TIME MACHINE</h1>
+    <h1>MyLocalTon Time Machine</h1>
     <div class="status-bar">
         <span id="status-text">Loading blockchain state...</span>
         <div class="loading-spinner" id="loading-spinner"></div>
@@ -67,17 +67,23 @@
 </div>
 
 <div class="info-panel">
-    <!-- Action buttons that appear when a node is selected -->
-    <div id="action-buttons" class="action-buttons hidden">
-        <button id="take-snapshot-btn" class="action-btn primary">
-            Take Snapshot
-        </button>
-        <button id="restore-snapshot-btn" class="action-btn secondary">
-            Restore Snapshot
-        </button>
-        <button id="delete-snapshot-btn" class="action-btn danger">
-            Delete Snapshot
-        </button>
+    <!-- Administration panel with action links -->
+    <div class="administration-panel" id="administration-panel">
+        <h3>Administration</h3>
+        <div id="admin-links" class="admin-links hidden">
+            <a href="#" id="take-snapshot-link" class="admin-link primary">
+                Take Snapshot
+            </a>
+            <a href="#" id="restore-snapshot-link" class="admin-link secondary">
+                Restore Snapshot
+            </a>
+            <a href="#" id="delete-snapshot-link" class="admin-link danger">
+                Delete Snapshot
+            </a>
+        </div>
+        <div id="admin-placeholder" class="admin-placeholder">
+            <p>Select a node to view administration options</p>
+        </div>
     </div>
     
     <div class="node-info" id="node-info">
