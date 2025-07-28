@@ -32,6 +32,17 @@ public class MyRestController {
   public static final String CONTAINER_GENESIS = "genesis";
   public static final String CONTAINER_DB_PATH = "/var/ton-work/db";
   public static final String GENESIS_IMAGE_NAME = "mylocaltondocker";
+  public static final String[] VALIDATOR_CONTAINERS = {
+      "validator-1", "validator-2", "validator-3", "validator-4", "validator-5"
+  };
+  public static final Map<String, String> CONTAINER_VOLUME_MAP = Map.of(
+      "genesis", "ton-db",
+      "validator-1", "ton-db-val1", 
+      "validator-2", "ton-db-val2",
+      "validator-3", "ton-db-val3",
+      "validator-4", "ton-db-val4",
+      "validator-5", "ton-db-val5"
+  );
   String error;
 
   private final ConcurrentHashMap<String, Bucket> sessionBuckets = new ConcurrentHashMap<>();
@@ -46,7 +57,7 @@ public class MyRestController {
       String genesisContainerId = getGenesisContainerId();
 
       if (StringUtils.isEmpty(genesisContainerId)) {
-        log.error("Container not found");
+        log.error("seqno-volume, Container not found");
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "Container not found");
@@ -138,10 +149,34 @@ public class MyRestController {
     }
   }
 
+  @PostMapping("/reset-graph")
+  public Map<String, Object> resetGraph() {
+    try {
+      String graphPath = "/usr/share/data/graph.json";
+      File graphFile = new File(graphPath);
+      
+      if (graphFile.exists()) {
+        graphFile.delete();
+        log.info("Graph data file deleted: {}", graphPath);
+      }
+
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", true);
+      response.put("message", "Graph data reset successfully");
+      return response;
+    } catch (Exception e) {
+      log.error("Error resetting graph data", e);
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", false);
+      response.put("message", "Failed to reset graph data: " + e.getMessage());
+      return response;
+    }
+  }
+
   @PostMapping("/take-snapshot")
   public Map<String, Object> takeSnapshot(@RequestBody Map<String, String> request) {
     try {
-      log.info("taking snapshot");
+      log.info("taking snapshot for all containers");
       // Get sequential snapshot number from request or generate next one
       int snapshotNumber;
       if (request.containsKey("snapshotNumber")) {
@@ -152,45 +187,99 @@ public class MyRestController {
       }
 
       String snapshotId = "snapshot-" + snapshotNumber;
-      String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
 
-      String genesisContainerId = getGenesisContainerId();
-
-      if (StringUtils.isEmpty(genesisContainerId)) {
-        log.error("Container not found");
+      // Discover all running containers
+      List<String> runningContainers = getAllRunningContainers();
+      if (runningContainers.isEmpty()) {
+        log.error("No containers found");
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
-        response.put("message", "Container not found");
+        response.put("message", "No containers found");
         return response;
       }
 
-      String volumeName = getCurrentVolume(dockerClient, genesisContainerId);
+      log.info("Found running containers: {}", runningContainers);
 
-      if (volumeName == null) {
-        log.error("Current volume not found");
+      // Get current volumes for all containers
+      Map<String, String> containerVolumes = getContainerVolumeMap(runningContainers);
+      if (containerVolumes.isEmpty()) {
+        log.error("No volumes found for containers");
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
-        response.put("message", "Current volume not found");
+        response.put("message", "No volumes found for containers");
         return response;
       }
 
       long lastSeqno = getCurrentBlockSequence();
-      copyVolumes(dockerClient, volumeName, backupVolumeName);
+      
+      // Create snapshots for all containers in parallel
+      log.info("Creating snapshots for {} containers in parallel", containerVolumes.size());
+      
+      // Use thread-safe collections for parallel processing
+      List<String> createdSnapshots = Collections.synchronizedList(new ArrayList<>());
+      List<String> failedSnapshots = Collections.synchronizedList(new ArrayList<>());
+      
+      // Process all containers in parallel
+      containerVolumes.entrySet().parallelStream().forEach(entry -> {
+        String containerName = entry.getKey();
+        String currentVolume = entry.getValue();
+        
+        // Generate backup volume name based on container type
+        String backupVolumeName;
+        if (CONTAINER_GENESIS.equals(containerName)) {
+          backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
+        } else {
+          // For validators: ton-db-val1 -> ton-db-val1-snapshot-{number}
+          String baseVolumeName = CONTAINER_VOLUME_MAP.get(containerName);
+          backupVolumeName = baseVolumeName + "-snapshot-" + snapshotNumber;
+        }
+        
+        try {
+          log.info("Creating snapshot for container {}: {} -> {}", containerName, currentVolume, backupVolumeName);
+          copyVolumes(dockerClient, currentVolume, backupVolumeName);
+          createdSnapshots.add(backupVolumeName);
+          log.info("Successfully created snapshot for container {}: {}", containerName, backupVolumeName);
+        } catch (Exception e) {
+          log.error("Failed to create snapshot for container {}: {}", containerName, e.getMessage());
+          failedSnapshots.add(containerName + ": " + e.getMessage());
+        }
+      });
+      
+      log.info("Parallel snapshot creation completed. Created: {}, Failed: {}", createdSnapshots.size(), failedSnapshots.size());
 
       Map<String, Object> response = new HashMap<>();
-      response.put("success", true);
-      response.put("snapshotId", snapshotId);
-      response.put("snapshotNumber", snapshotNumber);
-      response.put("blockSequence", lastSeqno);
-      response.put("volumeName", backupVolumeName);
-      response.put("message", "Snapshot created successfully");
+      
+      if (failedSnapshots.isEmpty()) {
+        response.put("success", true);
+        response.put("snapshotId", snapshotId);
+        response.put("snapshotNumber", snapshotNumber);
+        response.put("blockSequence", lastSeqno);
+        response.put("volumeName", "ton-db-snapshot-" + snapshotNumber); // Keep for compatibility
+        response.put("createdSnapshots", createdSnapshots);
+        response.put("message", "Snapshots created successfully for all containers (" + createdSnapshots.size() + " volumes)");
+      } else {
+        // If some snapshots failed, clean up successful ones
+        for (String createdSnapshot : createdSnapshots) {
+          try {
+            dockerClient.removeVolumeCmd(createdSnapshot).exec();
+            log.info("Cleaned up partial snapshot: {}", createdSnapshot);
+          } catch (Exception cleanupError) {
+            log.warn("Failed to clean up partial snapshot {}: {}", createdSnapshot, cleanupError.getMessage());
+          }
+        }
+        
+        response.put("success", false);
+        response.put("message", "Failed to create snapshots for some containers: " + String.join(", ", failedSnapshots));
+        response.put("failedSnapshots", failedSnapshots);
+      }
+      
       return response;
 
     } catch (Exception e) {
-      log.error("Error creating snapshot", e);
+      log.error("Error creating snapshots", e);
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
-      response.put("message", "Failed to create snapshot: " + e.getMessage());
+      response.put("message", "Failed to create snapshots: " + e.getMessage());
       return response;
     }
   }
@@ -204,7 +293,70 @@ public class MyRestController {
             .stream()
             .findFirst()
             .map(c -> c.getId())
-            .get();
+            .orElse(null);
+  }
+
+  private List<String> getAllRunningContainers() {
+    List<String> runningContainers = new ArrayList<>();
+    
+    // Always check genesis
+    try {
+      String genesisId = getGenesisContainerId();
+      if (!StringUtils.isEmpty(genesisId)) {
+        runningContainers.add(CONTAINER_GENESIS);
+      }
+    } catch (Exception e) {
+      log.warn("Genesis container not running");
+    }
+    
+    // Check each validator
+    for (String validatorContainer : VALIDATOR_CONTAINERS) {
+      try {
+        List<Container> containers = dockerClient
+            .listContainersCmd()
+            .withNameFilter(List.of(validatorContainer))
+            .exec();
+        if (!containers.isEmpty()) {
+          runningContainers.add(validatorContainer);
+        }
+      } catch (Exception e) {
+        log.debug("Validator container {} not running", validatorContainer);
+      }
+    }
+    
+    return runningContainers;
+  }
+
+  private String getContainerIdByName(String containerName) {
+    try {
+      return dockerClient
+          .listContainersCmd()
+          .withNameFilter(List.of(containerName))
+          .exec()
+          .stream()
+          .findFirst()
+          .map(c -> c.getId())
+          .orElse(null);
+    } catch (Exception e) {
+      log.warn("Container {} not found", containerName);
+      return null;
+    }
+  }
+
+  private Map<String, String> getContainerVolumeMap(List<String> containers) {
+    Map<String, String> containerVolumes = new HashMap<>();
+    
+    for (String containerName : containers) {
+      String containerId = getContainerIdByName(containerName);
+      if (containerId != null) {
+        String volumeName = getCurrentVolume(dockerClient, containerId);
+        if (volumeName != null) {
+          containerVolumes.put(containerName, volumeName);
+        }
+      }
+    }
+    
+    return containerVolumes;
   }
 
   private void copyVolumes(
@@ -228,13 +380,16 @@ public class MyRestController {
           .awaitCompletion();
     }
 
+    // Generate unique container name to avoid conflicts in parallel operations
+    String uniqueContainerName = "taking-snapshot-" + System.currentTimeMillis() + "-" + Thread.currentThread().getId();
+
     // Copy data to backup volume
     String copyContainerId =
         dockerClient
             .createContainerCmd("alpine")
             .withCmd("/bin/sh", "-c", "cp -rTv /from/. /to/.")
             .withVolumes(new Volume("/from"), new Volume("/to"))
-            .withName("taking-snapshot")
+            .withName(uniqueContainerName)
             .withHostConfig(
                 newHostConfig()
                     .withBinds(
@@ -249,7 +404,7 @@ public class MyRestController {
       callback.awaitCompletion();
       dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
 
-      log.info("Volumes copied");
+      log.info("Volumes copied from {} to {} using container {}", sourceVolumeName, targetVolumeName, uniqueContainerName);
   }
 
   private static String getCurrentVolume(DockerClient dockerClient, String containerId) {
@@ -271,102 +426,121 @@ public class MyRestController {
       String snapshotId = request.get("snapshotId");
       String snapshotNumber = request.get("snapshotNumber");
       String nodeType = request.get("nodeType"); // "snapshot" or "instance"
+      String instanceNumberStr = request.get("instanceNumber");
 
-      log.info("Restoring snapshot: {} (type: {})", snapshotId, nodeType);
+      log.info("Restoring snapshot for all containers: {} (type: {})", snapshotId, nodeType);
 
-      String backupVolumeName = "ton-db-snapshot-" + snapshotNumber;
-      String targetVolumeName;
+      // Determine target volume names for ALL containers using the same logic
+      Map<String, String> containerTargetVolumes = new HashMap<>();
       int instanceNumber = 0;
       boolean isNewInstance = false;
 
       if ("instance".equals(nodeType)) {
-        // Restoring from instance node - reuse existing volume
-        String instanceNumberStr = request.get("instanceNumber");
+        // Restoring from instance node - reuse existing volumes for ALL containers
         if (instanceNumberStr != null) {
           instanceNumber = Integer.parseInt(instanceNumberStr);
-          targetVolumeName = backupVolumeName + "-" + instanceNumber;
-        } else {
-          // Fallback for old format
-          targetVolumeName = backupVolumeName + "-latest";
         }
-        log.info("Reusing existing instance volume: {}", targetVolumeName);
+
+        // For each container, determine target volume name
+        String genesisTargetVolume = "ton-db-snapshot-" + snapshotNumber + 
+            (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
+        containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+
+        for (String validatorContainer : VALIDATOR_CONTAINERS) {
+          String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
+          String targetVolume = baseVolumeName + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
+          containerTargetVolumes.put(validatorContainer, targetVolume);
+        }
+
+        log.info("Reusing existing instance volumes for all containers");
+
       } else {
-        // Restoring from snapshot node - create new instance
+        // Restoring from snapshot node - create new instances for ALL containers
         instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
-        targetVolumeName = backupVolumeName + "-" + instanceNumber;
         isNewInstance = true;
-        
-        // Copy the backup volume to preserve the original
-        log.info("Copying volume {} to {}", backupVolumeName, targetVolumeName);
-        copyVolumes(dockerClient, backupVolumeName, targetVolumeName);
-      }
 
-      String genesisContainerId = getGenesisContainerId();
+        // Genesis container
+        String genesisBackupVolume = "ton-db-snapshot-" + snapshotNumber;
+        String genesisTargetVolume = genesisBackupVolume + "-" + instanceNumber;
+        containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
 
-      if (StringUtils.isEmpty(genesisContainerId)) {
-        log.error("Container not found");
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", false);
-        response.put("message", "Container not found");
-        return response;
-      }
+        // Copy genesis backup to preserve original
+        log.info("Copying volume {} to {}", genesisBackupVolume, genesisTargetVolume);
+        copyVolumes(dockerClient, genesisBackupVolume, genesisTargetVolume);
 
-      // Get container configuration
-      InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(genesisContainerId).exec();
-      ContainerConfig oldConfig = inspectX.getConfig();
-      HostConfig oldHostConfig = inspectX.getHostConfig();
+        // Validator containers
+        for (String validatorContainer : VALIDATOR_CONTAINERS) {
+          String validatorBackupVolume = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
+          String validatorTargetVolume = validatorBackupVolume + "-" + instanceNumber;
 
-      String[] envs = oldConfig.getEnv();
-      ExposedPort[] exposedPorts = oldConfig.getExposedPorts();
-      HealthCheck healthCheck = oldConfig.getHealthcheck();
-      String networkMode = oldHostConfig.getNetworkMode();
-
-      Ports portBindings = new Ports();
-      if (exposedPorts != null) {
-        for (ExposedPort exposedPort : exposedPorts) {
-          portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
+          // Only copy if the backup volume exists (validator was running when snapshot was taken)
+          try {
+            dockerClient.inspectVolumeCmd(validatorBackupVolume).exec();
+            log.info("Copying volume {} to {}", validatorBackupVolume, validatorTargetVolume);
+            copyVolumes(dockerClient, validatorBackupVolume, validatorTargetVolume);
+            containerTargetVolumes.put(validatorContainer, validatorTargetVolume);
+          } catch (NotFoundException e) {
+            log.info("Validator backup volume {} not found, skipping", validatorBackupVolume);
+          }
         }
       }
 
-      dockerClient.stopContainerCmd(genesisContainerId).exec();
-      dockerClient.removeContainerCmd(genesisContainerId).withForce(true).exec();
+      // Get container configurations BEFORE stopping them
+      Map<String, ContainerConfig> containerConfigs = new HashMap<>();
+      Map<String, HostConfig> hostConfigs = new HashMap<>();
+      Map<String, String> containerIpAddresses = new HashMap<>();
+      
+      List<String> runningContainers = getAllRunningContainers();
+      for (String containerName : runningContainers) {
+        try {
+          String containerId = getContainerIdByName(containerName);
+          if (containerId != null) {
+            InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
+            containerConfigs.put(containerName, inspectResponse.getConfig());
+            hostConfigs.put(containerName, inspectResponse.getHostConfig());
+            
+            // Get IP address if available
+            try {
+              if (inspectResponse.getNetworkSettings() != null && 
+                  inspectResponse.getNetworkSettings().getNetworks() != null && 
+                  !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
+                String ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
+                if (ipAddress != null) {
+                  containerIpAddresses.put(containerName, ipAddress);
+                }
+              }
+            } catch (Exception e) {
+              log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
+            }
+          }
+        } catch (Exception e) {
+          log.warn("Could not get configuration for container {}: {}", containerName, e.getMessage());
+        }
+      }
 
-      CreateContainerResponse newContainer =
-          dockerClient
-              .createContainerCmd(GENESIS_IMAGE_NAME)
-              .withName(CONTAINER_GENESIS)
-              .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
-              .withEnv(envs)
-              .withExposedPorts(exposedPorts)
-              .withIpv4Address("172.28.1.10")
-              .withHealthcheck(healthCheck)
-              .withHostConfig(
-                  newHostConfig()
-                      .withNetworkMode(networkMode)
-                      .withPortBindings(portBindings)
-                      .withBinds(
-                          new Bind(targetVolumeName, new Volume(CONTAINER_DB_PATH)),
-                          new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))))
-              .exec();
+      // Stop and remove ALL running containers
+      stopAndRemoveAllContainers();
 
-      dockerClient.startContainerCmd(newContainer.getId()).exec();
+      // Recreate and start containers with target volumes using saved configurations
+      recreateAllContainersWithConfigs(containerTargetVolumes, containerConfigs, hostConfigs, containerIpAddresses);
 
-      log.info("Snapshot restored: {} using volume: {}", snapshotId, targetVolumeName);
+      log.info("Snapshots restored for all containers using instance number: {}", instanceNumber);
 
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
-      response.put("message", "Snapshot restored successfully");
-      response.put("volumeName", targetVolumeName);
-      response.put("originalVolumeName", backupVolumeName);
+      response.put("message", "Snapshots restored successfully for all containers");
+      response.put("volumeName", containerTargetVolumes.get(CONTAINER_GENESIS)); // Keep for compatibility
+      response.put("originalVolumeName", "ton-db-snapshot-" + snapshotNumber);
       response.put("instanceNumber", instanceNumber);
       response.put("isNewInstance", isNewInstance);
+      response.put("restoredContainers", containerTargetVolumes.keySet());
       return response;
 
     } catch (Exception e) {
-      log.error("Error restoring snapshot", e);
+      log.error("Error restoring snapshots", e);
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
-      response.put("message", "Failed to restore snapshot: " + e.getMessage());
+      response.put("message", "Failed to restore snapshots: " + e.getMessage());
       return response;
     }
   }
@@ -407,15 +581,27 @@ public class MyRestController {
   private int getNextInstanceNumber(int snapshotNumber) {
     try {
       // List all volumes with instance prefix for this snapshot to determine next sequential number
+      // Check across ALL container types (genesis + validators)
       List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
       int maxInstanceNumber = 0;
-      String instancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
+      
+      // Check genesis instances
+      String genesisInstancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
+      
+      // Check validator instances
+      List<String> validatorInstancePrefixes = new ArrayList<>();
+      for (String validatorContainer : VALIDATOR_CONTAINERS) {
+        String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+        validatorInstancePrefixes.add(baseVolumeName + "-snapshot-" + snapshotNumber + "-");
+      }
 
       for (InspectVolumeResponse volume : volumes) {
         String volumeName = volume.getName();
-        if (volumeName.startsWith(instancePrefix)) {
+        
+        // Check if this is a genesis instance volume
+        if (volumeName.startsWith(genesisInstancePrefix)) {
           try {
-            String numberPart = volumeName.substring(instancePrefix.length());
+            String numberPart = volumeName.substring(genesisInstancePrefix.length());
             // Skip if it's the old "-latest" format
             if ("latest".equals(numberPart)) {
               continue;
@@ -424,7 +610,26 @@ public class MyRestController {
             maxInstanceNumber = Math.max(maxInstanceNumber, instanceNumber);
           } catch (NumberFormatException e) {
             // Skip volumes that don't have valid number suffix
-            log.warn("Invalid instance volume name format: {}", volumeName);
+            log.warn("Invalid genesis instance volume name format: {}", volumeName);
+          }
+        }
+        
+        // Check if this is a validator instance volume
+        for (String validatorPrefix : validatorInstancePrefixes) {
+          if (volumeName.startsWith(validatorPrefix)) {
+            try {
+              String numberPart = volumeName.substring(validatorPrefix.length());
+              // Skip if it's the old "-latest" format
+              if ("latest".equals(numberPart)) {
+                continue;
+              }
+              int instanceNumber = Integer.parseInt(numberPart);
+              maxInstanceNumber = Math.max(maxInstanceNumber, instanceNumber);
+            } catch (NumberFormatException e) {
+              // Skip volumes that don't have valid number suffix
+              log.warn("Invalid validator instance volume name format: {}", volumeName);
+            }
+            break; // Found matching prefix, no need to check other prefixes
           }
         }
       }
@@ -472,7 +677,7 @@ public class MyRestController {
       List<Map<String, Object>> nodesToDelete = (List<Map<String, Object>>) request.get("nodesToDelete");
       
       if (nodesToDelete != null && !nodesToDelete.isEmpty()) {
-        // Delete volumes for all nodes in the list
+        // Delete volumes for all nodes in the list (including all container types)
         for (Map<String, Object> nodeToDelete : nodesToDelete) {
           String nodeSnapshotNumber = String.valueOf(nodeToDelete.get("snapshotNumber"));
           String nodeInstanceNumber = nodeToDelete.get("instanceNumber") != null ? 
@@ -480,36 +685,87 @@ public class MyRestController {
           String nodeNodeType = (String) nodeToDelete.get("type");
           
           if ("instance".equals(nodeNodeType) && nodeInstanceNumber != null) {
-            // Delete instance volume
-            String instanceVolumeName = "ton-db-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
-            volumesToDelete.add(instanceVolumeName);
+            // Delete instance volumes for ALL container types
+            // Genesis instance volume
+            String genesisInstanceVolume = "ton-db-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
+            volumesToDelete.add(genesisInstanceVolume);
+            
+            // Validator instance volumes
+            for (String validatorContainer : VALIDATOR_CONTAINERS) {
+              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+              String validatorInstanceVolume = baseVolumeName + "-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
+              volumesToDelete.add(validatorInstanceVolume);
+            }
           } else {
-            // Delete base snapshot volume
-            String baseVolumeName = "ton-db-snapshot-" + nodeSnapshotNumber;
-            volumesToDelete.add(baseVolumeName);
+            // Delete base snapshot volumes for ALL container types
+            // Genesis base snapshot volume
+            String genesisBaseVolume = "ton-db-snapshot-" + nodeSnapshotNumber;
+            volumesToDelete.add(genesisBaseVolume);
+            
+            // Validator base snapshot volumes
+            for (String validatorContainer : VALIDATOR_CONTAINERS) {
+              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+              String validatorBaseVolume = baseVolumeName + "-snapshot-" + nodeSnapshotNumber;
+              volumesToDelete.add(validatorBaseVolume);
+            }
           }
         }
       } else {
         // Fallback to old logic if nodesToDelete is not provided
         if ("instance".equals(nodeType) && instanceNumber != null) {
-          // Delete instance volume
-          String instanceVolumeName = "ton-db-snapshot-" + snapshotNumber + "-" + instanceNumber;
-          volumesToDelete.add(instanceVolumeName);
-        } else {
-          // Delete base snapshot volume
-          String baseVolumeName = "ton-db-snapshot-" + snapshotNumber;
-          volumesToDelete.add(baseVolumeName);
+          // Delete instance volumes for ALL container types
+          // Genesis instance volume
+          String genesisInstanceVolume = "ton-db-snapshot-" + snapshotNumber + "-" + instanceNumber;
+          volumesToDelete.add(genesisInstanceVolume);
           
-          // If has children, also delete all instance volumes for this snapshot
+          // Validator instance volumes
+          for (String validatorContainer : VALIDATOR_CONTAINERS) {
+            String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+            String validatorInstanceVolume = baseVolumeName + "-snapshot-" + snapshotNumber + "-" + instanceNumber;
+            volumesToDelete.add(validatorInstanceVolume);
+          }
+        } else {
+          // Delete base snapshot volumes for ALL container types
+          // Genesis base snapshot volume
+          String genesisBaseVolume = "ton-db-snapshot-" + snapshotNumber;
+          volumesToDelete.add(genesisBaseVolume);
+          
+          // Validator base snapshot volumes
+          for (String validatorContainer : VALIDATOR_CONTAINERS) {
+            String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+            String validatorBaseVolume = baseVolumeName + "-snapshot-" + snapshotNumber;
+            volumesToDelete.add(validatorBaseVolume);
+          }
+          
+          // If has children, also delete all instance volumes for this snapshot (all container types)
           if (hasChildren != null && hasChildren) {
-            // Find all instance volumes for this snapshot
+            // Find all instance volumes for this snapshot across all container types
             List<InspectVolumeResponse> allVolumes = dockerClient.listVolumesCmd().exec().getVolumes();
-            String instancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
+            
+            // Genesis instance volumes
+            String genesisInstancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
+            
+            // Validator instance volume prefixes
+            List<String> validatorInstancePrefixes = new ArrayList<>();
+            for (String validatorContainer : VALIDATOR_CONTAINERS) {
+              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+              validatorInstancePrefixes.add(baseVolumeName + "-snapshot-" + snapshotNumber + "-");
+            }
             
             for (InspectVolumeResponse volume : allVolumes) {
               String volumeName = volume.getName();
-              if (volumeName.startsWith(instancePrefix)) {
+              
+              // Check genesis instance volumes
+              if (volumeName.startsWith(genesisInstancePrefix)) {
                 volumesToDelete.add(volumeName);
+              }
+              
+              // Check validator instance volumes
+              for (String validatorPrefix : validatorInstancePrefixes) {
+                if (volumeName.startsWith(validatorPrefix)) {
+                  volumesToDelete.add(volumeName);
+                  break; // Found matching prefix, no need to check others
+                }
               }
             }
           }
@@ -584,6 +840,427 @@ public class MyRestController {
       response.put("message", "Failed to delete snapshot: " + e.getMessage());
       return response;
     }
+  }
+
+  private void stopAndRemoveAllContainers() {
+    log.info("Stopping and removing all containers in parallel");
+    
+    // Get all running containers that we manage
+    List<String> runningContainers = getAllRunningContainers();
+    
+    if (runningContainers.isEmpty()) {
+      log.info("No containers to stop");
+      return;
+    }
+    
+    // Capture container IDs before stopping them
+    Map<String, String> containerIds = new HashMap<>();
+    for (String containerName : runningContainers) {
+      String containerId = getContainerIdByName(containerName);
+      if (containerId != null) {
+        containerIds.put(containerName, containerId);
+      }
+    }
+    
+    log.info("Captured container IDs: {}", containerIds);
+    
+    // Stop all containers in parallel
+    log.info("Stopping {} containers in parallel", containerIds.size());
+    containerIds.entrySet().parallelStream().forEach(entry -> {
+      String containerName = entry.getKey();
+      String containerId = entry.getValue();
+      try {
+        log.info("Stopping container: {} ({})", containerName, containerId);
+        dockerClient.stopContainerCmd(containerId).exec();
+        log.info("Container stopped: {} ({})", containerName, containerId);
+      } catch (Exception e) {
+        log.warn("Failed to stop container {} ({}): {}", containerName, containerId, e.getMessage());
+      }
+    });
+    
+    // Remove all containers in parallel using captured IDs
+    log.info("Removing {} containers in parallel", containerIds.size());
+    containerIds.entrySet().parallelStream().forEach(entry -> {
+      String containerName = entry.getKey();
+      String containerId = entry.getValue();
+      try {
+        log.info("Removing container: {} ({})", containerName, containerId);
+        dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+        log.info("Container removed: {} ({})", containerName, containerId);
+      } catch (Exception e) {
+        log.warn("Failed to remove container {} ({}): {}", containerName, containerId, e.getMessage());
+      }
+    });
+    
+    // Verify all containers are actually removed before proceeding
+    log.info("Verifying all containers are completely removed...");
+    int maxRetries = 10;
+    int retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+      List<String> stillRunning = getAllRunningContainers();
+      if (stillRunning.isEmpty()) {
+        log.info("All containers successfully removed");
+        break;
+      }
+      
+      log.warn("Still found {} running containers after removal attempt: {}", stillRunning.size(), stillRunning);
+      
+      // Force remove any remaining containers
+      for (String containerName : stillRunning) {
+        try {
+          String containerId = getContainerIdByName(containerName);
+          if (containerId != null) {
+            log.info("Force removing remaining container: {} ({})", containerName, containerId);
+            dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+          }
+        } catch (Exception e) {
+          log.warn("Failed to force remove container {}: {}", containerName, e.getMessage());
+        }
+      }
+      
+      retryCount++;
+      try {
+        Thread.sleep(1000); // Wait 1 second before checking again
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+    
+    if (retryCount >= maxRetries) {
+      List<String> stillRunning = getAllRunningContainers();
+      if (!stillRunning.isEmpty()) {
+        throw new RuntimeException("Failed to remove all containers after " + maxRetries + " attempts. Still running: " + stillRunning);
+      }
+    }
+    
+    log.info("All containers stopped and removed successfully");
+  }
+
+  private void recreateAllContainers(Map<String, String> containerTargetVolumes) throws Exception {
+    log.info("Recreating containers with target volumes: {}", containerTargetVolumes);
+    
+    // Start with genesis container
+    if (containerTargetVolumes.containsKey(CONTAINER_GENESIS)) {
+      recreateGenesisContainer(containerTargetVolumes.get(CONTAINER_GENESIS));
+    }
+    
+    // Then recreate validator containers
+    for (String validatorContainer : VALIDATOR_CONTAINERS) {
+      if (containerTargetVolumes.containsKey(validatorContainer)) {
+        recreateValidatorContainer(validatorContainer, containerTargetVolumes.get(validatorContainer));
+      }
+    }
+  }
+
+  private void recreateAllContainersWithConfigs(
+      Map<String, String> containerTargetVolumes,
+      Map<String, ContainerConfig> containerConfigs,
+      Map<String, HostConfig> hostConfigs,
+      Map<String, String> containerIpAddresses) throws Exception {
+    
+    log.info("Recreating {} containers in parallel with target volumes and saved configs: {}", containerTargetVolumes.size(), containerTargetVolumes);
+    
+    // Use thread-safe collections for parallel processing
+    List<String> createdContainers = Collections.synchronizedList(new ArrayList<>());
+    List<String> failedContainers = Collections.synchronizedList(new ArrayList<>());
+    
+    // Recreate all containers in parallel
+    containerTargetVolumes.entrySet().parallelStream().forEach(entry -> {
+      String containerName = entry.getKey();
+      String targetVolume = entry.getValue();
+      
+      try {
+        if (CONTAINER_GENESIS.equals(containerName)) {
+          log.info("Recreating genesis container in parallel with volume and saved config: {}", targetVolume);
+          recreateGenesisContainerWithConfig(
+              targetVolume,
+              containerConfigs.get(containerName),
+              hostConfigs.get(containerName),
+              containerIpAddresses.get(containerName)
+          );
+        } else {
+          log.info("Recreating validator container {} in parallel with volume and saved config: {}", containerName, targetVolume);
+          recreateValidatorContainerWithConfig(
+              containerName,
+              targetVolume,
+              containerConfigs.get(containerName),
+              hostConfigs.get(containerName),
+              containerIpAddresses.get(containerName)
+          );
+        }
+        createdContainers.add(containerName);
+        log.info("Successfully recreated container: {}", containerName);
+      } catch (Exception e) {
+        log.error("Failed to recreate container {}: {}", containerName, e.getMessage());
+        failedContainers.add(containerName + ": " + e.getMessage());
+      }
+    });
+    
+    log.info("Parallel container recreation completed. Created: {}, Failed: {}", createdContainers.size(), failedContainers.size());
+    
+    if (!failedContainers.isEmpty()) {
+      throw new RuntimeException("Failed to recreate some containers: " + String.join(", ", failedContainers));
+    }
+  }
+
+  private void recreateGenesisContainer(String targetVolume) throws Exception {
+    log.info("Recreating genesis container with volume: {}", targetVolume);
+    
+    // First, get the existing container configuration before stopping it
+    String genesisContainerId = getGenesisContainerId();
+    if (StringUtils.isEmpty(genesisContainerId)) {
+      throw new RuntimeException("Genesis container not found for configuration retrieval");
+    }
+
+    // Get container configuration
+    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(genesisContainerId).exec();
+    ContainerConfig oldConfig = inspectX.getConfig();
+    HostConfig oldHostConfig = inspectX.getHostConfig();
+
+    String[] envs = oldConfig.getEnv();
+    ExposedPort[] exposedPorts = oldConfig.getExposedPorts();
+    HealthCheck healthCheck = oldConfig.getHealthcheck();
+    String networkMode = oldHostConfig.getNetworkMode();
+
+    Ports portBindings = new Ports();
+    if (exposedPorts != null) {
+      for (ExposedPort exposedPort : exposedPorts) {
+        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
+      }
+    }
+
+    // Stop and remove the existing container
+    dockerClient.stopContainerCmd(genesisContainerId).exec();
+    dockerClient.removeContainerCmd(genesisContainerId).withForce(true).exec();
+
+    // Create new container with the same configuration but new volume
+    CreateContainerResponse newContainer = dockerClient
+        .createContainerCmd(GENESIS_IMAGE_NAME)
+        .withName(CONTAINER_GENESIS)
+        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
+        .withEnv(envs)
+        .withExposedPorts(exposedPorts)
+        .withIpv4Address(inspectX.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress())
+        .withHealthcheck(healthCheck)
+        .withHostConfig(
+            newHostConfig()
+                .withNetworkMode(networkMode)
+                .withPortBindings(portBindings)
+                .withBinds(
+                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
+                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
+                )
+        )
+        .exec();
+
+    dockerClient.startContainerCmd(newContainer.getId()).exec();
+    log.info("Genesis container recreated and started");
+  }
+
+  private void recreateValidatorContainer(String containerName, String targetVolume) throws Exception {
+    log.info("Recreating validator container {} with volume: {}", containerName, targetVolume);
+    
+    // First, get the existing container configuration before stopping it
+    String validatorContainerId = getContainerIdByName(containerName);
+    if (StringUtils.isEmpty(validatorContainerId)) {
+      throw new RuntimeException("Validator container " + containerName + " not found for configuration retrieval");
+    }
+
+    // Get container configuration
+    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(validatorContainerId).exec();
+    ContainerConfig oldConfig = inspectX.getConfig();
+    HostConfig oldHostConfig = inspectX.getHostConfig();
+
+    String[] envs = oldConfig.getEnv();
+    ExposedPort[] exposedPorts = oldConfig.getExposedPorts();
+    HealthCheck healthCheck = oldConfig.getHealthcheck();
+    String networkMode = oldHostConfig.getNetworkMode();
+
+    Ports portBindings = new Ports();
+    if (exposedPorts != null) {
+      for (ExposedPort exposedPort : exposedPorts) {
+        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
+      }
+    }
+
+    // Get IP address if available
+    String ipAddress = null;
+    try {
+      if (inspectX.getNetworkSettings() != null && 
+          inspectX.getNetworkSettings().getNetworks() != null && 
+          !inspectX.getNetworkSettings().getNetworks().isEmpty()) {
+        ipAddress = inspectX.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
+      }
+    } catch (Exception e) {
+      log.warn("Could not retrieve IP address for validator container {}: {}", containerName, e.getMessage());
+    }
+
+    // Stop and remove the existing container
+    dockerClient.stopContainerCmd(validatorContainerId).exec();
+    dockerClient.removeContainerCmd(validatorContainerId).withForce(true).exec();
+
+    // Create new container with the same configuration but new volume
+    CreateContainerCmd createCmd = dockerClient
+        .createContainerCmd(GENESIS_IMAGE_NAME)
+        .withName(containerName)
+        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
+        .withEnv(envs)
+        .withHealthcheck(healthCheck)
+        .withHostConfig(
+            newHostConfig()
+                .withNetworkMode(networkMode)
+                .withPortBindings(portBindings)
+                .withBinds(
+                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
+                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
+                )
+        );
+
+    // Add exposed ports if they exist
+    if (exposedPorts != null) {
+      createCmd.withExposedPorts(exposedPorts);
+    }
+
+    // Add IP address if available
+    if (ipAddress != null) {
+      createCmd.withIpv4Address(ipAddress);
+    }
+
+    CreateContainerResponse newContainer = createCmd.exec();
+
+    dockerClient.startContainerCmd(newContainer.getId()).exec();
+    log.info("Validator container {} recreated and started", containerName);
+  }
+
+  private void recreateGenesisContainerWithConfig(
+      String targetVolume, 
+      ContainerConfig config, 
+      HostConfig hostConfig, 
+      String ipAddress) throws Exception {
+    
+    log.info("Recreating genesis container with volume and saved config: {}", targetVolume);
+    
+    if (config == null || hostConfig == null) {
+      log.warn("No saved configuration found for genesis container, using default recreation method");
+      recreateGenesisContainer(targetVolume);
+      return;
+    }
+
+    String[] envs = config.getEnv();
+    ExposedPort[] exposedPorts = config.getExposedPorts();
+    HealthCheck healthCheck = config.getHealthcheck();
+    String networkMode = hostConfig.getNetworkMode();
+
+    Ports portBindings = new Ports();
+    if (exposedPorts != null) {
+      for (ExposedPort exposedPort : exposedPorts) {
+        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
+      }
+    }
+
+    // Create new container with the saved configuration but new volume
+    CreateContainerCmd createCmd = dockerClient
+        .createContainerCmd(GENESIS_IMAGE_NAME)
+        .withName(CONTAINER_GENESIS)
+        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
+        .withEnv(envs)
+        .withHealthcheck(healthCheck)
+        .withHostConfig(
+            newHostConfig()
+                .withNetworkMode(networkMode)
+                .withPortBindings(portBindings)
+                .withBinds(
+                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
+                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
+                )
+        );
+
+    // Add exposed ports if they exist
+    if (exposedPorts != null) {
+      createCmd.withExposedPorts(exposedPorts);
+    }
+
+    // Add IP address if available
+    if (ipAddress != null) {
+      createCmd.withIpv4Address(ipAddress);
+    }
+
+    CreateContainerResponse newContainer = createCmd.exec();
+
+    dockerClient.startContainerCmd(newContainer.getId()).exec();
+    log.info("Genesis container recreated and started with saved config");
+  }
+
+  private void recreateValidatorContainerWithConfig(
+      String containerName,
+      String targetVolume, 
+      ContainerConfig config, 
+      HostConfig hostConfig, 
+      String ipAddress) throws Exception {
+    
+    log.info("Recreating validator container {} with volume and saved config: {}", containerName, targetVolume);
+    
+    if (config == null || hostConfig == null) {
+      log.warn("No saved configuration found for validator container {}, using default recreation method", containerName);
+      recreateValidatorContainer(containerName, targetVolume);
+      return;
+    }
+
+    log.info("recreateValidatorContainerWithConfig 1");
+
+    String[] envs = config.getEnv();
+    ExposedPort[] exposedPorts = config.getExposedPorts();
+    HealthCheck healthCheck = config.getHealthcheck();
+    String networkMode = hostConfig.getNetworkMode();
+
+    Ports portBindings = new Ports();
+    if (exposedPorts != null) {
+      for (ExposedPort exposedPort : exposedPorts) {
+        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
+      }
+    }
+
+    log.info("recreateValidatorContainerWithConfig 2");
+
+    // Create new container with the saved configuration but new volume
+    CreateContainerCmd createCmd = dockerClient
+        .createContainerCmd(GENESIS_IMAGE_NAME)
+        .withName(containerName)
+        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
+        .withEnv(envs)
+        .withHealthcheck(healthCheck)
+        .withHostConfig(
+            newHostConfig()
+                .withNetworkMode(networkMode)
+                .withPortBindings(portBindings)
+                .withBinds(
+                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
+                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
+                )
+        );
+
+    log.info("recreateValidatorContainerWithConfig 3");
+
+    // Add exposed ports if they exist
+    if (exposedPorts != null) {
+      createCmd.withExposedPorts(exposedPorts);
+    }
+
+    // Add IP address if available
+    if (ipAddress != null) {
+      createCmd.withIpv4Address(ipAddress);
+    }
+
+    CreateContainerResponse newContainer = createCmd.exec();
+
+    log.info("recreateValidatorContainerWithConfig 4");
+
+    dockerClient.startContainerCmd(newContainer.getId()).exec();
+    log.info("Validator container {} recreated and started with saved config", containerName);
+
+    log.info("recreateValidatorContainerWithConfig 5");
   }
 
   public static DockerClient createDockerClient() {

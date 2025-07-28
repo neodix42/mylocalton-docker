@@ -142,28 +142,27 @@ services:
 #    networks:
 #      main:
 
-#  time-machine:
-#    container_name: time-machine
-#    image: time-machine
-#    build:
-#      context: .
-#      dockerfile: ./time-machine/Dockerfile
-#    ports:
-#      - 8083:8083
-#    volumes:
-#      - shared-data:/usr/share/data
-#      - /var/run/docker.sock:/var/run/docker.sock
-#    restart: unless-stopped
-#    depends_on:
-#      genesis:
-#        condition: service_healthy
-#    environment:
-#      - SERVER_PORT=8083
-#    #      - DOCKER_HOST=unix:///home/neodix/.docker/desktop/docker.sock
-#    healthcheck:
-#      test: curl -sS http://127.0.0.1:8083|| echo 1
-#    networks:
-#      main:
+  time-machine:
+    container_name: time-machine
+    image: time-machine
+    build:
+      context: .
+      dockerfile: ./time-machine/Dockerfile
+    ports:
+      - 8083:8083
+    volumes:
+      - shared-data:/usr/share/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8083
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8083|| echo 1
+    networks:
+      main:
 #
 #  restarter:
 #    container_name: explorer-restarter
@@ -188,15 +187,16 @@ services:
     environment:
       - NAME=validator-1
       - GENESIS_IP=172.28.1.10
-#    healthcheck:
-#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-#      interval: 15s
-#      timeout: 10s
-#      retries: 10
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 10
     depends_on:
       - genesis
     networks:
       main:
+        ipv4_address: 172.28.1.11
 
   validator-2:
     container_name: validator-2
@@ -205,11 +205,11 @@ services:
     volumes:
       - shared-data:/usr/share/data
       - ton-db-val2:/var/ton-work/db
-#    healthcheck:
-#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-#      interval: 15s
-#      timeout: 10s
-#      retries: 10
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 10
     environment:
       - NAME=validator-2
       - GENESIS_IP=172.28.1.10
@@ -217,6 +217,7 @@ services:
       - genesis
     networks:
       main:
+        ipv4_address: 172.28.1.12
 
   validator-3:
     container_name: validator-3
@@ -228,15 +229,16 @@ services:
     environment:
       - NAME=validator-3
       - GENESIS_IP=172.28.1.10
-#    healthcheck:
-#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-#      interval: 15s
-#      timeout: 10s
-#      retries: 10
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 10
     depends_on:
       - genesis
     networks:
       main:
+        ipv4_address: 172.28.1.13
 
   validator-4:
     container_name: validator-4
@@ -248,15 +250,16 @@ services:
     environment:
       - NAME=validator-4
       - GENESIS_IP=172.28.1.10
-#    healthcheck:
-#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-#      interval: 15s
-#      timeout: 10s
-#      retries: 10
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 10
     depends_on:
       - genesis
     networks:
       main:
+        ipv4_address: 172.28.1.14
 
   validator-5:
     container_name: validator-5
@@ -268,15 +271,16 @@ services:
     environment:
       - NAME=validator-5
       - GENESIS_IP=172.28.1.10
-#    healthcheck:
-#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-#      interval: 15s
-#      timeout: 10s
-#      retries: 10
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 10
     depends_on:
       - genesis
     networks:
       main:
+        ipv4_address: 172.28.1.15
 
 ## TON HTTP API V2
 

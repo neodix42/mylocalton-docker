@@ -13,7 +13,7 @@ else
   exit
 fi
 
-MAX_FACTOR=3
+MAX_FACTOR=10
 STAKE_AMOUNT=100000001
 WALLETKEYS_DIR="/usr/share/ton/"
 VALIDATOR_WALLET_FILEBASE="validator"
@@ -134,7 +134,7 @@ if [ ! -f "${ELECTION_TIMESTAMP}.participated" ]; then
     ${LITECLIENT} -C ${LITECLIENT_CONFIG} -v 0 -c "sendfile wallet-query.boc"
     touch ${ELECTION_TIMESTAMP}.participated
 else
-   participants=$(lite-client -v 0 -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c "runmethod -1:3333333333333333333333333333333333333333333333333333333333333333 participant_list" | grep "remote result")
+   participants=$(${LITECLIENT} -C ${LITECLIENT_CONFIG} -v 0 -c "runmethod -1:${ELECTOR_ADDRESS} participant_list" | grep "remote result")
    echo "participant_list:"
    echo $participants
    echo "Already participated"

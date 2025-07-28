@@ -569,7 +569,7 @@ class BlockchainGraph {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
-        this.updateStatus("Creating snapshot...");
+        this.updateStatus("Creating snapshots for all containers...");
         
         try {
             // Calculate next sequential snapshot number
@@ -662,7 +662,7 @@ class BlockchainGraph {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
-        this.updateStatus("Restoring snapshot...");
+        this.updateStatus("Restoring snapshots for all containers...");
         
         try {
             // Get current seqno before restoring to store it in the previous active node
