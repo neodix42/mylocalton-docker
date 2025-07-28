@@ -1499,25 +1499,42 @@ public class MyRestController {
 
   /**
    * Adds or updates CUSTOM_PARAMETERS environment variable with -T seqno flag
+   * Ensures only one -T parameter is used and omits -T flag entirely if seqno is invalid
    * @param envs existing environment variables array
    * @param seqnoStr seqno value from frontend
-   * @return updated environment variables array with CUSTOM_PARAMETERS containing -T seqno
+   * @return updated environment variables array with CUSTOM_PARAMETERS containing -T seqno (if valid)
    */
   private String[] addCustomParametersWithSeqno(String[] envs, String seqnoStr) {
     try {
-      // Use seqno from frontend parameter, fallback to current if not provided
-      String seqnoFlag;
+      // Determine the seqno value to use
+      Long seqnoValue = null; // null means don't use -T flag at all
+      
       if (seqnoStr != null && !seqnoStr.trim().isEmpty()) {
-        seqnoFlag = "-T " + seqnoStr.trim();
-        log.info("Using seqno from frontend: {}", seqnoStr);
+        try {
+          long parsedSeqno = Long.parseLong(seqnoStr.trim());
+          if (parsedSeqno > 0) {
+            seqnoValue = parsedSeqno;
+            log.info("Using seqno from frontend: {}", parsedSeqno);
+          } else {
+            log.warn("Frontend provided invalid seqno ({}), omitting -T flag", parsedSeqno);
+          }
+        } catch (NumberFormatException e) {
+          log.warn("Frontend provided non-numeric seqno ({}), omitting -T flag", seqnoStr);
+        }
       } else {
         // Fallback to current seqno if frontend didn't provide it
-        long currentSeqno = getCurrentBlockSequence();
-        seqnoFlag = "-T " + currentSeqno;
-        log.info("Using current seqno as fallback: {}", currentSeqno);
+        try {
+          long currentSeqno = getCurrentBlockSequence();
+          if (currentSeqno > 0) {
+            seqnoValue = currentSeqno;
+            log.info("Using current seqno as fallback: {}", currentSeqno);
+          } else {
+            log.warn("Current seqno is invalid ({}), omitting -T flag", currentSeqno);
+          }
+        } catch (Exception e) {
+          log.warn("Could not get current seqno, omitting -T flag");
+        }
       }
-      
-      log.info("Adding CUSTOM_PARAMETERS with seqno flag: {}", seqnoFlag);
       
       List<String> envList = new ArrayList<>();
       boolean customParamsFound = false;
@@ -1526,22 +1543,38 @@ public class MyRestController {
       if (envs != null) {
         for (String env : envs) {
           if (env.startsWith("CUSTOM_PARAMETERS=")) {
-            // Found existing CUSTOM_PARAMETERS, append the seqno flag
+            // Found existing CUSTOM_PARAMETERS, clean it and optionally add our seqno flag
             String existingValue = env.substring("CUSTOM_PARAMETERS=".length());
-            String newValue = existingValue.isEmpty() ? seqnoFlag : existingValue + " " + seqnoFlag;
+            
+            // Remove any existing -T parameters to avoid duplicates
+            String cleanedValue = removeExistingTParameters(existingValue);
+            
+            // Add our seqno flag only if we have a valid seqno
+            String newValue;
+            if (seqnoValue != null) {
+              String seqnoFlag = "-T " + seqnoValue;
+              newValue = cleanedValue.isEmpty() ? seqnoFlag : cleanedValue + " " + seqnoFlag;
+              log.info("Updated existing CUSTOM_PARAMETERS with -T flag: {} -> {}", existingValue, newValue);
+            } else {
+              newValue = cleanedValue;
+              log.info("Updated existing CUSTOM_PARAMETERS without -T flag: {} -> {}", existingValue, newValue);
+            }
+            
             envList.add("CUSTOM_PARAMETERS=" + newValue);
             customParamsFound = true;
-            log.info("Updated existing CUSTOM_PARAMETERS: {} -> {}", existingValue, newValue);
           } else {
             envList.add(env);
           }
         }
       }
       
-      // If CUSTOM_PARAMETERS wasn't found, add it
-      if (!customParamsFound) {
+      // If CUSTOM_PARAMETERS wasn't found, add it only if we have a valid seqno
+      if (!customParamsFound && seqnoValue != null) {
+        String seqnoFlag = "-T " + seqnoValue;
         envList.add("CUSTOM_PARAMETERS=" + seqnoFlag);
-        log.info("Added new CUSTOM_PARAMETERS: {}", seqnoFlag);
+        log.info("Added new CUSTOM_PARAMETERS with -T flag: {}", seqnoFlag);
+      } else if (!customParamsFound) {
+        log.info("No valid seqno available, not adding CUSTOM_PARAMETERS");
       }
       
       return envList.toArray(new String[0]);
@@ -1551,6 +1584,45 @@ public class MyRestController {
       // Return original envs if there's an error
       return envs;
     }
+  }
+
+  /**
+   * Removes existing -T parameters from CUSTOM_PARAMETERS value to avoid duplicates
+   * @param value the CUSTOM_PARAMETERS value
+   * @return cleaned value without -T parameters
+   */
+  private String removeExistingTParameters(String value) {
+    if (value == null || value.trim().isEmpty()) {
+      return "";
+    }
+    
+    // Split by spaces and filter out -T parameters
+    String[] parts = value.trim().split("\\s+");
+    List<String> cleanedParts = new ArrayList<>();
+    
+    for (int i = 0; i < parts.length; i++) {
+      String part = parts[i];
+      if ("-T".equals(part)) {
+        // Skip this -T and the next parameter (the seqno value)
+        if (i + 1 < parts.length) {
+          i++; // Skip the seqno value as well
+          log.info("Removed existing -T parameter with value: {}", parts[i]);
+        } else {
+          log.info("Removed dangling -T parameter");
+        }
+      } else if (part.startsWith("-T")) {
+        // Handle cases like "-T123" (combined format)
+        log.info("Removed existing combined -T parameter: {}", part);
+        // Skip this part entirely
+      } else {
+        // Keep other parameters
+        cleanedParts.add(part);
+      }
+    }
+    
+    String result = String.join(" ", cleanedParts);
+    log.info("Cleaned CUSTOM_PARAMETERS: '{}' -> '{}'", value, result);
+    return result;
   }
 
   public static DockerClient createDockerClient() {
