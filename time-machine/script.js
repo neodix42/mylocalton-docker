@@ -569,7 +569,7 @@ class BlockchainGraph {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
-        this.updateStatus("Creating snapshots for all containers...");
+        this.updateStatus("Preparing snapshot...");
         
         try {
             // Calculate next sequential snapshot number
@@ -577,7 +577,7 @@ class BlockchainGraph {
             const nextSnapshotNumber = existingSnapshots.length + 1;
             
             // Determine seqno for the new snapshot
-            let snapshotSeqno = 0;
+            let snapshotSeqno = 1; // Default to 1 instead of 0 since seqno is always increasing
             
             if (this.selectedNode.id === this.activeNodeId) {
                 // Taking snapshot from active (running) node - get current seqno
@@ -591,18 +591,36 @@ class BlockchainGraph {
                     
                     if (seqnoResponse.ok) {
                         const seqnoData = await seqnoResponse.json();
-                        if (seqnoData.success && seqnoData.seqno) {
+                        if (seqnoData.success && seqnoData.seqno && seqnoData.seqno > 0) {
                             snapshotSeqno = seqnoData.seqno;
+                        } else {
+                            console.warn('Invalid seqno received from backend:', seqnoData.seqno);
+                            // Keep default value of 1
                         }
                     }
                 } catch (seqnoError) {
                     console.error('Error fetching current seqno:', seqnoError);
-                    // Continue with seqno = 0 if fetch fails
+                    // Keep default value of 1 instead of 0
                 }
             } else {
                 // Taking snapshot from non-active node - inherit seqno from parent
-                snapshotSeqno = this.selectedNode.seqno || 0;
+                const parentSeqno = this.selectedNode.seqno;
+                if (parentSeqno && parentSeqno > 0) {
+                    snapshotSeqno = parentSeqno;
+                } else {
+                    console.warn('Invalid parent seqno:', parentSeqno, 'using default value 1');
+                    // Keep default value of 1
+                }
             }
+            
+            // Final validation - ensure seqno is never 0
+            if (snapshotSeqno <= 0) {
+                console.warn('Seqno is 0 or negative, setting to 1:', snapshotSeqno);
+                snapshotSeqno = 1;
+            }
+            
+            // Start polling for status updates
+            const statusPolling = this.startSnapshotStatusPolling();
             
             const response = await fetch('/take-snapshot', {
                 method: 'POST',
@@ -614,6 +632,9 @@ class BlockchainGraph {
                     snapshotNumber: nextSnapshotNumber
                 })
             });
+            
+            // Stop status polling
+            clearInterval(statusPolling);
             
             const data = await response.json();
             
@@ -643,7 +664,12 @@ class BlockchainGraph {
                 this.renderGraph();
                 this.updateStats();
                 
-                this.showMessage(`Snapshot ${nextSnapshotNumber} created successfully (seqno: ${snapshotSeqno})`, 'success');
+                // Show appropriate success message based on whether blockchain was shutdown
+                let successMessage = `Snapshot ${nextSnapshotNumber} created successfully (seqno: ${snapshotSeqno})`;
+                if (data.blockchainShutdown) {
+                    successMessage += ' - Blockchain was shutdown and restarted for consistent snapshot';
+                }
+                this.showMessage(successMessage, 'success');
             } else {
                 this.showMessage(`Error creating snapshot: ${data.message}`, 'error');
             }
@@ -654,6 +680,28 @@ class BlockchainGraph {
         
         this.showLoading(false);
         this.updateStatus("Ready");
+    }
+
+    startSnapshotStatusPolling() {
+        return setInterval(async () => {
+            try {
+                const response = await fetch('/snapshot-status', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status) {
+                        this.updateStatus(data.status);
+                    }
+                }
+            } catch (error) {
+                console.warn('Error polling snapshot status:', error);
+            }
+        }, 500); // Poll every 500ms for responsive updates
     }
 
     async restoreSnapshot() {

@@ -15,7 +15,9 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -173,9 +175,24 @@ public class MyRestController {
     }
   }
 
+  // Store current snapshot status for status endpoint
+  private volatile String currentSnapshotStatus = "Ready";
+  private volatile boolean isSnapshotInProgress = false;
+
+  @GetMapping("/snapshot-status")
+  public Map<String, Object> getSnapshotStatus() {
+    Map<String, Object> response = new HashMap<>();
+    response.put("status", currentSnapshotStatus);
+    response.put("inProgress", isSnapshotInProgress);
+    return response;
+  }
+
   @PostMapping("/take-snapshot")
   public Map<String, Object> takeSnapshot(@RequestBody Map<String, String> request) {
     try {
+      isSnapshotInProgress = true;
+      currentSnapshotStatus = "Preparing snapshot...";
+      
       log.info("taking snapshot for all containers");
       // Get sequential snapshot number from request or generate next one
       int snapshotNumber;
@@ -192,6 +209,8 @@ public class MyRestController {
       List<String> runningContainers = getAllRunningContainers();
       if (runningContainers.isEmpty()) {
         log.error("No containers found");
+        isSnapshotInProgress = false;
+        currentSnapshotStatus = "Ready";
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "No containers found");
@@ -200,19 +219,91 @@ public class MyRestController {
 
       log.info("Found running containers: {}", runningContainers);
 
-      // Get current volumes for all containers
-      Map<String, String> containerVolumes = getContainerVolumeMap(runningContainers);
+      // Check if we're taking snapshot from active (running) node
+      String parentId = request.get("parentId");
+      boolean isFromActiveNode = parentId != null && parentId.equals(getActiveNodeIdFromVolume());
+      
+      // Only shutdown blockchain if taking snapshot from active node AND multiple validators are running
+      long validatorCount = runningContainers.stream()
+          .filter(containerName -> !CONTAINER_GENESIS.equals(containerName))
+          .count();
+      
+      boolean shouldShutdownBlockchain = isFromActiveNode && validatorCount > 0;
+      log.info("Taking snapshot from active node: {}, Validator containers running: {}, should shutdown blockchain: {}", 
+          isFromActiveNode, validatorCount, shouldShutdownBlockchain);
+
+      // Store container configurations before shutdown if needed
+      Map<String, ContainerConfig> containerConfigs = new HashMap<>();
+      Map<String, HostConfig> hostConfigs = new HashMap<>();
+      Map<String, String> containerIpAddresses = new HashMap<>();
+      Map<String, String> containerVolumes = new HashMap<>();
+      
+      if (shouldShutdownBlockchain) {
+        currentSnapshotStatus = "Stopping blockchain...";
+        log.info("Multiple validators detected, capturing container configurations before shutdown");
+        
+        // Get container configurations BEFORE stopping them
+        for (String containerName : runningContainers) {
+          try {
+            String containerId = getContainerIdByName(containerName);
+            if (containerId != null) {
+              InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
+              containerConfigs.put(containerName, inspectResponse.getConfig());
+              hostConfigs.put(containerName, inspectResponse.getHostConfig());
+              
+              // Get current volume
+              String volumeName = getCurrentVolume(dockerClient, containerId);
+              if (volumeName != null) {
+                containerVolumes.put(containerName, volumeName);
+              }
+              
+              // Get IP address if available
+              try {
+                if (inspectResponse.getNetworkSettings() != null && 
+                    inspectResponse.getNetworkSettings().getNetworks() != null && 
+                    !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
+                  String ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
+                  if (ipAddress != null) {
+                    containerIpAddresses.put(containerName, ipAddress);
+                  }
+                }
+              } catch (Exception e) {
+                log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
+              }
+            }
+          } catch (Exception e) {
+            log.warn("Could not get configuration for container {}: {}", containerName, e.getMessage());
+          }
+        }
+        
+        // Stop and remove ALL running containers
+        log.info("Shutting down blockchain (all containers) before taking snapshots");
+        stopAndRemoveAllContainers();
+      } else {
+        // Only genesis is running, get volumes without shutdown
+        containerVolumes = getContainerVolumeMap(runningContainers);
+      }
+
       if (containerVolumes.isEmpty()) {
         log.error("No volumes found for containers");
+        isSnapshotInProgress = false;
+        currentSnapshotStatus = "Ready";
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "No volumes found for containers");
         return response;
       }
 
-      long lastSeqno = getCurrentBlockSequence();
+      // Get current block sequence BEFORE shutting down blockchain
+      long lastSeqno = 0;
+      try {
+        lastSeqno = getCurrentBlockSequence();
+      } catch (Exception e) {
+        log.warn("Could not get current block sequence, using 0: {}", e.getMessage());
+      }
       
       // Create snapshots for all containers in parallel
+      currentSnapshotStatus = "Taking snapshots...";
       log.info("Creating snapshots for {} containers in parallel", containerVolumes.size());
       
       // Use thread-safe collections for parallel processing
@@ -247,16 +338,33 @@ public class MyRestController {
       
       log.info("Parallel snapshot creation completed. Created: {}, Failed: {}", createdSnapshots.size(), failedSnapshots.size());
 
+      // If blockchain was shutdown, restart it with the same volumes and configurations
+      if (shouldShutdownBlockchain && failedSnapshots.isEmpty()) {
+        try {
+          currentSnapshotStatus = "Starting blockchain...";
+          log.info("Restarting blockchain with original volumes and configurations");
+          recreateAllContainersWithConfigs(containerVolumes, containerConfigs, hostConfigs, containerIpAddresses, String.valueOf(lastSeqno));
+          log.info("Blockchain restarted successfully after snapshot creation");
+        } catch (Exception e) {
+          log.error("Failed to restart blockchain after snapshot creation: {}", e.getMessage());
+          // Add this to failed snapshots so the response indicates the issue
+          failedSnapshots.add("Failed to restart blockchain: " + e.getMessage());
+        }
+      }
+
       Map<String, Object> response = new HashMap<>();
       
       if (failedSnapshots.isEmpty()) {
+        currentSnapshotStatus = "Snapshot taken successfully";
         response.put("success", true);
         response.put("snapshotId", snapshotId);
         response.put("snapshotNumber", snapshotNumber);
         response.put("blockSequence", lastSeqno);
         response.put("volumeName", "ton-db-snapshot-" + snapshotNumber); // Keep for compatibility
         response.put("createdSnapshots", createdSnapshots);
-        response.put("message", "Snapshots created successfully for all containers (" + createdSnapshots.size() + " volumes)");
+        response.put("blockchainShutdown", shouldShutdownBlockchain);
+        response.put("message", "Snapshots created successfully for all containers (" + createdSnapshots.size() + " volumes)" + 
+            (shouldShutdownBlockchain ? " with blockchain shutdown/restart" : ""));
       } else {
         // If some snapshots failed, clean up successful ones
         for (String createdSnapshot : createdSnapshots) {
@@ -268,15 +376,30 @@ public class MyRestController {
           }
         }
         
+        currentSnapshotStatus = "Snapshot failed";
         response.put("success", false);
         response.put("message", "Failed to create snapshots for some containers: " + String.join(", ", failedSnapshots));
         response.put("failedSnapshots", failedSnapshots);
+        response.put("blockchainShutdown", shouldShutdownBlockchain);
       }
+      
+      isSnapshotInProgress = false;
+      // Reset status to Ready after a delay to let user see the final message
+      new Thread(() -> {
+        try {
+          Thread.sleep(3000);
+          currentSnapshotStatus = "Ready";
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }).start();
       
       return response;
 
     } catch (Exception e) {
       log.error("Error creating snapshots", e);
+      isSnapshotInProgress = false;
+      currentSnapshotStatus = "Snapshot failed";
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
       response.put("message", "Failed to create snapshots: " + e.getMessage());
@@ -357,6 +480,50 @@ public class MyRestController {
     }
     
     return containerVolumes;
+  }
+
+  private String getActiveNodeIdFromVolume() {
+    try {
+      String genesisContainerId = getGenesisContainerId();
+      if (StringUtils.isEmpty(genesisContainerId)) {
+        return "root"; // Default to root if no genesis container
+      }
+      
+      String currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
+      if (currentVolume == null) {
+        return "root";
+      }
+      
+      // Determine active node ID based on current volume name
+      if (currentVolume.contains("ton-db-snapshot-")) {
+        String parts[] = currentVolume.split("ton-db-snapshot-");
+        if (parts.length > 1) {
+          String numberPart = parts[1];
+          
+          // Check for instance format: ton-db-snapshot-10-1
+          if (numberPart.matches("\\d+-\\d+")) {
+            String[] instanceParts = numberPart.split("-");
+            String snapshotNumber = instanceParts[0];
+            String instanceNumber = instanceParts[1];
+            return "snapshot-" + snapshotNumber + "-" + instanceNumber;
+          }
+          // Check for old "-latest" format
+          else if (numberPart.endsWith("-latest")) {
+            String snapshotNumber = numberPart.replace("-latest", "");
+            return "snapshot-" + snapshotNumber + "-latest";
+          }
+          // Plain snapshot number
+          else if (numberPart.matches("\\d+")) {
+            return "snapshot-" + numberPart;
+          }
+        }
+      }
+      
+      return "root"; // Default to root for base volume
+    } catch (Exception e) {
+      log.warn("Error determining active node ID from volume: {}", e.getMessage());
+      return "root";
+    }
   }
 
   private void copyVolumes(
@@ -865,33 +1032,63 @@ public class MyRestController {
     
     log.info("Captured container IDs: {}", containerIds);
     
-    // Stop all containers in parallel
+    // Stop all containers in parallel using CompletableFuture for true parallelism
     log.info("Stopping {} containers in parallel", containerIds.size());
-    containerIds.entrySet().parallelStream().forEach(entry -> {
-      String containerName = entry.getKey();
-      String containerId = entry.getValue();
-      try {
-        log.info("Stopping container: {} ({})", containerName, containerId);
-        dockerClient.stopContainerCmd(containerId).exec();
-        log.info("Container stopped: {} ({})", containerName, containerId);
-      } catch (Exception e) {
-        log.warn("Failed to stop container {} ({}): {}", containerName, containerId, e.getMessage());
-      }
-    });
     
-    // Remove all containers in parallel using captured IDs
+    List<CompletableFuture<Void>> stopFutures = containerIds.entrySet().stream()
+        .map(entry -> CompletableFuture.runAsync(() -> {
+          String containerName = entry.getKey();
+          String containerId = entry.getValue();
+          try {
+            log.info("Stopping container: {} ({})", containerName, containerId);
+            dockerClient.stopContainerCmd(containerId).exec();
+            log.info("Container stopped: {} ({})", containerName, containerId);
+          } catch (Exception e) {
+            log.warn("Failed to stop container {} ({}): {}", containerName, containerId, e.getMessage());
+          }
+        }))
+        .collect(Collectors.toList());
+    
+    // Wait for all stop operations to complete
+    CompletableFuture<Void> allStopFutures = CompletableFuture.allOf(
+        stopFutures.toArray(new CompletableFuture[0])
+    );
+    
+    try {
+      allStopFutures.get(); // Wait for all containers to stop
+      log.info("All containers stopped in parallel");
+    } catch (Exception e) {
+      log.error("Error waiting for containers to stop: {}", e.getMessage());
+    }
+    
+    // Remove all containers in parallel using CompletableFuture
     log.info("Removing {} containers in parallel", containerIds.size());
-    containerIds.entrySet().parallelStream().forEach(entry -> {
-      String containerName = entry.getKey();
-      String containerId = entry.getValue();
-      try {
-        log.info("Removing container: {} ({})", containerName, containerId);
-        dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-        log.info("Container removed: {} ({})", containerName, containerId);
-      } catch (Exception e) {
-        log.warn("Failed to remove container {} ({}): {}", containerName, containerId, e.getMessage());
-      }
-    });
+    
+    List<CompletableFuture<Void>> removeFutures = containerIds.entrySet().stream()
+        .map(entry -> CompletableFuture.runAsync(() -> {
+          String containerName = entry.getKey();
+          String containerId = entry.getValue();
+          try {
+            log.info("Removing container: {} ({})", containerName, containerId);
+            dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+            log.info("Container removed: {} ({})", containerName, containerId);
+          } catch (Exception e) {
+            log.warn("Failed to remove container {} ({}): {}", containerName, containerId, e.getMessage());
+          }
+        }))
+        .collect(Collectors.toList());
+    
+    // Wait for all remove operations to complete
+    CompletableFuture<Void> allRemoveFutures = CompletableFuture.allOf(
+        removeFutures.toArray(new CompletableFuture[0])
+    );
+    
+    try {
+      allRemoveFutures.get(); // Wait for all containers to be removed
+      log.info("All containers removed in parallel");
+    } catch (Exception e) {
+      log.error("Error waiting for containers to be removed: {}", e.getMessage());
+    }
     
     // Verify all containers are actually removed before proceeding
     log.info("Verifying all containers are completely removed...");
@@ -907,17 +1104,26 @@ public class MyRestController {
       
       log.warn("Still found {} running containers after removal attempt: {}", stillRunning.size(), stillRunning);
       
-      // Force remove any remaining containers
-      for (String containerName : stillRunning) {
-        try {
-          String containerId = getContainerIdByName(containerName);
-          if (containerId != null) {
-            log.info("Force removing remaining container: {} ({})", containerName, containerId);
-            dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-          }
-        } catch (Exception e) {
-          log.warn("Failed to force remove container {}: {}", containerName, e.getMessage());
-        }
+      // Force remove any remaining containers in parallel
+      List<CompletableFuture<Void>> forceRemoveFutures = stillRunning.stream()
+          .map(containerName -> CompletableFuture.runAsync(() -> {
+            try {
+              String containerId = getContainerIdByName(containerName);
+              if (containerId != null) {
+                log.info("Force removing remaining container: {} ({})", containerName, containerId);
+                dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+              }
+            } catch (Exception e) {
+              log.warn("Failed to force remove container {}: {}", containerName, e.getMessage());
+            }
+          }))
+          .collect(Collectors.toList());
+      
+      // Wait for all force remove operations to complete
+      try {
+        CompletableFuture.allOf(forceRemoveFutures.toArray(new CompletableFuture[0])).get();
+      } catch (Exception e) {
+        log.error("Error during force removal: {}", e.getMessage());
       }
       
       retryCount++;
@@ -968,39 +1174,53 @@ public class MyRestController {
     List<String> createdContainers = Collections.synchronizedList(new ArrayList<>());
     List<String> failedContainers = Collections.synchronizedList(new ArrayList<>());
     
-    // Recreate all containers in parallel
-    containerTargetVolumes.entrySet().parallelStream().forEach(entry -> {
-      String containerName = entry.getKey();
-      String targetVolume = entry.getValue();
-      
-      try {
-        if (CONTAINER_GENESIS.equals(containerName)) {
-          log.info("Recreating genesis container in parallel with volume and saved config: {}", targetVolume);
-          recreateGenesisContainerWithConfig(
-              targetVolume,
-              containerConfigs.get(containerName),
-              hostConfigs.get(containerName),
-              containerIpAddresses.get(containerName),
-              seqnoStr
-          );
-        } else {
-          log.info("Recreating validator container {} in parallel with volume and saved config: {}", containerName, targetVolume);
-          recreateValidatorContainerWithConfig(
-              containerName,
-              targetVolume,
-              containerConfigs.get(containerName),
-              hostConfigs.get(containerName),
-              containerIpAddresses.get(containerName),
-              seqnoStr
-          );
-        }
-        createdContainers.add(containerName);
-        log.info("Successfully recreated container: {}", containerName);
-      } catch (Exception e) {
-        log.error("Failed to recreate container {}: {}", containerName, e.getMessage());
-        failedContainers.add(containerName + ": " + e.getMessage());
-      }
-    });
+    // Recreate all containers in parallel using CompletableFuture for true parallelism
+    List<CompletableFuture<Void>> recreateFutures = containerTargetVolumes.entrySet().stream()
+        .map(entry -> CompletableFuture.runAsync(() -> {
+          String containerName = entry.getKey();
+          String targetVolume = entry.getValue();
+          
+          try {
+            if (CONTAINER_GENESIS.equals(containerName)) {
+              log.info("Recreating genesis container in parallel with volume and saved config: {}", targetVolume);
+              recreateGenesisContainerWithConfig(
+                  targetVolume,
+                  containerConfigs.get(containerName),
+                  hostConfigs.get(containerName),
+                  containerIpAddresses.get(containerName),
+                  seqnoStr
+              );
+            } else {
+              log.info("Recreating validator container {} in parallel with volume and saved config: {}", containerName, targetVolume);
+              recreateValidatorContainerWithConfig(
+                  containerName,
+                  targetVolume,
+                  containerConfigs.get(containerName),
+                  hostConfigs.get(containerName),
+                  containerIpAddresses.get(containerName),
+                  seqnoStr
+              );
+            }
+            createdContainers.add(containerName);
+            log.info("Successfully recreated container: {}", containerName);
+          } catch (Exception e) {
+            log.error("Failed to recreate container {}: {}", containerName, e.getMessage());
+            failedContainers.add(containerName + ": " + e.getMessage());
+          }
+        }))
+        .collect(Collectors.toList());
+    
+    // Wait for all container recreation operations to complete
+    CompletableFuture<Void> allRecreateFutures = CompletableFuture.allOf(
+        recreateFutures.toArray(new CompletableFuture[0])
+    );
+    
+    try {
+      allRecreateFutures.get(); // Wait for all containers to be recreated
+      log.info("All containers recreated in parallel");
+    } catch (Exception e) {
+      log.error("Error waiting for containers to be recreated: {}", e.getMessage());
+    }
     
     log.info("Parallel container recreation completed. Created: {}, Failed: {}", createdContainers.size(), failedContainers.size());
     
