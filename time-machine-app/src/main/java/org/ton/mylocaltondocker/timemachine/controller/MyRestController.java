@@ -76,10 +76,12 @@ public class MyRestController {
       }
 
       String volume = getCurrentVolume(dockerClient, genesisContainerId);
+      int activeNodes = getActiveNodesCount();
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("seqno", masterChainInfo.getLast().getSeqno());
       response.put("volume", volume);
+      response.put("activeNodes", activeNodes);
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Exception e) {
@@ -89,6 +91,54 @@ public class MyRestController {
       response.put("message", "Failed to get seqno-volume: " + e.getMessage());
       return response;
     }
+  }
+
+  @GetMapping("/active-nodes")
+  public Map<String, Object> getActiveNodes() {
+    try {
+      int activeNodes = getActiveNodesCount();
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", true);
+      response.put("activeNodes", activeNodes);
+      return response;
+    } catch (Exception e) {
+      log.error("Error getting active nodes count", e);
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", false);
+      response.put("message", "Failed to get active nodes count: " + e.getMessage());
+      return response;
+    }
+  }
+
+  private int getActiveNodesCount() {
+    int count = 0;
+    
+    // Check genesis container
+    try {
+      String genesisId = getGenesisContainerId();
+      if (!StringUtils.isEmpty(genesisId)) {
+        count++;
+      }
+    } catch (Exception e) {
+      log.debug("Genesis container not running");
+    }
+    
+    // Check up to 5 validator containers
+    for (String validatorContainer : VALIDATOR_CONTAINERS) {
+      try {
+        List<Container> containers = dockerClient
+            .listContainersCmd()
+            .withNameFilter(List.of(validatorContainer))
+            .exec();
+        if (!containers.isEmpty()) {
+          count++;
+        }
+      } catch (Exception e) {
+        log.debug("Validator container {} not running", validatorContainer);
+      }
+    }
+    
+    return count;
   }
 
   @GetMapping("/graph")
@@ -529,7 +579,6 @@ public class MyRestController {
   private void copyVolumes(
       DockerClient dockerClient, String sourceVolumeName, String targetVolumeName)
       throws InterruptedException {
-      log.info("copy volume {} to volume {}", sourceVolumeName, targetVolumeName);
 
     try {
       dockerClient.inspectVolumeCmd(targetVolumeName).exec();

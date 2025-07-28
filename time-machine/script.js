@@ -110,6 +110,12 @@ class BlockchainGraph {
         this.calculateLayout();
         this.renderGraph();
         this.updateStats();
+        
+        // Ensure active node is properly marked after page refresh
+        if (this.activeNodeId) {
+            this.renderActiveNodeArrows();
+        }
+        
         this.showLoading(false);
         this.updateStatus("Ready");
     }
@@ -549,22 +555,83 @@ class BlockchainGraph {
             displaySeqno = node.seqno !== undefined ? node.seqno : 'N/A';
         }
         
+        // Get active nodes count - will be fetched and updated
+        let activeNodesHtml = '<p><strong>Active nodes:</strong> <span id="active-nodes-count">Loading...</span></p>';
+        
         nodeDetails.innerHTML = `
             <p><strong>ID:</strong> ${node.id}</p>
             <p><strong>Name:</strong> ${displayName}</p>
             <p><strong>Type:</strong> ${node.type || 'snapshot'}</p>
             <p><strong>Seqno:</strong> ${displaySeqno}</p>
             <p><strong>Created:</strong> ${timestamp}</p>
+            ${activeNodesHtml}
             ${node.parentId ? `<p><strong>Parent:</strong> ${node.parentId}</p>` : ''}
         `;
+        
+        // Fetch and update active nodes count
+        this.updateActiveNodesCount(node);
     }
 
     hideNodeInfo() {
         document.getElementById('node-details').innerHTML = '<p>Select a node to view details</p>';
     }
 
+    async updateActiveNodesCount(node) {
+        const activeNodesElement = document.getElementById('active-nodes-count');
+        if (!activeNodesElement) return;
+        
+        // If this is the currently active/running node, get real-time count
+        if (node && node.id === this.activeNodeId) {
+            try {
+                const response = await fetch('/active-nodes', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        activeNodesElement.textContent = data.activeNodes || 0;
+                        // Store the current count in the node for future reference
+                        node.activeNodes = data.activeNodes || 0;
+                    } else {
+                        activeNodesElement.textContent = 'N/A';
+                    }
+                } else {
+                    activeNodesElement.textContent = 'N/A';
+                }
+            } catch (error) {
+                console.error('Error fetching active nodes count:', error);
+                activeNodesElement.textContent = 'N/A';
+            }
+        } else {
+            // For non-active nodes, use stored value or inherit from parent
+            let activeNodesCount = 'N/A';
+            
+            if (node && node.activeNodes !== undefined) {
+                // Use stored value if available
+                activeNodesCount = node.activeNodes;
+            } else if (node && node.parentId) {
+                // Inherit from parent node if no stored value
+                const parentNode = this.nodes.find(n => n.id === node.parentId);
+                if (parentNode && parentNode.activeNodes !== undefined) {
+                    activeNodesCount = parentNode.activeNodes;
+                    // Store inherited value in current node
+                    node.activeNodes = parentNode.activeNodes;
+                }
+            }
+            
+            activeNodesElement.textContent = activeNodesCount;
+        }
+    }
+
     async takeSnapshot() {
         if (!this.selectedNode) return;
+        
+        // Store the selected node at the start to prevent issues if selection changes during operation
+        const snapshotParentNode = this.selectedNode;
         
         // Clear any previous error state when starting a new action
         this.clearErrorState();
@@ -579,7 +646,7 @@ class BlockchainGraph {
             // Determine seqno for the new snapshot
             let snapshotSeqno = 1; // Default to 1 instead of 0 since seqno is always increasing
             
-            if (this.selectedNode.id === this.activeNodeId) {
+            if (snapshotParentNode.id === this.activeNodeId) {
                 // Taking snapshot from active (running) node - get current seqno
                 try {
                     const seqnoResponse = await fetch('/seqno-volume', {
@@ -604,7 +671,7 @@ class BlockchainGraph {
                 }
             } else {
                 // Taking snapshot from non-active node - inherit seqno from parent
-                const parentSeqno = this.selectedNode.seqno;
+                const parentSeqno = snapshotParentNode.seqno;
                 if (parentSeqno && parentSeqno > 0) {
                     snapshotSeqno = parentSeqno;
                 } else {
@@ -628,7 +695,7 @@ class BlockchainGraph {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    parentId: this.selectedNode.id,
+                    parentId: snapshotParentNode.id,
                     snapshotNumber: nextSnapshotNumber
                 })
             });
@@ -639,6 +706,16 @@ class BlockchainGraph {
             const data = await response.json();
             
             if (data.success) {
+                // Get active nodes count to store in the new snapshot
+                let activeNodesCount = 0;
+                if (data.activeNodes !== undefined) {
+                    // Use the count from the backend response if available
+                    activeNodesCount = data.activeNodes;
+                } else if (snapshotParentNode.activeNodes !== undefined) {
+                    // Inherit from parent node if backend didn't provide it
+                    activeNodesCount = snapshotParentNode.activeNodes;
+                }
+                
                 // Create new node with sequential numbering and seqno
                 const newNode = {
                     id: `snapshot-${nextSnapshotNumber}`,
@@ -646,15 +723,16 @@ class BlockchainGraph {
                     blockSequence: data.blockSequence,
                     seqno: snapshotSeqno,
                     timestamp: new Date().toISOString(),
-                    parentId: this.selectedNode.id,
+                    parentId: snapshotParentNode.id,
                     isRoot: false,
-                    type: "snapshot"
+                    type: "snapshot",
+                    activeNodes: activeNodesCount
                 };
                 
                 // Add node and edge
                 this.nodes.push(newNode);
                 this.edges.push({
-                    source: this.selectedNode.id,
+                    source: snapshotParentNode.id,
                     target: newNode.id
                 });
                 
@@ -776,7 +854,8 @@ class BlockchainGraph {
                         parentId: this.selectedNode.id,
                         isRoot: false,
                         type: "instance",
-                        customName: this.selectedNode.customName
+                        customName: this.selectedNode.customName,
+                        activeNodes: this.selectedNode.activeNodes // Inherit active nodes count from parent
                     };
                     
                     // Add instance node and edge
@@ -1276,7 +1355,8 @@ class BlockchainGraph {
         // Update active node if it changed
         if (targetNodeId && targetNodeId !== this.activeNodeId) {
             this.activeNodeId = targetNodeId;
-            this.renderActiveNodeArrows();
+            // Re-render nodes to update active styling and arrows
+            this.renderNodes();
             this.updateStats();
             this.saveGraph();
         }
