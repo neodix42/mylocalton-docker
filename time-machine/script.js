@@ -702,7 +702,8 @@ class BlockchainGraph {
                     snapshotId: this.selectedNode.id,
                     snapshotNumber: this.selectedNode.snapshotNumber,
                     nodeType: this.selectedNode.type || "snapshot",
-                    instanceNumber: this.selectedNode.instanceNumber
+                    instanceNumber: this.selectedNode.instanceNumber,
+                    seqno: this.selectedNode.seqno
                 })
             });
             
