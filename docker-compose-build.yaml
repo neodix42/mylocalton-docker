@@ -56,7 +56,7 @@ services:
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
-#      - VERBOSITY=4
+      - VERBOSITY=3
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
@@ -187,6 +187,8 @@ services:
     environment:
       - NAME=validator-1
       - GENESIS_IP=172.28.1.10
+      - VERBOSITY=3
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: 15s
@@ -213,74 +215,79 @@ services:
     environment:
       - NAME=validator-2
       - GENESIS_IP=172.28.1.10
+      - VERBOSITY=3
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     depends_on:
       - genesis
     networks:
       main:
         ipv4_address: 172.28.1.12
-
-  validator-3:
-    container_name: validator-3
-    image: mylocaltondocker
-    restart: unless-stopped
-    volumes:
-      - shared-data:/usr/share/data
-      - ton-db-val3:/var/ton-work/db
-    environment:
-      - NAME=validator-3
-      - GENESIS_IP=172.28.1.10
-    healthcheck:
-      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    depends_on:
-      - genesis
-    networks:
-      main:
-        ipv4_address: 172.28.1.13
-
-  validator-4:
-    container_name: validator-4
-    image: mylocaltondocker
-    restart: unless-stopped
-    volumes:
-      - shared-data:/usr/share/data
-      - ton-db-val4:/var/ton-work/db
-    environment:
-      - NAME=validator-4
-      - GENESIS_IP=172.28.1.10
-    healthcheck:
-      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    depends_on:
-      - genesis
-    networks:
-      main:
-        ipv4_address: 172.28.1.14
-
-  validator-5:
-    container_name: validator-5
-    image: mylocaltondocker
-    restart: unless-stopped
-    volumes:
-      - shared-data:/usr/share/data
-      - ton-db-val5:/var/ton-work/db
-    environment:
-      - NAME=validator-5
-      - GENESIS_IP=172.28.1.10
-    healthcheck:
-      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    depends_on:
-      - genesis
-    networks:
-      main:
-        ipv4_address: 172.28.1.15
+#
+#  validator-3:
+#    container_name: validator-3
+#    image: mylocaltondocker
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#      - ton-db-val3:/var/ton-work/db
+#    environment:
+#      - NAME=validator-3
+#      - GENESIS_IP=172.28.1.10
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#    healthcheck:
+#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+#      interval: 15s
+#      timeout: 10s
+#      retries: 10
+#    depends_on:
+#      - genesis
+#    networks:
+#      main:
+#        ipv4_address: 172.28.1.13
+#
+#  validator-4:
+#    container_name: validator-4
+#    image: mylocaltondocker
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#      - ton-db-val4:/var/ton-work/db
+#    environment:
+#      - NAME=validator-4
+#      - GENESIS_IP=172.28.1.10
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#    healthcheck:
+#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+#      interval: 15s
+#      timeout: 10s
+#      retries: 10
+#    depends_on:
+#      - genesis
+#    networks:
+#      main:
+#        ipv4_address: 172.28.1.14
+#
+#  validator-5:
+#    container_name: validator-5
+#    image: mylocaltondocker
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#      - ton-db-val5:/var/ton-work/db
+#    environment:
+#      - NAME=validator-5
+#      - GENESIS_IP=172.28.1.10
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#    healthcheck:
+#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+#      interval: 15s
+#      timeout: 10s
+#      retries: 10
+#    depends_on:
+#      - genesis
+#    networks:
+#      main:
+#        ipv4_address: 172.28.1.15
 
 ## TON HTTP API V2
 

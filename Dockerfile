@@ -28,6 +28,12 @@ COPY docker/scripts/validator-2.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-3.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-4.pk /usr/share/ton/smartcont
 COPY docker/scripts/validator-5.pk /usr/share/ton/smartcont
+COPY docker/scripts/validator.addr /usr/share/ton/smartcont
+COPY docker/scripts/validator-1.addr /usr/share/ton/smartcont
+COPY docker/scripts/validator-2.addr /usr/share/ton/smartcont
+COPY docker/scripts/validator-3.addr /usr/share/ton/smartcont
+COPY docker/scripts/validator-4.addr /usr/share/ton/smartcont
+COPY docker/scripts/validator-5.addr /usr/share/ton/smartcont
 COPY docker/scripts/liteserver /scripts
 COPY docker/scripts/liteserver.pub /scripts
 

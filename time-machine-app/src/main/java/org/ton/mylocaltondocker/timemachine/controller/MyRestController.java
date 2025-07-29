@@ -402,6 +402,14 @@ public class MyRestController {
         }
       }
 
+      // Get active nodes count to include in response
+      int activeNodesCount = 0;
+      try {
+        activeNodesCount = getActiveNodesCount();
+      } catch (Exception e) {
+        log.warn("Could not get active nodes count for snapshot response: {}", e.getMessage());
+      }
+
       Map<String, Object> response = new HashMap<>();
       
       if (failedSnapshots.isEmpty()) {
@@ -413,6 +421,7 @@ public class MyRestController {
         response.put("volumeName", "ton-db-snapshot-" + snapshotNumber); // Keep for compatibility
         response.put("createdSnapshots", createdSnapshots);
         response.put("blockchainShutdown", shouldShutdownBlockchain);
+        response.put("activeNodes", activeNodesCount); // Include active nodes count
         response.put("message", "Snapshots created successfully for all containers (" + createdSnapshots.size() + " volumes)" + 
             (shouldShutdownBlockchain ? " with blockchain shutdown/restart" : ""));
       } else {
@@ -653,39 +662,62 @@ public class MyRestController {
       boolean isNewInstance = false;
 
       if ("instance".equals(nodeType)) {
-        // Restoring from instance node - reuse existing volumes for ALL containers
+        // Restoring from instance node - reuse existing volumes for containers that have them
         if (instanceNumberStr != null) {
           instanceNumber = Integer.parseInt(instanceNumberStr);
         }
 
-        // For each container, determine target volume name
+        // Genesis container - always should exist for instances
         String genesisTargetVolume = "ton-db-snapshot-" + snapshotNumber + 
             (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
-        containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+        
+        // Check if genesis volume exists before adding
+        try {
+          dockerClient.inspectVolumeCmd(genesisTargetVolume).exec();
+          containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+          log.info("Found existing genesis instance volume: {}", genesisTargetVolume);
+        } catch (NotFoundException e) {
+          log.warn("Genesis instance volume {} not found", genesisTargetVolume);
+        }
 
+        // Validator containers - only add if their volumes exist
         for (String validatorContainer : VALIDATOR_CONTAINERS) {
           String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
           String targetVolume = baseVolumeName + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
-          containerTargetVolumes.put(validatorContainer, targetVolume);
+          
+          // Only add if the instance volume exists
+          try {
+            dockerClient.inspectVolumeCmd(targetVolume).exec();
+            containerTargetVolumes.put(validatorContainer, targetVolume);
+            log.info("Found existing validator instance volume: {}", targetVolume);
+          } catch (NotFoundException e) {
+            log.debug("Validator instance volume {} not found, skipping", targetVolume);
+          }
         }
 
-        log.info("Reusing existing instance volumes for all containers");
+        log.info("Reusing existing instance volumes for {} containers", containerTargetVolumes.size());
 
       } else {
-        // Restoring from snapshot node - create new instances for ALL containers
+        // Restoring from snapshot node - create new instances for containers that have snapshots
         instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
         isNewInstance = true;
 
-        // Genesis container
+        // Genesis container - should always exist
         String genesisBackupVolume = "ton-db-snapshot-" + snapshotNumber;
         String genesisTargetVolume = genesisBackupVolume + "-" + instanceNumber;
-        containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+        
+        // Check if genesis backup exists before copying
+        try {
+          dockerClient.inspectVolumeCmd(genesisBackupVolume).exec();
+          log.info("Copying volume {} to {}", genesisBackupVolume, genesisTargetVolume);
+          copyVolumes(dockerClient, genesisBackupVolume, genesisTargetVolume);
+          containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+        } catch (NotFoundException e) {
+          log.error("Genesis backup volume {} not found", genesisBackupVolume);
+          throw new RuntimeException("Genesis backup volume not found: " + genesisBackupVolume);
+        }
 
-        // Copy genesis backup to preserve original
-        log.info("Copying volume {} to {}", genesisBackupVolume, genesisTargetVolume);
-        copyVolumes(dockerClient, genesisBackupVolume, genesisTargetVolume);
-
-        // Validator containers
+        // Validator containers - only copy and add if backup volumes exist
         for (String validatorContainer : VALIDATOR_CONTAINERS) {
           String validatorBackupVolume = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
           String validatorTargetVolume = validatorBackupVolume + "-" + instanceNumber;
@@ -700,6 +732,8 @@ public class MyRestController {
             log.info("Validator backup volume {} not found, skipping", validatorBackupVolume);
           }
         }
+        
+        log.info("Created new instance volumes for {} containers", containerTargetVolumes.size());
       }
 
       // Get container configurations BEFORE stopping them

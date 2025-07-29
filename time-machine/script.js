@@ -580,51 +580,23 @@ class BlockchainGraph {
         const activeNodesElement = document.getElementById('active-nodes-count');
         if (!activeNodesElement) return;
         
-        // If this is the currently active/running node, get real-time count
-        if (node && node.id === this.activeNodeId) {
-            try {
-                const response = await fetch('/active-nodes', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.success) {
-                        activeNodesElement.textContent = data.activeNodes || 0;
-                        // Store the current count in the node for future reference
-                        node.activeNodes = data.activeNodes || 0;
-                    } else {
-                        activeNodesElement.textContent = 'N/A';
-                    }
-                } else {
-                    activeNodesElement.textContent = 'N/A';
-                }
-            } catch (error) {
-                console.error('Error fetching active nodes count:', error);
-                activeNodesElement.textContent = 'N/A';
+        // Always use stored value or inherit from parent - no real-time fetching
+        let activeNodesCount = 'N/A';
+        
+        if (node && node.activeNodes !== undefined) {
+            // Use stored value if available
+            activeNodesCount = node.activeNodes;
+        } else if (node && node.parentId) {
+            // Inherit from parent node if no stored value
+            const parentNode = this.nodes.find(n => n.id === node.parentId);
+            if (parentNode && parentNode.activeNodes !== undefined) {
+                activeNodesCount = parentNode.activeNodes;
+                // Store inherited value in current node
+                node.activeNodes = parentNode.activeNodes;
             }
-        } else {
-            // For non-active nodes, use stored value or inherit from parent
-            let activeNodesCount = 'N/A';
-            
-            if (node && node.activeNodes !== undefined) {
-                // Use stored value if available
-                activeNodesCount = node.activeNodes;
-            } else if (node && node.parentId) {
-                // Inherit from parent node if no stored value
-                const parentNode = this.nodes.find(n => n.id === node.parentId);
-                if (parentNode && parentNode.activeNodes !== undefined) {
-                    activeNodesCount = parentNode.activeNodes;
-                    // Store inherited value in current node
-                    node.activeNodes = parentNode.activeNodes;
-                }
-            }
-            
-            activeNodesElement.textContent = activeNodesCount;
         }
+        
+        activeNodesElement.textContent = activeNodesCount;
     }
 
     async takeSnapshot() {
@@ -708,12 +680,60 @@ class BlockchainGraph {
             if (data.success) {
                 // Get active nodes count to store in the new snapshot
                 let activeNodesCount = 0;
+                
+                // First, try to get from backend response
                 if (data.activeNodes !== undefined) {
-                    // Use the count from the backend response if available
                     activeNodesCount = data.activeNodes;
-                } else if (snapshotParentNode.activeNodes !== undefined) {
-                    // Inherit from parent node if backend didn't provide it
-                    activeNodesCount = snapshotParentNode.activeNodes;
+                } else {
+                    // If backend didn't provide it, inherit from parent node
+                    if (snapshotParentNode.activeNodes !== undefined) {
+                        activeNodesCount = snapshotParentNode.activeNodes;
+                    } else if (snapshotParentNode.id === this.activeNodeId) {
+                        // If parent is currently active, try to get current active nodes count
+                        try {
+                            const activeNodesResponse = await fetch('/active-nodes', {
+                                method: 'GET',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                }
+                            });
+                            
+                            if (activeNodesResponse.ok) {
+                                const activeNodesData = await activeNodesResponse.json();
+                                if (activeNodesData.success) {
+                                    activeNodesCount = activeNodesData.activeNodes || 0;
+                                }
+                            }
+                        } catch (error) {
+                            console.warn('Could not fetch active nodes count for snapshot:', error);
+                        }
+                    } else if (snapshotParentNode.isRoot) {
+                        // If parent is ROOT, inherit from ROOT's active nodes or get current count
+                        if (snapshotParentNode.activeNodes !== undefined) {
+                            activeNodesCount = snapshotParentNode.activeNodes;
+                        } else {
+                            // ROOT doesn't have stored active nodes, get current count
+                            try {
+                                const activeNodesResponse = await fetch('/active-nodes', {
+                                    method: 'GET',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    }
+                                });
+                                
+                                if (activeNodesResponse.ok) {
+                                    const activeNodesData = await activeNodesResponse.json();
+                                    if (activeNodesData.success) {
+                                        activeNodesCount = activeNodesData.activeNodes || 0;
+                                        // Store it in ROOT for future reference
+                                        snapshotParentNode.activeNodes = activeNodesCount;
+                                    }
+                                }
+                            } catch (error) {
+                                console.warn('Could not fetch active nodes count for ROOT:', error);
+                            }
+                        }
+                    }
                 }
                 
                 // Create new node with sequential numbering and seqno

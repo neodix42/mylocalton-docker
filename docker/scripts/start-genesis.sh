@@ -233,9 +233,9 @@ else
     /usr/share/data
   chmod 744 /usr/share/data/*
 
-  echo "Make available for reap and participate"
-  cp validator.pk validator.addr /usr/share/ton
-  chmod 744 /usr/share/ton/*
+#  echo "Make available for reap and participate"
+#  cp validator.pk validator.addr /usr/share/ton
+#  chmod 744 /usr/share/ton/*
 
 
   cd /var/ton-work/db

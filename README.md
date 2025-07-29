@@ -180,9 +180,10 @@ last state.
 If you want to access TON working directory and/or to keep database state even after rebuilding images, uncomment and
 adjust the volume section for `ton-db` in main yaml file.
 
-### Reset network and remove all data:
+### Stop and remove all MyLocalTon containers, networks and volumes. 
+All data will be lost.
 
-```docker-compose down -v --rmi all```
+```docker-compose -f docker-compose-build.yaml down -v```
 
 ## Pre-installed wallets
 

@@ -1,11 +1,19 @@
 #!/bin/bash
-
+echo "------------------------------------PARTICIPATE IN ELECTIONS ------------------------------------"
+echo $(date)
 INTERNAL_IP=$(hostname -I | tr -d " ")
 CONSOLE_PORT=40002
 NODEHOST="$INTERNAL_IP:$CONSOLE_PORT" # Full Node IP:HOST
 
-if [ -f "/usr/share/ton/validator.pk" ] && [ -f "/var/ton-work/db/global.config.json" ]; then
-  WALLET_ADDR=-1:$(head -c 32 /usr/share/ton/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
+if [ "$NAME" = "genesis" ]; then
+    NAME="validator"
+fi
+
+echo "NAME = $NAME"
+echo "Looking for /usr/share/ton/smartcont/$NAME.pk"
+
+if [ -f "/usr/share/ton/smartcont/$NAME.pk" ] && [ -f "/var/ton-work/db/global.config.json" ]; then
+  WALLET_ADDR=-1:$(head -c 32 /usr/share/data/$NAME.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
   echo "running participate.sh with wallet $WALLET_ADDR on $NODEHOST"
 else
   echo "participate.sh: Not ready yet. Exit."
@@ -15,8 +23,8 @@ fi
 
 MAX_FACTOR=10
 STAKE_AMOUNT=100000001
-WALLETKEYS_DIR="/usr/share/ton/"
-VALIDATOR_WALLET_FILEBASE="validator"
+WALLETKEYS_DIR="/usr/share/ton/smartcont/"
+VALIDATOR_WALLET_FILEBASE=$NAME
 SUBWALLET_ID=42
 
 
@@ -92,6 +100,10 @@ if [ ! -f "${ELECTION_TIMESTAMP}.elect" ]; then
 
     echo "Run: ${VALIDATOR_CONSOLE} -k ${CLIENT_CERT} -p ${SERVER_PUB} -a ${NODEHOST} -v 0 -rc "addpermkey ${KEY} ${ELECTION_TIMESTAMP} ${ELECTION_END}""
     ${VALIDATOR_CONSOLE} -k ${CLIENT_CERT} -p ${SERVER_PUB} -a ${NODEHOST} -v 0 -rc "addpermkey ${KEY} ${ELECTION_TIMESTAMP} ${ELECTION_END}"
+    if [ $? -ne 0 ]; then
+      echo exit since error
+      exit 11;
+    fi
 
     echo "${VALIDATOR_CONSOLE} -k ${CLIENT_CERT} -p ${SERVER_PUB} -a ${NODEHOST} -v 0 -rc "addtempkey ${KEY} ${KEY} ${ELECTION_END}""
     ${VALIDATOR_CONSOLE} -k ${CLIENT_CERT} -p ${SERVER_PUB} -a ${NODEHOST} -v 0 -rc "addtempkey ${KEY} ${KEY} ${ELECTION_END}"

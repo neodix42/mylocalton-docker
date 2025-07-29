@@ -20,28 +20,17 @@ else
   echo "/var/ton-work/db/global.config.json from genesis already exists"
 fi
 
-cd /usr/share/ton
+echo "NAME=$NAME"
 
-if [ ! -f "validator.pk" ]; then
-  echo "copying validator.pk from genesis /usr/share/data to $NAME..."
-  if [ "$NAME" = "validator-1" ]; then
-    cp /usr/share/data/validator-1.pk validator.pk
-    cp /usr/share/data/validator-1.addr validator.addr
-  elif [ "$NAME" = "validator-2" ]; then
-    cp /usr/share/data/validator-2.pk validator.pk
-    cp /usr/share/data/validator-2.addr validator.addr
-  elif [ "$NAME" = "validator-3" ]; then
-    cp /usr/share/data/validator-3.pk validator.pk
-    cp /usr/share/data/validator-3.addr validator.addr
-  elif [ "$NAME" = "validator-4" ]; then
-    cp /usr/share/data/validator-4.pk validator.pk
-    cp /usr/share/data/validator-4.addr validator.addr
-  elif [ "$NAME" = "validator-5" ]; then
-    cp /usr/share/data/validator-5.pk validator.pk
-    cp /usr/share/data/validator-5.addr validator.addr
-  fi
+if [ "$NAME" = "genesis" ]; then
+    NAME="validator"
+fi
+
+if [ ! -f "/usr/share/ton/smartcont/$NAME.pk" ]; then
+  echo "/usr/share/ton/smartcont/$NAME.pk is missing!"
+  exit 12
 else
-  echo "validator.pk already received/copied."
+  echo "/usr/share/ton/smartcont/$NAME.pk exists!"
 fi
 
 cd /var/ton-work/db
