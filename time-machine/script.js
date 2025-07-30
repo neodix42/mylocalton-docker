@@ -763,6 +763,9 @@ class BlockchainGraph {
     async restoreSnapshot() {
         if (!this.selectedNode || this.selectedNode.isRoot) return;
         
+        // Store the selected node at the start to prevent issues if selection changes during operation
+        const restoreTargetNode = this.selectedNode;
+        
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
@@ -806,10 +809,10 @@ class BlockchainGraph {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    snapshotId: this.selectedNode.id,
-                    snapshotNumber: this.selectedNode.snapshotNumber,
-                    nodeType: this.selectedNode.type || "snapshot",
-                    instanceNumber: this.selectedNode.instanceNumber
+                    snapshotId: restoreTargetNode.id,
+                    snapshotNumber: restoreTargetNode.snapshotNumber,
+                    nodeType: restoreTargetNode.type || "snapshot",
+                    instanceNumber: restoreTargetNode.instanceNumber
                 })
             });
 
@@ -824,27 +827,27 @@ class BlockchainGraph {
                     const instanceNumber = data.instanceNumber || 1;
                     
                     // Create new instance node with clean ID (no timestamp)
-                    const instanceNodeId = this.selectedNode.id + "-" + instanceNumber;
+                    const instanceNodeId = restoreTargetNode.id + "-" + instanceNumber;
                     
                     // Create new instance node
                     const instanceNode = {
                         id: instanceNodeId,
-                        snapshotNumber: this.selectedNode.snapshotNumber,
+                        snapshotNumber: restoreTargetNode.snapshotNumber,
                         instanceNumber: instanceNumber,
-                        blockSequence: this.selectedNode.blockSequence,
-                        seqno: this.selectedNode.seqno,
+                        blockSequence: restoreTargetNode.blockSequence,
+                        seqno: restoreTargetNode.seqno,
                         timestamp: new Date().toISOString(),
-                        parentId: this.selectedNode.id,
+                        parentId: restoreTargetNode.id,
                         isRoot: false,
                         type: "instance",
-                        customName: this.selectedNode.customName,
-                        activeNodes: this.selectedNode.activeNodes // Inherit active nodes count from parent
+                        customName: restoreTargetNode.customName,
+                        activeNodes: restoreTargetNode.activeNodes // Inherit active nodes count from parent
                     };
                     
                     // Add instance node and edge
                     this.nodes.push(instanceNode);
                     this.edges.push({
-                        source: this.selectedNode.id,
+                        source: restoreTargetNode.id,
                         target: instanceNodeId
                     });
                     
@@ -852,7 +855,7 @@ class BlockchainGraph {
                     this.activeNodeId = instanceNodeId;
                 } else {
                     // Restoring from instance node - reuse existing node, just update active
-                    this.activeNodeId = this.selectedNode.id;
+                    this.activeNodeId = restoreTargetNode.id;
                 }
                 
                 // Save graph and re-render
@@ -862,7 +865,7 @@ class BlockchainGraph {
                 this.updateStats();
                 
                 // Show success message briefly, then show "Starting blockchain..."
-                this.showMessage(`Snapshot restored successfully: ${this.selectedNode.id}`, 'success');
+                this.showMessage(`Snapshot restored successfully: ${restoreTargetNode.id}`, 'success');
                 
                 // After a short delay, show "Starting blockchain..." and wait for valid seqno
                 setTimeout(() => {

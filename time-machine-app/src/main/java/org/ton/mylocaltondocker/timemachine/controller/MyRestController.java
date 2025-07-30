@@ -1,7 +1,7 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
-import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.getAdnlLiteClient;
+import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.*;
@@ -72,7 +72,7 @@ public class MyRestController {
       MasterchainInfo masterChainInfo = getMasterchainInfo();
       if (masterChainInfo == null) {
         log.error("masterChainInfo is null, reinit");
-        Main.adnlLiteClient = getAdnlLiteClient();
+        reinitializeAdnlLiteClient();
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "masterChainInfo is null");
@@ -90,9 +90,9 @@ public class MyRestController {
       response.put("syncDelay", syncDelay);
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
-    } catch (Exception e) {
+    } catch (Throwable e) {
       log.error("Error getting seqno-volume, reinit");
-      Main.adnlLiteClient = getAdnlLiteClient();
+      reinitializeAdnlLiteClient();
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
       response.put("message", "Failed to get seqno-volume: " + e.getMessage());
@@ -1149,7 +1149,7 @@ public class MyRestController {
             log.warn("Failed to stop container {} ({}): {}", containerName, containerId, e.getMessage());
           }
         }))
-        .collect(Collectors.toList());
+        .toList();
     
     // Wait for all stop operations to complete
     CompletableFuture<Void> allStopFutures = CompletableFuture.allOf(
@@ -1178,7 +1178,7 @@ public class MyRestController {
             log.warn("Failed to remove container {} ({}): {}", containerName, containerId, e.getMessage());
           }
         }))
-        .collect(Collectors.toList());
+        .toList();
     
     // Wait for all remove operations to complete
     CompletableFuture<Void> allRemoveFutures = CompletableFuture.allOf(
@@ -1219,7 +1219,7 @@ public class MyRestController {
               log.warn("Failed to force remove container {}: {}", containerName, e.getMessage());
             }
           }))
-          .collect(Collectors.toList());
+          .toList();
       
       // Wait for all force remove operations to complete
       try {
@@ -1644,9 +1644,8 @@ public class MyRestController {
   }
 
   public long getSyncDelay() throws Exception {
-    AdnlLiteClient client = getAdnlLiteClient();
     MasterchainInfo masterChainInfo = getMasterchainInfo();
-    Block block = client.getBlock(masterChainInfo.getLast()).getBlock();
+    Block block = Main.adnlLiteClient.getBlock(masterChainInfo.getLast()).getBlock();
     long delta = Utils.now() - block.getBlockInfo().getGenuTime();
     log.info("getSyncDelay {}", delta);
     return delta;

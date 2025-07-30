@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import org.ton.java.adnl.AdnlLiteClient;
 import org.ton.mylocaltondocker.timemachine.Main;
 
+import static java.util.Objects.nonNull;
+
 @Component
 @Slf4j
 public class StartUpTask {
@@ -34,7 +36,10 @@ public class StartUpTask {
 
     try {
 
-      Main.adnlLiteClient = getAdnlLiteClient();
+      Main.adnlLiteClient = AdnlLiteClient.builder()
+              .configPath("/usr/share/data/global.config.json")
+              .queryTimeout(10)
+              .build();
 
       log.info(Main.adnlLiteClient.getMasterchainInfo().getLast().toString());
 
@@ -46,13 +51,13 @@ public class StartUpTask {
   }
 
   /**
-   * Thread-safe method to create a new AdnlLiteClient instance.
+   * Thread-safe method to create and assign a new AdnlLiteClient instance to Main.adnlLiteClient.
    * Uses synchronized block to ensure only one thread can create a client at a time.
+   * This ensures there's only one instance of Main.adnlLiteClient at any time.
    * 
-   * @return new AdnlLiteClient instance
    * @throws Exception if client creation fails
    */
-  public static AdnlLiteClient getAdnlLiteClient() throws Exception {
+  public static void reinitializeAdnlLiteClient() throws Exception {
     synchronized (CLIENT_CREATION_LOCK) {
       // Double-check if another thread is already creating a client
       if (isCreatingClient) {
@@ -67,19 +72,23 @@ public class StartUpTask {
           }
         }
         log.debug("Client creation by another thread completed");
+        return; // Client already created by another thread
       }
       
       try {
         isCreatingClient = true;
         log.debug("Creating new AdnlLiteClient instance");
+
+        if (nonNull(Main.adnlLiteClient)) {
+          Main.adnlLiteClient.close();
+        }
         
-        AdnlLiteClient client = AdnlLiteClient.builder()
+        Main.adnlLiteClient = AdnlLiteClient.builder()
             .configPath("/usr/share/data/global.config.json")
             .queryTimeout(10)
             .build();
             
-        log.debug("AdnlLiteClient instance created successfully");
-        return client;
+        log.debug("AdnlLiteClient instance created and assigned successfully");
         
       } finally {
         isCreatingClient = false;
