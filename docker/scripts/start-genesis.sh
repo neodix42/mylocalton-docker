@@ -170,7 +170,7 @@ else
   echo VALIDATOR_5_INITIAL_BALANCE=$VALIDATOR_5_INITIAL_BALANCE
   sed -i "s/VALIDATOR_5_INITIAL_BALANCE/$VALIDATOR_5_INITIAL_BALANCE/g" gen-zerostate.fif
 
-  VERSION_CAPABILITIES=${VERSION_CAPABILITIES:-7}
+  VERSION_CAPABILITIES=${VERSION_CAPABILITIES:-11}
   echo VERSION_CAPABILITIES=$VERSION_CAPABILITIES
   sed -i "s/VERSION_CAPABILITIES/$VERSION_CAPABILITIES/g" gen-zerostate.fif
 
@@ -373,26 +373,13 @@ fi
 cd /var/ton-work/db
 cp global.config.json /usr/share/data/
 cp localhost.global.config.json /usr/share/data/
+cp config.json /usr/share/data/
 
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$INTERNAL_IP:$DHT_PORT"&
 echo DHT server started at $INTERNAL_IP:$DHT_PORT
 echo
 echo Lite server started at $INTERNAL_IP:$LITE_PORT
 echo
-
-ENABLE_FILE_HTTP_SERVER=${ENABLE_FILE_HTTP_SERVER:-"true"}
-echo ENABLE_FILE_HTTP_SERVER=$ENABLE_FILE_HTTP_SERVER
-
-if [ "$ENABLE_FILE_HTTP_SERVER" == "true" ]; then
-  # start file http server
-  nohup python3 -m http.server&
-  echo Simple HTTP server runs on:
-  echo
-  echo http://127.0.0.1:8000/
-  echo http://$INTERNAL_IP:8000/
-  echo
-  echo wget http://$INTERNAL_IP:8000/global.config.json
-fi
 
 if [ ! "$VERBOSITY" ]; then
   VERBOSITY=1
