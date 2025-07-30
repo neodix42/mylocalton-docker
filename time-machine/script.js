@@ -1210,6 +1210,10 @@ class BlockchainGraph {
                 if (data.success) {
                     document.getElementById('current-seqno').textContent = data.seqno || 'N/A';
                     
+                    // Update sync delay - format as seconds with 's' suffix
+                    const syncDelay = data.syncDelay !== undefined ? `${data.syncDelay}s` : 'N/A';
+                    document.getElementById('current-sync').textContent = syncDelay;
+                    
                     // Update active node if it changed
                     this.updateActiveNodeFromVolume(data.volume);
                     
@@ -1237,15 +1241,18 @@ class BlockchainGraph {
                 } else {
                     document.getElementById('current-seqno').textContent = 'N/A';
                     document.getElementById('current-snapshot-name').textContent = 'N/A';
+                    document.getElementById('current-sync').textContent = 'N/A';
                 }
             } else {
                 document.getElementById('current-seqno').textContent = 'N/A';
                 document.getElementById('current-snapshot-name').textContent = 'N/A';
+                document.getElementById('current-sync').textContent = 'N/A';
             }
         } catch (error) {
             console.error('Error updating blockchain status:', error);
             document.getElementById('current-seqno').textContent = 'N/A';
             document.getElementById('current-snapshot-name').textContent = 'N/A';
+            document.getElementById('current-sync').textContent = 'N/A';
         }
     }
 

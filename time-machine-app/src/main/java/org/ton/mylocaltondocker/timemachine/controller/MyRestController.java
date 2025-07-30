@@ -81,11 +81,13 @@ public class MyRestController {
 
       String volume = getCurrentVolume(dockerClient, genesisContainerId);
       int activeNodes = getActiveNodesCount();
+      long syncDelay = getSyncDelay();
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("seqno", masterChainInfo.getLast().getSeqno());
       response.put("volume", volume);
       response.put("activeNodes", activeNodes);
+      response.put("syncDelay", syncDelay);
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Exception e) {
