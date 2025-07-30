@@ -2,7 +2,7 @@ package org.ton.mylocaltondocker.faucet;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.ton.java.tonlib.Tonlib;
+import org.ton.ton4j.tonlib.Tonlib;
 
 @SpringBootApplication
 public class Main {

@@ -121,7 +121,7 @@ services:
 #      main:
 #
 #  data:
-#    container_name: data
+#    container_name: data-generator
 #    image: data
 #    build:
 #      context: .

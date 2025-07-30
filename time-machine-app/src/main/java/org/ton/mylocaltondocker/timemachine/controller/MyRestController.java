@@ -24,9 +24,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
-import org.ton.java.tonlib.types.MasterChainInfo;
-import org.ton.java.utils.Utils;
+import org.ton.ton4j.utils.Utils;
 import org.ton.mylocaltondocker.timemachine.Main;
+import org.ton.ton4j.tl.liteserver.responses.MasterchainInfo;
 
 @RestController
 @Slf4j
@@ -66,7 +66,7 @@ public class MyRestController {
         return response;
       }
 
-      MasterChainInfo masterChainInfo = Main.tonlib.getMasterChainInfo();
+      MasterchainInfo masterChainInfo = Main.adnlLiteClient.getMasterchainInfo();
       if (masterChainInfo == null) {
         log.error("masterChainInfo is null");
         Map<String, Object> response = new HashMap<>();
@@ -85,7 +85,7 @@ public class MyRestController {
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Exception e) {
-      log.error("Error getting seqno-volume", e);
+      log.error("Error getting seqno-volume");
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
       response.put("message", "Failed to get seqno-volume: " + e.getMessage());
@@ -796,8 +796,8 @@ public class MyRestController {
     }
   }
 
-  private long getCurrentBlockSequence() {
-    MasterChainInfo masterChainInfo = Main.tonlib.getMasterChainInfo();
+  private long getCurrentBlockSequence() throws Exception {
+    MasterchainInfo masterChainInfo = Main.adnlLiteClient.getMasterchainInfo();
     return masterChainInfo.getLast().getSeqno();
   }
 
