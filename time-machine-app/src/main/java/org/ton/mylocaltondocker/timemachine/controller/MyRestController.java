@@ -69,7 +69,7 @@ public class MyRestController {
         return response;
       }
 
-      MasterchainInfo masterChainInfo = Main.adnlLiteClient.getMasterchainInfo();
+      MasterchainInfo masterChainInfo = getMasterchainInfo();
       if (masterChainInfo == null) {
         log.error("masterChainInfo is null, reinit");
         Main.adnlLiteClient = getAdnlLiteClient();
@@ -811,8 +811,11 @@ public class MyRestController {
   }
 
   private long getCurrentBlockSequence() throws Exception {
-    MasterchainInfo masterChainInfo = Main.adnlLiteClient.getMasterchainInfo();
-    return masterChainInfo.getLast().getSeqno();
+    return getMasterchainInfo().getLast().getSeqno();
+  }
+
+  public synchronized MasterchainInfo getMasterchainInfo() throws Exception {
+    return Main.adnlLiteClient.getMasterchainInfo();
   }
 
   private int getNextSnapshotNumber(DockerClient dockerClient) {
@@ -1263,7 +1266,7 @@ public class MyRestController {
       Map<String, ContainerConfig> containerConfigs,
       Map<String, HostConfig> hostConfigs,
       Map<String, String> containerIpAddresses,
-      String seqnoStr) throws Exception {
+      String seqnoStr) {
     
     log.info("Recreating {} containers in parallel with target volumes and saved configs: {}", containerTargetVolumes.size(), containerTargetVolumes);
     
@@ -1284,8 +1287,7 @@ public class MyRestController {
                   targetVolume,
                   containerConfigs.get(containerName),
                   hostConfigs.get(containerName),
-                  containerIpAddresses.get(containerName),
-                  seqnoStr
+                  containerIpAddresses.get(containerName)
               );
             } else {
               log.info("Recreating validator container {} in parallel with volume and saved config: {}", containerName, targetVolume);
@@ -1294,8 +1296,7 @@ public class MyRestController {
                   targetVolume,
                   containerConfigs.get(containerName),
                   hostConfigs.get(containerName),
-                  containerIpAddresses.get(containerName),
-                  seqnoStr
+                  containerIpAddresses.get(containerName)
               );
             }
             createdContainers.add(containerName);
@@ -1459,8 +1460,7 @@ public class MyRestController {
       String targetVolume, 
       ContainerConfig config, 
       HostConfig hostConfig, 
-      String ipAddress,
-      String seqnoStr) throws Exception {
+      String ipAddress) throws Exception {
     
     log.info("Recreating genesis container with volume and saved config: {}", targetVolume);
     
@@ -1521,8 +1521,7 @@ public class MyRestController {
       String targetVolume, 
       ContainerConfig config, 
       HostConfig hostConfig, 
-      String ipAddress,
-      String seqnoStr) throws Exception {
+      String ipAddress) throws Exception {
     
     log.info("Recreating validator container {} with volume and saved config: {}", containerName, targetVolume);
     
@@ -1642,9 +1641,9 @@ public class MyRestController {
     log.warn("Seqno-volume endpoint did not become healthy after {} attempts (max {} minutes), but continuing anyway", maxRetries, maxRetries * 5 / 60);
   }
 
-  public static long getSyncDelay() throws Exception {
+  public long getSyncDelay() throws Exception {
     AdnlLiteClient client = getAdnlLiteClient();
-    MasterchainInfo masterChainInfo = client.getMasterchainInfo();
+    MasterchainInfo masterChainInfo = getMasterchainInfo();
     Block block = client.getBlock(masterChainInfo.getLast()).getBlock();
     long delta = Utils.now() - block.getBlockInfo().getGenuTime();
     log.info("getSyncDelay {}", delta);

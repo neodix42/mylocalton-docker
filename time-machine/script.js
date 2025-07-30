@@ -699,6 +699,7 @@ class BlockchainGraph {
                     id: `snapshot-${nextSnapshotNumber}`,
                     snapshotNumber: nextSnapshotNumber,
                     blockSequence: data.blockSequence,
+                    seqno: data.blockSequence, // Set seqno to the same value as blockSequence
                     timestamp: new Date().toISOString(),
                     parentId: snapshotParentNode.id,
                     isRoot: false,

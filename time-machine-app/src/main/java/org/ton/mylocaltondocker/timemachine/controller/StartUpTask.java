@@ -14,6 +14,12 @@ import org.ton.mylocaltondocker.timemachine.Main;
 @Slf4j
 public class StartUpTask {
 
+  // Thread-safe synchronization object for getAdnlLiteClient method
+  private static final Object CLIENT_CREATION_LOCK = new Object();
+  
+  // Volatile flag to track if client creation is in progress
+  private static volatile boolean isCreatingClient = false;
+
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() throws InterruptedException {
 
@@ -39,10 +45,46 @@ public class StartUpTask {
     log.info("time-machine-app ready");
   }
 
+  /**
+   * Thread-safe method to create a new AdnlLiteClient instance.
+   * Uses synchronized block to ensure only one thread can create a client at a time.
+   * 
+   * @return new AdnlLiteClient instance
+   * @throws Exception if client creation fails
+   */
   public static AdnlLiteClient getAdnlLiteClient() throws Exception {
-    return AdnlLiteClient.builder()
-        .configPath("/usr/share/data/global.config.json")
-        .queryTimeout(10)
-        .build();
+    synchronized (CLIENT_CREATION_LOCK) {
+      // Double-check if another thread is already creating a client
+      if (isCreatingClient) {
+        log.debug("Another thread is already creating AdnlLiteClient, waiting...");
+        // Wait for the other thread to complete
+        while (isCreatingClient) {
+          try {
+            CLIENT_CREATION_LOCK.wait(1000); // Wait with timeout to avoid infinite wait
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Exception("Thread interrupted while waiting for client creation", e);
+          }
+        }
+        log.debug("Client creation by another thread completed");
+      }
+      
+      try {
+        isCreatingClient = true;
+        log.debug("Creating new AdnlLiteClient instance");
+        
+        AdnlLiteClient client = AdnlLiteClient.builder()
+            .configPath("/usr/share/data/global.config.json")
+            .queryTimeout(10)
+            .build();
+            
+        log.debug("AdnlLiteClient instance created successfully");
+        return client;
+        
+      } finally {
+        isCreatingClient = false;
+        CLIENT_CREATION_LOCK.notifyAll(); // Notify waiting threads
+      }
+    }
   }
 }
