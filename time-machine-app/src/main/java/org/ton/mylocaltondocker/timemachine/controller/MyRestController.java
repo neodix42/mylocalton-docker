@@ -1,6 +1,7 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
+import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.getAdnlLiteClient;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.*;
@@ -54,7 +55,7 @@ public class MyRestController {
   DockerClient dockerClient = createDockerClient();
 
   @GetMapping("/seqno-volume")
-  public Map<String, Object> getSeqno() {
+  public Map<String, Object> getSeqno() throws Exception {
     try {
 //      log.info("Getting seqno-volume");
 
@@ -70,7 +71,8 @@ public class MyRestController {
 
       MasterchainInfo masterChainInfo = Main.adnlLiteClient.getMasterchainInfo();
       if (masterChainInfo == null) {
-        log.error("masterChainInfo is null");
+        log.error("masterChainInfo is null, reinit");
+        Main.adnlLiteClient = getAdnlLiteClient();
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "masterChainInfo is null");
@@ -87,7 +89,8 @@ public class MyRestController {
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Exception e) {
-      log.error("Error getting seqno-volume");
+      log.error("Error getting seqno-volume, reinit");
+      Main.adnlLiteClient = getAdnlLiteClient();
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
       response.put("message", "Failed to get seqno-volume: " + e.getMessage());
@@ -289,6 +292,15 @@ public class MyRestController {
       Map<String, HostConfig> hostConfigs = new HashMap<>();
       Map<String, String> containerIpAddresses = new HashMap<>();
       Map<String, String> containerVolumes = new HashMap<>();
+
+      /// --------------------------------------------------------------------------------
+      // Get current block sequence BEFORE shutting down blockchain
+      long lastSeqno = 0;
+      try {
+        lastSeqno = getCurrentBlockSequence();
+      } catch (Exception e) {
+        log.warn("Could not get current block sequence, using 0: {}", e.getMessage());
+      }
       
       if (shouldShutdownBlockchain) {
         currentSnapshotStatus = "Stopping blockchain...";
@@ -346,13 +358,7 @@ public class MyRestController {
         return response;
       }
 
-      // Get current block sequence BEFORE shutting down blockchain
-      long lastSeqno = 0;
-      try {
-        lastSeqno = getCurrentBlockSequence();
-      } catch (Exception e) {
-        log.warn("Could not get current block sequence, using 0: {}", e.getMessage());
-      }
+
       
       // Create snapshots for all containers in parallel
       currentSnapshotStatus = "Taking snapshots...";
@@ -1637,7 +1643,7 @@ public class MyRestController {
   }
 
   public static long getSyncDelay() throws Exception {
-    AdnlLiteClient client = Main.getAdnlLiteClient();
+    AdnlLiteClient client = getAdnlLiteClient();
     MasterchainInfo masterChainInfo = client.getMasterchainInfo();
     Block block = client.getBlock(masterChainInfo.getLast()).getBlock();
     long delta = Utils.now() - block.getBlockInfo().getGenuTime();

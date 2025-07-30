@@ -28,11 +28,7 @@ public class StartUpTask {
 
     try {
 
-      Main.adnlLiteClient =
-          AdnlLiteClient.builder()
-                  .configPath("/usr/share/data/global.config.json")
-                  .queryTimeout(10)
-                  .build();
+      Main.adnlLiteClient = getAdnlLiteClient();
 
       log.info(Main.adnlLiteClient.getMasterchainInfo().getLast().toString());
 
@@ -41,5 +37,12 @@ public class StartUpTask {
     }
 
     log.info("time-machine-app ready");
+  }
+
+  public static AdnlLiteClient getAdnlLiteClient() throws Exception {
+    return AdnlLiteClient.builder()
+        .configPath("/usr/share/data/global.config.json")
+        .queryTimeout(10)
+        .build();
   }
 }
