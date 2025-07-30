@@ -615,48 +615,6 @@ class BlockchainGraph {
             const existingSnapshots = this.nodes.filter(n => !n.isRoot);
             const nextSnapshotNumber = existingSnapshots.length + 1;
             
-            // Determine seqno for the new snapshot
-            let snapshotSeqno = 1; // Default to 1 instead of 0 since seqno is always increasing
-            
-            if (snapshotParentNode.id === this.activeNodeId) {
-                // Taking snapshot from active (running) node - get current seqno
-                try {
-                    const seqnoResponse = await fetch('/seqno-volume', {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        }
-                    });
-                    
-                    if (seqnoResponse.ok) {
-                        const seqnoData = await seqnoResponse.json();
-                        if (seqnoData.success && seqnoData.seqno && seqnoData.seqno > 0) {
-                            snapshotSeqno = seqnoData.seqno;
-                        } else {
-                            console.warn('Invalid seqno received from backend:', seqnoData.seqno);
-                            // Keep default value of 1
-                        }
-                    }
-                } catch (seqnoError) {
-                    console.error('Error fetching current seqno:', seqnoError);
-                    // Keep default value of 1 instead of 0
-                }
-            } else {
-                // Taking snapshot from non-active node - inherit seqno from parent
-                const parentSeqno = snapshotParentNode.seqno;
-                if (parentSeqno && parentSeqno > 0) {
-                    snapshotSeqno = parentSeqno;
-                } else {
-                    console.warn('Invalid parent seqno:', parentSeqno, 'using default value 1');
-                    // Keep default value of 1
-                }
-            }
-            
-            // Final validation - ensure seqno is never 0
-            if (snapshotSeqno <= 0) {
-                console.warn('Seqno is 0 or negative, setting to 1:', snapshotSeqno);
-                snapshotSeqno = 1;
-            }
             
             // Start polling for status updates
             const statusPolling = this.startSnapshotStatusPolling();
@@ -736,12 +694,11 @@ class BlockchainGraph {
                     }
                 }
                 
-                // Create new node with sequential numbering and seqno
+                // Create new node with sequential numbering
                 const newNode = {
                     id: `snapshot-${nextSnapshotNumber}`,
                     snapshotNumber: nextSnapshotNumber,
                     blockSequence: data.blockSequence,
-                    seqno: snapshotSeqno,
                     timestamp: new Date().toISOString(),
                     parentId: snapshotParentNode.id,
                     isRoot: false,
@@ -763,7 +720,7 @@ class BlockchainGraph {
                 this.updateStats();
                 
                 // Show appropriate success message based on whether blockchain was shutdown
-                let successMessage = `Snapshot ${nextSnapshotNumber} created successfully (seqno: ${snapshotSeqno})`;
+                let successMessage = `Snapshot ${nextSnapshotNumber} created successfully`;
                 if (data.blockchainShutdown) {
                     successMessage += ' - Blockchain was shutdown and restarted for consistent snapshot';
                 }
@@ -848,8 +805,7 @@ class BlockchainGraph {
                     snapshotId: this.selectedNode.id,
                     snapshotNumber: this.selectedNode.snapshotNumber,
                     nodeType: this.selectedNode.type || "snapshot",
-                    instanceNumber: this.selectedNode.instanceNumber,
-                    seqno: this.selectedNode.seqno
+                    instanceNumber: this.selectedNode.instanceNumber
                 })
             });
             
