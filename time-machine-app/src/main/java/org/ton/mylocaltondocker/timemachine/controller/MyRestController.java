@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.ton.java.adnl.AdnlLiteClient;
+import org.ton.ton4j.tlb.Block;
 import org.ton.ton4j.utils.Utils;
 import org.ton.mylocaltondocker.timemachine.Main;
 import org.ton.ton4j.tl.liteserver.responses.MasterchainInfo;
@@ -443,15 +445,11 @@ public class MyRestController {
       }
       
       isSnapshotInProgress = false;
-      // Reset status to Ready after a delay to let user see the final message
-      new Thread(() -> {
-        try {
-          Thread.sleep(3000);
-          currentSnapshotStatus = "Ready";
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }).start();
+
+      // Wait for lite-server to be ready before setting status to Ready
+      currentSnapshotStatus = "Waiting for lite-server to be ready";
+      waitForSeqnoVolumeHealthy();
+      currentSnapshotStatus = "Ready";
       
       return response;
 
@@ -654,6 +652,8 @@ public class MyRestController {
       String instanceNumberStr = request.get("instanceNumber");
       String seqnoStr = request.get("seqno"); // seqno from frontend
 
+      currentSnapshotStatus = "Saving current blockchain...";
+
       log.info("Restoring snapshot for all containers: {} (type: {}, seqno: {})", snapshotId, nodeType, seqnoStr);
 
       // Determine target volume names for ALL containers using the same logic
@@ -770,12 +770,20 @@ public class MyRestController {
       }
 
       // Stop and remove ALL running containers
+      currentSnapshotStatus = "Stopping current blockchain...";
+
       stopAndRemoveAllContainers();
 
       // Recreate and start containers with target volumes using saved configurations
+      currentSnapshotStatus = "Starting blockchain from the snapshot...";
       recreateAllContainersWithConfigs(containerTargetVolumes, containerConfigs, hostConfigs, containerIpAddresses, seqnoStr);
 
       log.info("Snapshots restored for all containers using instance number: {}", instanceNumber);
+
+      // Wait for lite-server to be ready before setting status to Ready
+      currentSnapshotStatus = "Waiting for lite-server to be ready";
+      waitForSeqnoVolumeHealthy();
+      currentSnapshotStatus = "Ready";
 
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
@@ -1588,5 +1596,52 @@ public class MyRestController {
             .build();
 
     return DockerClientBuilder.getInstance(defaultConfig).withDockerHttpClient(httpClient).build();
+  }
+
+
+  private void waitForSeqnoVolumeHealthy() {
+    int maxRetries = 60; // Wait up to 5 minutes (60 * 5 seconds)
+    int retryCount = 0;
+
+    log.info("Waiting for seqno-volume endpoint to be healthy...");
+
+    while (retryCount < maxRetries) {
+      try {
+        // Try to call the seqno-volume endpoint
+        long delta = getSyncDelay();
+        log.info("Sync delay: {} seconds (attempt {})", delta, retryCount + 1);
+
+        if (delta < 10) {
+          log.info("Seqno-volume endpoint is healthy after {} attempts (sync delay: {} seconds)", retryCount + 1, delta);
+          return; // Success, exit the method
+        }
+
+      } catch (Exception e) {
+        log.warn("Seqno-volume endpoint error (attempt {}): {}", retryCount + 1, e.getMessage());
+        // Don't return on error, continue trying
+      }
+
+      retryCount++;
+
+      // Wait 5 seconds before next attempt
+      try {
+        Thread.sleep(5000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn("Health check interrupted");
+        return;
+      }
+    }
+
+    log.warn("Seqno-volume endpoint did not become healthy after {} attempts (max {} minutes), but continuing anyway", maxRetries, maxRetries * 5 / 60);
+  }
+
+  public static long getSyncDelay() throws Exception {
+    AdnlLiteClient client = Main.getAdnlLiteClient();
+    MasterchainInfo masterChainInfo = client.getMasterchainInfo();
+    Block block = client.getBlock(masterChainInfo.getLast()).getBlock();
+    long delta = Utils.now() - block.getBlockInfo().getGenuTime();
+    log.info("getSyncDelay {}", delta);
+    return delta;
   }
 }

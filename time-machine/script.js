@@ -795,6 +795,9 @@ class BlockchainGraph {
                     previousActiveNode.seqno = currentSeqno;
                 }
             }
+
+            // Start polling for status updates
+            const statusPolling = this.startSnapshotStatusPolling();
             
             const response = await fetch('/restore-snapshot', {
                 method: 'POST',
@@ -808,6 +811,9 @@ class BlockchainGraph {
                     instanceNumber: this.selectedNode.instanceNumber
                 })
             });
+
+            // Stop status polling
+            clearInterval(statusPolling);
             
             const data = await response.json();
             
