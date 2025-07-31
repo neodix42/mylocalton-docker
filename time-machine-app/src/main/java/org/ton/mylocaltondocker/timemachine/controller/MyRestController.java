@@ -506,8 +506,12 @@ public class MyRestController {
 
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
-      waitForSeqnoVolumeHealthy();
-      currentSnapshotStatus = "Ready";
+      if (waitForSeqnoVolumeHealthy()) {
+        currentSnapshotStatus = "Ready";
+      }
+      else {
+        currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
+      }
 
       return response;
 
@@ -891,7 +895,12 @@ public class MyRestController {
 
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
-      waitForSeqnoVolumeHealthy();
+      if (waitForSeqnoVolumeHealthy()) {
+        currentSnapshotStatus = "Ready";
+      }
+      else {
+        currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
+      }
 
       // Restart ton-http-api-v2 container after snapshot restoration
       restartExtraServiceContainer("ton-http-api-v2");
@@ -1679,8 +1688,8 @@ public class MyRestController {
   }
 
 
-  private void waitForSeqnoVolumeHealthy() {
-    int maxRetries = 60; // Wait up to 5 minutes (60 * 5 seconds)
+  private boolean waitForSeqnoVolumeHealthy() {
+    int maxRetries = 30; // Wait up to 5 minutes (60 * 5 seconds)
     int retryCount = 0;
 
     log.info("waitForSeqnoVolumeHealthy...");
@@ -1693,7 +1702,7 @@ public class MyRestController {
 
         if (delta < 10) {
           log.info("waitForSeqnoVolumeHealthy is healthy after {} attempts (sync delay: {} seconds)", retryCount + 1, delta);
-          return; // Success, exit the method
+          return true; // Success, exit the method
         }
 
       } catch (Exception e) {
@@ -1709,11 +1718,12 @@ public class MyRestController {
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         log.warn("Health check interrupted");
-        return;
+        return false;
       }
     }
 
-    log.warn("Seqno-volume endpoint did not become healthy after {} attempts (max {} minutes), but continuing anyway", maxRetries, maxRetries * 5 / 60);
+    log.warn("Seqno-volume endpoint did not become healthy after {} attempts (max {} minutes), but continuing anyway", maxRetries, maxRetries * 5 / maxRetries);
+    return false;
   }
 
   public long getSyncDelay() throws Exception {
