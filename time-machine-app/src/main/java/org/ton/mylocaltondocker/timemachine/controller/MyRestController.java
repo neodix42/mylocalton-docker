@@ -791,6 +791,10 @@ public class MyRestController {
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
       waitForSeqnoVolumeHealthy();
+      
+      // Restart ton-http-api-v2 container after snapshot restoration
+      restartTonHttpApiV2Container();
+      
       currentSnapshotStatus = "Ready";
 
       Map<String, Object> response = new HashMap<>();
@@ -1681,5 +1685,136 @@ public class MyRestController {
     long delta = Utils.now() - block.getBlockInfo().getGenuTime();
     log.info("getSyncDelay {}", delta);
     return delta;
+  }
+
+  /**
+   * Restarts the ton-http-api-v2 container if it is running.
+   * Saves the container configuration before stopping, then recreates it with the same configuration.
+   */
+  private void restartTonHttpApiV2Container() {
+    final String containerName = "ton-http-api-v2";
+    
+    try {
+      log.info("Checking if {} container is running", containerName);
+      
+      // Check if the container exists and is running
+      String containerId = getContainerIdByName(containerName);
+      if (StringUtils.isEmpty(containerId)) {
+        log.info("Container {} is not running, skipping restart", containerName);
+        return;
+      }
+      currentSnapshotStatus = "Restarting ton-http-api-v2 container";
+
+      log.info("Found running container {}, proceeding with restart", containerName);
+      
+      // Get container configuration before stopping
+      InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
+      ContainerConfig config = inspectResponse.getConfig();
+      HostConfig hostConfig = inspectResponse.getHostConfig();
+      
+      // Extract configuration details
+      String[] envs = config.getEnv();
+      ExposedPort[] exposedPorts = config.getExposedPorts();
+      HealthCheck healthCheck = config.getHealthcheck();
+      String networkMode = hostConfig.getNetworkMode();
+      String imageName = config.getImage();
+      
+      // Get port bindings
+      Ports portBindings = new Ports();
+      if (exposedPorts != null) {
+        for (ExposedPort exposedPort : exposedPorts) {
+          portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
+        }
+      }
+      
+      // Get IP address if available
+      String ipAddress = null;
+      try {
+        if (inspectResponse.getNetworkSettings() != null && 
+            inspectResponse.getNetworkSettings().getNetworks() != null && 
+            !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
+          ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
+        }
+      } catch (Exception e) {
+        log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
+      }
+      
+      // Get volume mounts
+      List<Mount> mounts = new ArrayList<>();
+      if (inspectResponse.getMounts() != null) {
+        for (var mount : inspectResponse.getMounts()) {
+          if (mount.getName() != null) {
+            // This is a named volume mount
+            mounts.add(new Mount()
+                .withType(MountType.VOLUME)
+                .withSource(mount.getName())
+                .withTarget(mount.getDestination().getPath()));
+          } else if (mount.getSource() != null) {
+            // This is a bind mount
+            mounts.add(new Mount()
+                .withType(MountType.BIND)
+                .withSource(mount.getSource())
+                .withTarget(mount.getDestination().getPath()));
+          }
+        }
+      }
+      
+      // Get volumes for backward compatibility
+      List<Volume> volumes = new ArrayList<>();
+      if (config.getVolumes() != null) {
+        for (var volumeEntry : config.getVolumes().entrySet()) {
+          volumes.add(new Volume(volumeEntry.getKey()));
+        }
+      }
+      
+      log.info("Stopping container {}", containerName);
+      dockerClient.stopContainerCmd(containerId).exec();
+      
+      log.info("Removing container {}", containerName);
+      dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+      
+      log.info("Recreating container {} with saved configuration", containerName);
+      
+      // Create new container with the same configuration
+      CreateContainerCmd createCmd = dockerClient
+          .createContainerCmd(imageName)
+          .withName(containerName)
+          .withEnv(envs)
+          .withHealthcheck(healthCheck)
+          .withHostConfig(
+              newHostConfig()
+                  .withNetworkMode(networkMode)
+                  .withPortBindings(portBindings)
+                  .withMounts(mounts)
+          );
+      
+      // Add exposed ports if they exist
+      if (exposedPorts != null) {
+        createCmd.withExposedPorts(exposedPorts);
+      }
+      
+      // Add volumes if they exist
+      if (!volumes.isEmpty()) {
+        createCmd.withVolumes(volumes.toArray(new Volume[0]));
+      }
+      
+      // Add IP address if available
+      if (ipAddress != null) {
+        createCmd.withIpv4Address(ipAddress);
+      }
+      
+      CreateContainerResponse newContainer = createCmd.exec();
+      
+      log.info("Starting recreated container {}", containerName);
+      dockerClient.startContainerCmd(newContainer.getId()).exec();
+      
+      log.info("Successfully restarted container {}", containerName);
+      
+    } catch (NotFoundException e) {
+      log.info("Container {} not found, skipping restart", containerName);
+    } catch (Exception e) {
+      log.error("Failed to restart container {}: {}", containerName, e.getMessage(), e);
+      // Don't throw exception to avoid breaking the snapshot restoration process
+    }
   }
 }
