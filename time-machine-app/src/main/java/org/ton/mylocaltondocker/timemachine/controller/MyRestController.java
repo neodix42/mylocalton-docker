@@ -510,6 +510,8 @@ public class MyRestController {
         currentSnapshotStatus = "Ready";
       }
       else {
+        response.put("success", false);
+        response.put("message","Blockchain cannot be started, see docker logs.");
         currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
       }
 
@@ -897,32 +899,33 @@ public class MyRestController {
       currentSnapshotStatus = "Waiting for lite-server to be ready";
       if (waitForSeqnoVolumeHealthy()) {
         currentSnapshotStatus = "Ready";
+        // Restart ton-http-api-v2 container after snapshot restoration
+        restartExtraServiceContainer("ton-http-api-v2");
+
+        // Restart faucet container after snapshot restoration
+        restartExtraServiceContainer("faucet");
+
+        // Restart data-generator container after snapshot restoration
+        restartExtraServiceContainer("data-generator");
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Snapshots restored successfully for all containers");
+        response.put("volumeName", containerTargetVolumes.get(CONTAINER_GENESIS)); // Keep for compatibility
+        response.put("originalVolumeName", "ton-db-snapshot-" + snapshotNumber);
+        response.put("instanceNumber", instanceNumber);
+        response.put("isNewInstance", isNewInstance);
+        response.put("restoredContainers", containerTargetVolumes.keySet());
+        response.put("lastKnownSeqno", lastKnownSeqno); // Include the captured seqno for frontend
+        return response;
       }
       else {
         currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Blockchain cannot be started, see docker logs.");
+        return response;
       }
-
-      // Restart ton-http-api-v2 container after snapshot restoration
-      restartExtraServiceContainer("ton-http-api-v2");
-
-      // Restart faucet container after snapshot restoration
-      restartExtraServiceContainer("faucet");
-
-      // Restart data-generator container after snapshot restoration
-      restartExtraServiceContainer("data-generator");
-
-      currentSnapshotStatus = "Ready";
-
-      Map<String, Object> response = new HashMap<>();
-      response.put("success", true);
-      response.put("message", "Snapshots restored successfully for all containers");
-      response.put("volumeName", containerTargetVolumes.get(CONTAINER_GENESIS)); // Keep for compatibility
-      response.put("originalVolumeName", "ton-db-snapshot-" + snapshotNumber);
-      response.put("instanceNumber", instanceNumber);
-      response.put("isNewInstance", isNewInstance);
-      response.put("restoredContainers", containerTargetVolumes.keySet());
-      response.put("lastKnownSeqno", lastKnownSeqno); // Include the captured seqno for frontend
-      return response;
 
     } catch (Exception e) {
       log.error("Error restoring snapshots", e);
@@ -1689,7 +1692,7 @@ public class MyRestController {
 
 
   private boolean waitForSeqnoVolumeHealthy() {
-    int maxRetries = 30; // Wait up to 5 minutes (60 * 5 seconds)
+    int maxRetries = 30;
     int retryCount = 0;
 
     log.info("waitForSeqnoVolumeHealthy...");
