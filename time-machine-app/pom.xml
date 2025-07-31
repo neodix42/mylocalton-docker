@@ -37,10 +37,6 @@
             <artifactId>adnl</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.github.neodix42</groupId>
-            <artifactId>adnl</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.eclipse.persistence</groupId>
             <artifactId>javax.persistence</artifactId>
         </dependency>
@@ -116,7 +112,7 @@
     <build>
         <resources>
             <resource>
-                <directory>time-machine-app/src/main/resources</directory>
+                <directory>src/main/resources</directory>
             </resource>
         </resources>
         <plugins>
