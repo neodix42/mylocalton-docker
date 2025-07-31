@@ -40,6 +40,9 @@ public class MyRestController {
   public static final String[] VALIDATOR_CONTAINERS = {
       "validator-1", "validator-2", "validator-3", "validator-4", "validator-5"
   };
+  public static final String[] ALL_CONTAINERS = {
+      CONTAINER_GENESIS, "validator-1", "validator-2", "validator-3", "validator-4", "validator-5"
+  };
   public static final Map<String, String> CONTAINER_VOLUME_MAP = Map.of(
       "genesis", "ton-db",
       "validator-1", "ton-db-val1", 
@@ -1251,20 +1254,104 @@ public class MyRestController {
     log.info("All containers stopped and removed successfully");
   }
 
-  private void recreateAllContainers(Map<String, String> containerTargetVolumes) throws Exception {
-    log.info("Recreating containers with target volumes: {}", containerTargetVolumes);
+//  private void recreateAllContainers(Map<String, String> containerTargetVolumes) throws Exception {
+//    log.info("Recreating containers with target volumes: {}", containerTargetVolumes);
+//
+//    // Recreate all containers using the unified method
+//    for (Map.Entry<String, String> entry : containerTargetVolumes.entrySet()) {
+//      String containerName = entry.getKey();
+//      String targetVolume = entry.getValue();
+//      recreateContainer(containerName, targetVolume);
+//    }
+//  }
+
+  /**
+   * Unified method to recreate any container (genesis or validator) with a new volume.
+   * Combines the logic from recreateGenesisContainer() and recreateValidatorContainer().
+   */
+  private void recreateContainer(String containerName, String targetVolume) throws Exception {
+    log.info("Recreating container {} with volume: {}", containerName, targetVolume);
     
-    // Start with genesis container
-    if (containerTargetVolumes.containsKey(CONTAINER_GENESIS)) {
-      recreateGenesisContainer(containerTargetVolumes.get(CONTAINER_GENESIS));
+    // First, get the existing container configuration before stopping it
+    String containerId = CONTAINER_GENESIS.equals(containerName) ? 
+        getGenesisContainerId() : getContainerIdByName(containerName);
+    
+    if (StringUtils.isEmpty(containerId)) {
+      throw new RuntimeException("Container " + containerName + " not found for configuration retrieval");
     }
-    
-    // Then recreate validator containers
-    for (String validatorContainer : VALIDATOR_CONTAINERS) {
-      if (containerTargetVolumes.containsKey(validatorContainer)) {
-        recreateValidatorContainer(validatorContainer, containerTargetVolumes.get(validatorContainer));
+
+    // Get container configuration
+    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerId).exec();
+    ContainerConfig oldConfig = inspectX.getConfig();
+    HostConfig oldHostConfig = inspectX.getHostConfig();
+
+    String[] envs = oldConfig.getEnv();
+    ExposedPort[] exposedPorts = oldConfig.getExposedPorts();
+    HealthCheck healthCheck = oldConfig.getHealthcheck();
+    String networkMode = oldHostConfig.getNetworkMode();
+
+    Ports portBindings = new Ports();
+    if (exposedPorts != null) {
+      for (ExposedPort exposedPort : exposedPorts) {
+        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
       }
     }
+
+    // Get IP address if available
+    String ipAddress = null;
+    try {
+      if (inspectX.getNetworkSettings() != null && 
+          inspectX.getNetworkSettings().getNetworks() != null && 
+          !inspectX.getNetworkSettings().getNetworks().isEmpty()) {
+        ipAddress = inspectX.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
+      }
+    } catch (Exception e) {
+      log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
+    }
+
+    // Stop and remove the existing container
+    dockerClient.stopContainerCmd(containerId).exec();
+    dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+
+    // Create volume mounts for named Docker volumes
+    List<Mount> mounts = new ArrayList<>();
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource(targetVolume)
+        .withTarget(CONTAINER_DB_PATH));
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource("mylocalton-docker_shared-data")
+        .withTarget("/usr/share/data"));
+
+    // Create new container with the same configuration but new volume
+    CreateContainerCmd createCmd = dockerClient
+        .createContainerCmd(GENESIS_IMAGE_NAME)
+        .withName(containerName)
+        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
+        .withEnv(envs)
+        .withHealthcheck(healthCheck)
+        .withHostConfig(
+            newHostConfig()
+                .withNetworkMode(networkMode)
+                .withPortBindings(portBindings)
+                .withMounts(mounts)
+        );
+
+    // Add exposed ports if they exist
+    if (exposedPorts != null) {
+      createCmd.withExposedPorts(exposedPorts);
+    }
+
+    // Add IP address if available
+    if (ipAddress != null) {
+      createCmd.withIpv4Address(ipAddress);
+    }
+
+    CreateContainerResponse newContainer = createCmd.exec();
+
+    dockerClient.startContainerCmd(newContainer.getId()).exec();
+    log.info("Container {} recreated and started", containerName);
   }
 
   private void recreateAllContainersWithConfigs(
@@ -1287,24 +1374,14 @@ public class MyRestController {
           String targetVolume = entry.getValue();
           
           try {
-            if (CONTAINER_GENESIS.equals(containerName)) {
-              log.info("Recreating genesis container in parallel with volume and saved config: {}", targetVolume);
-              recreateGenesisContainerWithConfig(
-                  targetVolume,
-                  containerConfigs.get(containerName),
-                  hostConfigs.get(containerName),
-                  containerIpAddresses.get(containerName)
-              );
-            } else {
-              log.info("Recreating validator container {} in parallel with volume and saved config: {}", containerName, targetVolume);
-              recreateValidatorContainerWithConfig(
-                  containerName,
-                  targetVolume,
-                  containerConfigs.get(containerName),
-                  hostConfigs.get(containerName),
-                  containerIpAddresses.get(containerName)
-              );
-            }
+            log.info("Recreating container {} in parallel with volume and saved config: {}", containerName, targetVolume);
+            recreateContainerWithConfig(
+                containerName,
+                targetVolume,
+                containerConfigs.get(containerName),
+                hostConfigs.get(containerName),
+                containerIpAddresses.get(containerName)
+            );
             createdContainers.add(containerName);
             log.info("Successfully recreated container: {}", containerName);
           } catch (Exception e) {
@@ -1333,238 +1410,26 @@ public class MyRestController {
     }
   }
 
-  private void recreateGenesisContainer(String targetVolume) throws Exception {
-    log.info("Recreating genesis container with volume: {}", targetVolume);
-    
-    // First, get the existing container configuration before stopping it
-    String genesisContainerId = getGenesisContainerId();
-    if (StringUtils.isEmpty(genesisContainerId)) {
-      throw new RuntimeException("Genesis container not found for configuration retrieval");
-    }
-
-    // Get container configuration
-    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(genesisContainerId).exec();
-    ContainerConfig oldConfig = inspectX.getConfig();
-    HostConfig oldHostConfig = inspectX.getHostConfig();
-
-    String[] envs = oldConfig.getEnv();
-    ExposedPort[] exposedPorts = oldConfig.getExposedPorts();
-    HealthCheck healthCheck = oldConfig.getHealthcheck();
-    String networkMode = oldHostConfig.getNetworkMode();
-
-    Ports portBindings = new Ports();
-    if (exposedPorts != null) {
-      for (ExposedPort exposedPort : exposedPorts) {
-        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
-      }
-    }
-
-    // Stop and remove the existing container
-    dockerClient.stopContainerCmd(genesisContainerId).exec();
-    dockerClient.removeContainerCmd(genesisContainerId).withForce(true).exec();
-
-    // Create volume mounts for named Docker volumes
-    List<Mount> mounts = new ArrayList<>();
-    mounts.add(new Mount()
-        .withType(MountType.VOLUME)
-        .withSource(targetVolume)
-        .withTarget(CONTAINER_DB_PATH));
-    mounts.add(new Mount()
-        .withType(MountType.VOLUME)
-        .withSource("mylocalton-docker_shared-data")
-        .withTarget("/usr/share/data"));
-
-    // Create new container with the same configuration but new volume
-    CreateContainerResponse newContainer = dockerClient
-        .createContainerCmd(GENESIS_IMAGE_NAME)
-        .withName(CONTAINER_GENESIS)
-        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
-        .withEnv(envs)
-        .withExposedPorts(exposedPorts)
-        .withIpv4Address(inspectX.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress())
-        .withHealthcheck(healthCheck)
-        .withHostConfig(
-            newHostConfig()
-                .withNetworkMode(networkMode)
-                .withPortBindings(portBindings)
-                .withMounts(mounts)
-        )
-        .exec();
-
-    dockerClient.startContainerCmd(newContainer.getId()).exec();
-    log.info("Genesis container recreated and started");
-  }
-
-  private void recreateValidatorContainer(String containerName, String targetVolume) throws Exception {
-    log.info("Recreating validator container {} with volume: {}", containerName, targetVolume);
-    
-    // First, get the existing container configuration before stopping it
-    String validatorContainerId = getContainerIdByName(containerName);
-    if (StringUtils.isEmpty(validatorContainerId)) {
-      throw new RuntimeException("Validator container " + containerName + " not found for configuration retrieval");
-    }
-
-    // Get container configuration
-    InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(validatorContainerId).exec();
-    ContainerConfig oldConfig = inspectX.getConfig();
-    HostConfig oldHostConfig = inspectX.getHostConfig();
-
-    String[] envs = oldConfig.getEnv();
-    ExposedPort[] exposedPorts = oldConfig.getExposedPorts();
-    HealthCheck healthCheck = oldConfig.getHealthcheck();
-    String networkMode = oldHostConfig.getNetworkMode();
-
-    Ports portBindings = new Ports();
-    if (exposedPorts != null) {
-      for (ExposedPort exposedPort : exposedPorts) {
-        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
-      }
-    }
-
-    // Get IP address if available
-    String ipAddress = null;
-    try {
-      if (inspectX.getNetworkSettings() != null && 
-          inspectX.getNetworkSettings().getNetworks() != null && 
-          !inspectX.getNetworkSettings().getNetworks().isEmpty()) {
-        ipAddress = inspectX.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
-      }
-    } catch (Exception e) {
-      log.warn("Could not retrieve IP address for validator container {}: {}", containerName, e.getMessage());
-    }
-
-    // Stop and remove the existing container
-    dockerClient.stopContainerCmd(validatorContainerId).exec();
-    dockerClient.removeContainerCmd(validatorContainerId).withForce(true).exec();
-
-    // Create volume mounts for named Docker volumes
-    List<Mount> mounts = new ArrayList<>();
-    mounts.add(new Mount()
-        .withType(MountType.VOLUME)
-        .withSource(targetVolume)
-        .withTarget(CONTAINER_DB_PATH));
-    mounts.add(new Mount()
-        .withType(MountType.VOLUME)
-        .withSource("mylocalton-docker_shared-data")
-        .withTarget("/usr/share/data"));
-
-    // Create new container with the same configuration but new volume
-    CreateContainerCmd createCmd = dockerClient
-        .createContainerCmd(GENESIS_IMAGE_NAME)
-        .withName(containerName)
-        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
-        .withEnv(envs)
-        .withHealthcheck(healthCheck)
-        .withHostConfig(
-            newHostConfig()
-                .withNetworkMode(networkMode)
-                .withPortBindings(portBindings)
-                .withMounts(mounts)
-        );
-
-    // Add exposed ports if they exist
-    if (exposedPorts != null) {
-      createCmd.withExposedPorts(exposedPorts);
-    }
-
-    // Add IP address if available
-    if (ipAddress != null) {
-      createCmd.withIpv4Address(ipAddress);
-    }
-
-    CreateContainerResponse newContainer = createCmd.exec();
-
-    dockerClient.startContainerCmd(newContainer.getId()).exec();
-    log.info("Validator container {} recreated and started", containerName);
-  }
-
-  private void recreateGenesisContainerWithConfig(
-      String targetVolume, 
-      ContainerConfig config, 
-      HostConfig hostConfig, 
-      String ipAddress) throws Exception {
-    
-    log.info("Recreating genesis container with volume and saved config: {}", targetVolume);
-    
-    if (config == null || hostConfig == null) {
-      log.warn("No saved configuration found for genesis container, using default recreation method");
-      recreateGenesisContainer(targetVolume);
-      return;
-    }
-
-    String[] envs = config.getEnv();
-    
-    ExposedPort[] exposedPorts = config.getExposedPorts();
-    HealthCheck healthCheck = config.getHealthcheck();
-    String networkMode = hostConfig.getNetworkMode();
-
-    Ports portBindings = new Ports();
-    if (exposedPorts != null) {
-      for (ExposedPort exposedPort : exposedPorts) {
-        portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
-      }
-    }
-
-    // Create volume mounts for named Docker volumes
-    List<Mount> mounts = new ArrayList<>();
-    mounts.add(new Mount()
-        .withType(MountType.VOLUME)
-        .withSource(targetVolume)
-        .withTarget(CONTAINER_DB_PATH));
-    mounts.add(new Mount()
-        .withType(MountType.VOLUME)
-        .withSource("mylocalton-docker_shared-data")
-        .withTarget("/usr/share/data"));
-
-    // Create new container with the saved configuration but new volume
-    CreateContainerCmd createCmd = dockerClient
-        .createContainerCmd(GENESIS_IMAGE_NAME)
-        .withName(CONTAINER_GENESIS)
-        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
-        .withEnv(envs)
-        .withHealthcheck(healthCheck)
-        .withHostConfig(
-            newHostConfig()
-                .withNetworkMode(networkMode)
-                .withPortBindings(portBindings)
-                .withMounts(mounts)
-        );
-
-    // Add exposed ports if they exist
-    if (exposedPorts != null) {
-      createCmd.withExposedPorts(exposedPorts);
-    }
-
-    // Add IP address if available
-    if (ipAddress != null) {
-      createCmd.withIpv4Address(ipAddress);
-    }
-
-    CreateContainerResponse newContainer = createCmd.exec();
-
-    dockerClient.startContainerCmd(newContainer.getId()).exec();
-    log.info("Genesis container recreated and started with saved config");
-  }
-
-  private void recreateValidatorContainerWithConfig(
+  /**
+   * Unified method to recreate any container (genesis or validator) with a new volume and saved configuration.
+   * Combines the logic from recreateGenesisContainerWithConfig() and recreateValidatorContainerWithConfig().
+   */
+  private void recreateContainerWithConfig(
       String containerName,
       String targetVolume, 
       ContainerConfig config, 
       HostConfig hostConfig, 
       String ipAddress) throws Exception {
     
-    log.info("Recreating validator container {} with volume and saved config: {}", containerName, targetVolume);
+    log.info("Recreating container {} with volume and saved config: {}", containerName, targetVolume);
     
     if (config == null || hostConfig == null) {
-      log.warn("No saved configuration found for validator container {}, using default recreation method", containerName);
-      recreateValidatorContainer(containerName, targetVolume);
+      log.warn("No saved configuration found for container {}, using default recreation method", containerName);
+      recreateContainer(containerName, targetVolume);
       return;
     }
 
-    log.info("recreateValidatorContainerWithConfig 1");
-
     String[] envs = config.getEnv();
-    
     ExposedPort[] exposedPorts = config.getExposedPorts();
     HealthCheck healthCheck = config.getHealthcheck();
     String networkMode = hostConfig.getNetworkMode();
@@ -1575,8 +1440,6 @@ public class MyRestController {
         portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
       }
     }
-
-    log.info("recreateValidatorContainerWithConfig 2");
 
     // Create volume mounts for named Docker volumes
     List<Mount> mounts = new ArrayList<>();
@@ -1603,8 +1466,6 @@ public class MyRestController {
                 .withMounts(mounts)
         );
 
-    log.info("recreateValidatorContainerWithConfig 3");
-
     // Add exposed ports if they exist
     if (exposedPorts != null) {
       createCmd.withExposedPorts(exposedPorts);
@@ -1617,13 +1478,10 @@ public class MyRestController {
 
     CreateContainerResponse newContainer = createCmd.exec();
 
-    log.info("recreateValidatorContainerWithConfig 4");
-
     dockerClient.startContainerCmd(newContainer.getId()).exec();
-    log.info("Validator container {} recreated and started with saved config", containerName);
-
-    log.info("recreateValidatorContainerWithConfig 5");
+    log.info("Container {} recreated and started with saved config", containerName);
   }
+
 
 
   public static DockerClient createDockerClient() {
