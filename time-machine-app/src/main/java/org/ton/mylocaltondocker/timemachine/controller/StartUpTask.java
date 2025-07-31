@@ -2,6 +2,8 @@ package org.ton.mylocaltondocker.timemachine.controller;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -16,12 +18,14 @@ import static java.util.Objects.nonNull;
 @Slf4j
 public class StartUpTask {
 
-  // Thread-safe synchronization object for getAdnlLiteClient method
-  private static final Object CLIENT_CREATION_LOCK = new Object();
+  // Atomic flag to track if client creation is in progress
+  private static final AtomicBoolean isCreatingClient = new AtomicBoolean(false);
   
-  // Volatile flag to track if client creation is in progress
-  private static volatile boolean isCreatingClient = false;
-
+  // Track the last successful reinitialization time to avoid too frequent reinits
+  private static final AtomicLong lastReinitTime = new AtomicLong(0);
+  
+  // Minimum time between reinitializations (in milliseconds)
+  private static final long MIN_REINIT_INTERVAL = 5000; // 5 seconds
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() throws InterruptedException {
 
@@ -36,7 +40,8 @@ public class StartUpTask {
 
     try {
 
-      Main.adnlLiteClient = AdnlLiteClient.builder()
+      Main.adnlLiteClient =
+          AdnlLiteClient.builder()
               .configPath("/usr/share/data/global.config.json")
               .queryTimeout(10)
               .build();
@@ -51,49 +56,65 @@ public class StartUpTask {
   }
 
   /**
-   * Thread-safe method to create and assign a new AdnlLiteClient instance to Main.adnlLiteClient.
-   * Uses synchronized block to ensure only one thread can create a client at a time.
-   * This ensures there's only one instance of Main.adnlLiteClient at any time.
-   * 
-   * @throws Exception if client creation fails
+   * Simple thread-safe method to reinitialize AdnlLiteClient.
+   * Tries once, if it fails - exits and will try again on next request.
+   * Uses minimum interval to prevent too frequent attempts.
    */
   public static void reinitializeAdnlLiteClient() throws Exception {
-    synchronized (CLIENT_CREATION_LOCK) {
-      // Double-check if another thread is already creating a client
-      if (isCreatingClient) {
-        log.debug("Another thread is already creating AdnlLiteClient, waiting...");
-        // Wait for the other thread to complete
-        while (isCreatingClient) {
-          try {
-            CLIENT_CREATION_LOCK.wait(1000); // Wait with timeout to avoid infinite wait
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new Exception("Thread interrupted while waiting for client creation", e);
-          }
+    long currentTime = System.currentTimeMillis();
+    long lastReinit = lastReinitTime.get();
+    
+    // Check if we're within the minimum interval since last reinitialization
+    if (currentTime - lastReinit < MIN_REINIT_INTERVAL) {
+      log.debug("Skipping reinitialization - too soon since last attempt ({}ms ago)", 
+          currentTime - lastReinit);
+      return;
+    }
+    
+    // Try to acquire the reinitialization lock
+    if (!isCreatingClient.compareAndSet(false, true)) {
+      log.debug("Another thread is already reinitializing client, skipping this request");
+      return;
+    }
+    
+    try {
+      log.info("Starting AdnlLiteClient reinitialization");
+      
+      // Close existing client with proper cleanup
+      AdnlLiteClient oldClient = Main.adnlLiteClient;
+      if (nonNull(oldClient)) {
+        try {
+          log.debug("Closing existing AdnlLiteClient");
+          oldClient.close();
+          // Give some time for cleanup
+          Thread.sleep(100);
+        } catch (Exception e) {
+          log.warn("Error closing old AdnlLiteClient: {}", e.getMessage());
         }
-        log.debug("Client creation by another thread completed");
-        return; // Client already created by another thread
       }
       
-      try {
-        isCreatingClient = true;
-        log.debug("Creating new AdnlLiteClient instance");
-
-        if (nonNull(Main.adnlLiteClient)) {
-          Main.adnlLiteClient.close();
-        }
-        
-        Main.adnlLiteClient = AdnlLiteClient.builder()
-            .configPath("/usr/share/data/global.config.json")
-            .queryTimeout(10)
-            .build();
-            
-        log.debug("AdnlLiteClient instance created and assigned successfully");
-        
-      } finally {
-        isCreatingClient = false;
-        CLIENT_CREATION_LOCK.notifyAll(); // Notify waiting threads
-      }
+      // Create new client - single attempt
+      log.debug("Creating new AdnlLiteClient");
+      AdnlLiteClient newClient = AdnlLiteClient.builder()
+          .configPath("/usr/share/data/global.config.json")
+          .queryTimeout(5)
+          .maxRetries(1)
+          .build();
+      
+      // Test the connection
+//      newClient.getMasterchainInfo();
+      
+      // Assign the new client
+      Main.adnlLiteClient = newClient;
+      lastReinitTime.set(System.currentTimeMillis());
+      log.info("AdnlLiteClient reinitialization completed successfully");
+      
+    } catch (Exception e) {
+      log.error("AdnlLiteClient reinitialization failed: {}", e.getMessage());
+      throw new Exception("AdnlLiteClient reinitialization failed", e);
+    } finally {
+      // Always release the lock
+      isCreatingClient.set(false);
     }
   }
 }

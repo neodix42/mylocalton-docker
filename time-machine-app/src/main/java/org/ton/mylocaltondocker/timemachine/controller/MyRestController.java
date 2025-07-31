@@ -76,8 +76,12 @@ public class MyRestController {
 
       MasterchainInfo masterChainInfo = getMasterchainInfo();
       if (masterChainInfo == null) {
-        log.error("masterChainInfo is null, reinit");
-        reinitializeAdnlLiteClient();
+        log.warn("masterChainInfo is null, attempting reinit");
+        try {
+          reinitializeAdnlLiteClient();
+        } catch (Exception reinitEx) {
+          log.error("Reinitialization failed");
+        }
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "masterChainInfo is null");
@@ -96,11 +100,18 @@ public class MyRestController {
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Throwable e) {
-      log.error("Error getting seqno-volume, reinit");
-      reinitializeAdnlLiteClient();
+      log.warn("Error getting seqno-volume, attempting reinit");
+      
+      // Always attempt reinitialization for any error
+      try {
+        reinitializeAdnlLiteClient();
+      } catch (Exception reinitEx) {
+        log.error("Reinitialization failed");
+      }
+      
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
-      response.put("message", "Failed to get seqno-volume: " + e.getMessage());
+      response.put("message", "Failed to get seqno-volume");
       return response;
     }
   }
@@ -1649,7 +1660,7 @@ public class MyRestController {
     int maxRetries = 60; // Wait up to 5 minutes (60 * 5 seconds)
     int retryCount = 0;
 
-    log.info("Waiting for seqno-volume endpoint to be healthy...");
+    log.info("waitForSeqnoVolumeHealthy...");
 
     while (retryCount < maxRetries) {
       try {
@@ -1658,12 +1669,12 @@ public class MyRestController {
         log.info("Sync delay: {} seconds (attempt {})", delta, retryCount + 1);
 
         if (delta < 10) {
-          log.info("Seqno-volume endpoint is healthy after {} attempts (sync delay: {} seconds)", retryCount + 1, delta);
+          log.info("waitForSeqnoVolumeHealthy is healthy after {} attempts (sync delay: {} seconds)", retryCount + 1, delta);
           return; // Success, exit the method
         }
 
       } catch (Exception e) {
-        log.warn("Seqno-volume endpoint error (attempt {}): {}", retryCount + 1, e.getMessage());
+        log.warn("waitForSeqnoVolumeHealthy error (attempt {})", retryCount + 1);
         // Don't return on error, continue trying
       }
 
