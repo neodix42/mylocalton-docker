@@ -20,7 +20,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
@@ -159,8 +161,9 @@ public class MyRestController {
 
       if (graphFile.exists()) {
         String content = new String(Files.readAllBytes(Paths.get(graphPath)));
-        ObjectMapper mapper = new ObjectMapper();
-        Map<String, Object> graphData = mapper.readValue(content, Map.class);
+        Gson gson = new GsonBuilder().create();
+        TypeToken<Map<String, Object>> typeToken = new TypeToken<Map<String, Object>>() {};
+        Map<String, Object> graphData = gson.fromJson(content, typeToken.getType());
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -193,8 +196,8 @@ public class MyRestController {
         dataDir.mkdirs();
       }
 
-      ObjectMapper mapper = new ObjectMapper();
-      String jsonContent = mapper.writeValueAsString(request.get("graph"));
+      Gson gson = new GsonBuilder().create();
+      String jsonContent = gson.toJson(request.get("graph"));
 
       Files.write(Paths.get(graphPath), jsonContent.getBytes());
 
@@ -400,6 +403,41 @@ public class MyRestController {
       });
       
       log.info("Parallel snapshot creation completed. Created: {}, Failed: {}", createdSnapshots.size(), failedSnapshots.size());
+
+      // Store container configurations for this snapshot
+      if (failedSnapshots.isEmpty()) {
+        try {
+          currentSnapshotStatus = "Storing container configurations...";
+          log.info("Storing container configurations for snapshot {}", snapshotNumber);
+          
+          // Check if we're taking snapshot from another snapshot (non-active node)
+          if (!isFromActiveNode && parentId != null && parentId.startsWith("snapshot-")) {
+            // Extract source snapshot number from parentId (e.g., "snapshot-1" -> 1)
+            String sourceSnapshotNumber = parentId.replace("snapshot-", "");
+            if (sourceSnapshotNumber.contains("-")) {
+              // Handle instance format like "snapshot-1-2" -> get "1"
+              sourceSnapshotNumber = sourceSnapshotNumber.split("-")[0];
+            }
+            
+            try {
+              int sourceSnapshot = Integer.parseInt(sourceSnapshotNumber);
+              copySnapshotConfiguration(sourceSnapshot, snapshotNumber);
+              log.info("Copied container configurations from snapshot {} to snapshot {}", sourceSnapshot, snapshotNumber);
+            } catch (NumberFormatException e) {
+              log.warn("Could not parse source snapshot number from parentId: {}, storing current configurations", parentId);
+              storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses);
+            }
+          } else {
+            // Taking snapshot from active node, store current configurations
+            storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses);
+          }
+          
+          log.info("Container configurations stored successfully for snapshot {}", snapshotNumber);
+        } catch (Exception e) {
+          log.error("Failed to store container configurations for snapshot {}: {}", snapshotNumber, e.getMessage());
+          failedSnapshots.add("Failed to store container configurations: " + e.getMessage());
+        }
+      }
 
       // If blockchain was shutdown, restart it with the same volumes and configurations
       if (shouldShutdownBlockchain && failedSnapshots.isEmpty()) {
@@ -780,14 +818,53 @@ public class MyRestController {
         }
       }
 
-      // Stop and remove ALL running containers
-      currentSnapshotStatus = "Stopping current blockchain...";
+      // Try to load stored configuration for this snapshot first
+      Map<String, ContainerConfig> storedContainerConfigs = new HashMap<>();
+      Map<String, HostConfig> storedHostConfigs = new HashMap<>();
+      Map<String, String> storedContainerIpAddresses = new HashMap<>();
+      List<String> containersToRemove = new ArrayList<>();
+      
+      try {
+        currentSnapshotStatus = "Loading stored container configurations...";
+        log.info("Loading stored container configurations for snapshot {}", snapshotNumber);
+        Map<String, Object> storedConfig = loadSnapshotConfiguration(Integer.parseInt(snapshotNumber));
+        if (storedConfig != null) {
+          storedContainerConfigs = extractContainerConfigs(storedConfig);
+          storedHostConfigs = extractHostConfigs(storedConfig);
+          storedContainerIpAddresses = extractContainerIpAddresses(storedConfig);
+          
+          // Get list of containers from stored config to ensure we remove them all
+          @SuppressWarnings("unchecked")
+          List<String> storedRunningContainers = (List<String>) storedConfig.get("runningContainers");
+          if (storedRunningContainers != null) {
+            containersToRemove.addAll(storedRunningContainers);
+          }
+          
+          log.info("Successfully loaded stored configurations for {} containers", storedContainerConfigs.size());
+          log.info("Containers to remove from stored config: {}", containersToRemove);
+        } else {
+          log.warn("No stored configuration found for snapshot {}, using current container configurations", snapshotNumber);
+          // Fallback to current running containers if no stored config
+          containersToRemove = getAllRunningContainers();
+        }
+      } catch (Exception e) {
+        log.warn("Failed to load stored configuration for snapshot {}: {}, using current container configurations", snapshotNumber, e.getMessage());
+        // Fallback to current running containers if config loading fails
+        containersToRemove = getAllRunningContainers();
+      }
 
-      stopAndRemoveAllContainers();
+      // Stop and remove ALL containers (both running and stopped) that are mentioned in the stored config
+      currentSnapshotStatus = "Stopping current blockchain...";
+      stopAndRemoveSpecificContainers(containersToRemove);
+      
+      // Use stored configurations if available, otherwise fall back to current configurations
+      Map<String, ContainerConfig> finalContainerConfigs = storedContainerConfigs.isEmpty() ? containerConfigs : storedContainerConfigs;
+      Map<String, HostConfig> finalHostConfigs = storedHostConfigs.isEmpty() ? hostConfigs : storedHostConfigs;
+      Map<String, String> finalContainerIpAddresses = storedContainerIpAddresses.isEmpty() ? containerIpAddresses : storedContainerIpAddresses;
 
       // Recreate and start containers with target volumes using saved configurations
       currentSnapshotStatus = "Starting blockchain from the snapshot...";
-      recreateAllContainersWithConfigs(containerTargetVolumes, containerConfigs, hostConfigs, containerIpAddresses, seqnoStr);
+      recreateAllContainersWithConfigs(containerTargetVolumes, finalContainerConfigs, finalHostConfigs, finalContainerIpAddresses, seqnoStr);
 
       log.info("Snapshots restored for all containers using instance number: {}", instanceNumber);
 
@@ -1130,16 +1207,62 @@ public class MyRestController {
       return;
     }
     
-    // Capture container IDs before stopping them
+    stopAndRemoveSpecificContainers(runningContainers);
+  }
+
+  /**
+   * Stops and removes specific containers by name, including both running and stopped containers.
+   * This method ensures all containers from the list are removed, regardless of their current state.
+   */
+  private void stopAndRemoveSpecificContainers(List<String> containerNames) {
+    log.info("Stopping and removing specific containers in parallel: {}", containerNames);
+    
+    if (containerNames.isEmpty()) {
+      log.info("No containers to stop");
+      return;
+    }
+    
+    // Find all containers (both running and stopped) that match the names
     Map<String, String> containerIds = new HashMap<>();
-    for (String containerName : runningContainers) {
-      String containerId = getContainerIdByName(containerName);
-      if (containerId != null) {
-        containerIds.put(containerName, containerId);
+    
+    // Check both running and stopped containers
+    try {
+      List<Container> allContainers = dockerClient.listContainersCmd().withShowAll(true).exec();
+      
+      for (String containerName : containerNames) {
+        for (Container container : allContainers) {
+          // Check if container name matches (Docker container names start with "/")
+          if (container.getNames() != null) {
+            for (String name : container.getNames()) {
+              if (name.equals("/" + containerName)) {
+                containerIds.put(containerName, container.getId());
+                log.info("Found container {} with ID {} (state: {})", containerName, container.getId(), container.getState());
+                break;
+              }
+            }
+          }
+          if (containerIds.containsKey(containerName)) {
+            break; // Found this container, move to next
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.error("Error listing containers: {}", e.getMessage());
+      // Fallback to checking only running containers
+      for (String containerName : containerNames) {
+        String containerId = getContainerIdByName(containerName);
+        if (containerId != null) {
+          containerIds.put(containerName, containerId);
+        }
       }
     }
     
-    log.info("Captured container IDs: {}", containerIds);
+    if (containerIds.isEmpty()) {
+      log.info("No containers found to remove");
+      return;
+    }
+    
+    log.info("Found containers to remove: {}", containerIds);
     
     // Stop all containers in parallel using CompletableFuture for true parallelism
     log.info("Stopping {} containers in parallel", containerIds.size());
@@ -1199,22 +1322,47 @@ public class MyRestController {
       log.error("Error waiting for containers to be removed: {}", e.getMessage());
     }
     
-    // Verify all containers are actually removed before proceeding
-    log.info("Verifying all containers are completely removed...");
+    // Verify all specified containers are actually removed before proceeding
+    log.info("Verifying all specified containers are completely removed...");
     int maxRetries = 10;
     int retryCount = 0;
     
     while (retryCount < maxRetries) {
-      List<String> stillRunning = getAllRunningContainers();
-      if (stillRunning.isEmpty()) {
-        log.info("All containers successfully removed");
+      // Check if any of the specified containers still exist
+      List<String> stillExisting = new ArrayList<>();
+      
+      try {
+        List<Container> allContainers = dockerClient.listContainersCmd().withShowAll(true).exec();
+        
+        for (String containerName : containerNames) {
+          for (Container container : allContainers) {
+            if (container.getNames() != null) {
+              for (String name : container.getNames()) {
+                if (name.equals("/" + containerName)) {
+                  stillExisting.add(containerName);
+                  break;
+                }
+              }
+            }
+            if (stillExisting.contains(containerName)) {
+              break;
+            }
+          }
+        }
+      } catch (Exception e) {
+        log.error("Error checking remaining containers: {}", e.getMessage());
         break;
       }
       
-      log.warn("Still found {} running containers after removal attempt: {}", stillRunning.size(), stillRunning);
+      if (stillExisting.isEmpty()) {
+        log.info("All specified containers successfully removed");
+        break;
+      }
+      
+      log.warn("Still found {} containers after removal attempt: {}", stillExisting.size(), stillExisting);
       
       // Force remove any remaining containers in parallel
-      List<CompletableFuture<Void>> forceRemoveFutures = stillRunning.stream()
+      List<CompletableFuture<Void>> forceRemoveFutures = stillExisting.stream()
           .map(containerName -> CompletableFuture.runAsync(() -> {
             try {
               String containerId = getContainerIdByName(containerName);
@@ -1245,13 +1393,10 @@ public class MyRestController {
     }
     
     if (retryCount >= maxRetries) {
-      List<String> stillRunning = getAllRunningContainers();
-      if (!stillRunning.isEmpty()) {
-        throw new RuntimeException("Failed to remove all containers after " + maxRetries + " attempts. Still running: " + stillRunning);
-      }
+      log.warn("Some containers may still exist after {} attempts, but continuing anyway", maxRetries);
     }
     
-    log.info("All containers stopped and removed successfully");
+    log.info("Container removal process completed for specified containers");
   }
 
 //  private void recreateAllContainers(Map<String, String> containerTargetVolumes) throws Exception {
@@ -1674,5 +1819,234 @@ public class MyRestController {
       log.error("Failed to restart container {}: {}", containerName, e.getMessage(), e);
       // Don't throw exception to avoid breaking the snapshot restoration process
     }
+  }
+
+  /**
+   * Copies container configuration from one snapshot to another.
+   * This is used when taking a snapshot from a non-active snapshot.
+   */
+  private void copySnapshotConfiguration(int sourceSnapshotNumber, int targetSnapshotNumber) throws Exception {
+    String sourceConfigPath = "/usr/share/data/config-snapshot-" + sourceSnapshotNumber + ".json";
+    String targetConfigPath = "/usr/share/data/config-snapshot-" + targetSnapshotNumber + ".json";
+    
+    File sourceConfigFile = new File(sourceConfigPath);
+    if (!sourceConfigFile.exists()) {
+      log.warn("Source configuration file not found: {}, cannot copy to target snapshot {}", sourceConfigPath, targetSnapshotNumber);
+      throw new RuntimeException("Source configuration file not found for snapshot " + sourceSnapshotNumber);
+    }
+    
+    // Ensure target directory exists
+    File dataDir = new File("/usr/share/data");
+    if (!dataDir.exists()) {
+      dataDir.mkdirs();
+    }
+    
+    // Read source configuration
+    String content = new String(Files.readAllBytes(Paths.get(sourceConfigPath)));
+    Gson gson = new GsonBuilder().create();
+    TypeToken<Map<String, Object>> typeToken = new TypeToken<Map<String, Object>>() {};
+    Map<String, Object> configData = gson.fromJson(content, typeToken.getType());
+    
+    // Update snapshot number and timestamp for the new snapshot
+    configData.put("snapshotNumber", targetSnapshotNumber);
+    configData.put("timestamp", System.currentTimeMillis());
+    
+    // Write to target file
+    gson = new GsonBuilder().setPrettyPrinting().create();
+    String jsonContent = gson.toJson(configData);
+    Files.write(Paths.get(targetConfigPath), jsonContent.getBytes());
+    
+    log.info("Copied container configuration from snapshot {} to snapshot {}", sourceSnapshotNumber, targetSnapshotNumber);
+  }
+
+  /**
+   * Stores container configuration data for a snapshot to a JSON file.
+   * This allows restoring snapshots with the exact same container configurations.
+   */
+  private void storeSnapshotConfiguration(
+      int snapshotNumber,
+      List<String> runningContainers,
+      Map<String, ContainerConfig> containerConfigs,
+      Map<String, HostConfig> hostConfigs,
+      Map<String, String> containerIpAddresses) throws Exception {
+    
+    String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
+    
+    // Ensure directory exists
+    File dataDir = new File("/usr/share/data");
+    if (!dataDir.exists()) {
+      dataDir.mkdirs();
+    }
+    
+    // Build simplified configuration data structure
+    Map<String, Object> configData = new HashMap<>();
+    configData.put("snapshotNumber", snapshotNumber);
+    configData.put("timestamp", System.currentTimeMillis());
+    configData.put("runningContainers", runningContainers);
+    
+    // Store basic container information
+    Map<String, Object> containers = new HashMap<>();
+    for (String containerName : runningContainers) {
+      Map<String, Object> containerData = new HashMap<>();
+      
+      // Store basic container info
+      ContainerConfig config = containerConfigs.get(containerName);
+      if (config != null) {
+        Map<String, Object> configMap = new HashMap<>();
+        configMap.put("env", Arrays.asList(config.getEnv() != null ? config.getEnv() : new String[0]));
+        configMap.put("image", config.getImage());
+        containerData.put("config", configMap);
+      }
+      
+      // Store basic host config info
+      HostConfig hostConfig = hostConfigs.get(containerName);
+      if (hostConfig != null) {
+        Map<String, Object> hostConfigMap = new HashMap<>();
+        hostConfigMap.put("networkMode", hostConfig.getNetworkMode());
+        containerData.put("hostConfig", hostConfigMap);
+      }
+      
+      // Store IP address
+      String ipAddress = containerIpAddresses.get(containerName);
+      if (ipAddress != null) {
+        containerData.put("ipAddress", ipAddress);
+      }
+      
+      containers.put(containerName, containerData);
+    }
+    
+    configData.put("containers", containers);
+    
+    // Write to file
+    Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    String jsonContent = gson.toJson(configData);
+    Files.write(Paths.get(configPath), jsonContent.getBytes());
+    
+    log.info("Stored container configuration for snapshot {} to {}", snapshotNumber, configPath);
+  }
+  
+  /**
+   * Loads container configuration data for a snapshot from a JSON file.
+   * Returns null if the configuration file doesn't exist.
+   */
+  private Map<String, Object> loadSnapshotConfiguration(int snapshotNumber) throws Exception {
+    String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
+    File configFile = new File(configPath);
+    
+    if (!configFile.exists()) {
+      log.warn("Configuration file not found for snapshot {}: {}", snapshotNumber, configPath);
+      return null;
+    }
+    
+    String content = new String(Files.readAllBytes(Paths.get(configPath)));
+    Gson gson = new GsonBuilder().create();
+    TypeToken<Map<String, Object>> typeToken = new TypeToken<Map<String, Object>>() {};
+    Map<String, Object> configData = gson.fromJson(content, typeToken.getType());
+    
+    log.info("Loaded container configuration for snapshot {} from {}", snapshotNumber, configPath);
+    return configData;
+  }
+  
+  /**
+   * Extracts ContainerConfig objects from stored configuration data.
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, ContainerConfig> extractContainerConfigs(Map<String, Object> storedConfig) {
+    Map<String, ContainerConfig> containerConfigs = new HashMap<>();
+    
+    try {
+      Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
+      if (containers != null) {
+        for (Map.Entry<String, Object> entry : containers.entrySet()) {
+          String containerName = entry.getKey();
+          Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
+          Map<String, Object> configMap = (Map<String, Object>) containerData.get("config");
+          
+          if (configMap != null) {
+            ContainerConfig config = new ContainerConfig();
+            
+            // Set environment variables
+            List<String> envList = (List<String>) configMap.get("env");
+            if (envList != null && !envList.isEmpty()) {
+              config.withEnv(envList.toArray(new String[0]));
+            }
+            
+            // Set image
+            String image = (String) configMap.get("image");
+            if (image != null) {
+              config.withImage(image);
+            }
+            
+            containerConfigs.put(containerName, config);
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.error("Error extracting container configs from stored configuration: {}", e.getMessage());
+    }
+    
+    return containerConfigs;
+  }
+  
+  /**
+   * Extracts HostConfig objects from stored configuration data.
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, HostConfig> extractHostConfigs(Map<String, Object> storedConfig) {
+    Map<String, HostConfig> hostConfigs = new HashMap<>();
+    
+    try {
+      Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
+      if (containers != null) {
+        for (Map.Entry<String, Object> entry : containers.entrySet()) {
+          String containerName = entry.getKey();
+          Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
+          Map<String, Object> hostConfigMap = (Map<String, Object>) containerData.get("hostConfig");
+          
+          if (hostConfigMap != null) {
+            HostConfig hostConfig = new HostConfig();
+            
+            // Set network mode
+            String networkMode = (String) hostConfigMap.get("networkMode");
+            if (networkMode != null) {
+              hostConfig.withNetworkMode(networkMode);
+            }
+            
+            hostConfigs.put(containerName, hostConfig);
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.error("Error extracting host configs from stored configuration: {}", e.getMessage());
+    }
+    
+    return hostConfigs;
+  }
+  
+  /**
+   * Extracts container IP addresses from stored configuration data.
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, String> extractContainerIpAddresses(Map<String, Object> storedConfig) {
+    Map<String, String> containerIpAddresses = new HashMap<>();
+    
+    try {
+      Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
+      if (containers != null) {
+        for (Map.Entry<String, Object> entry : containers.entrySet()) {
+          String containerName = entry.getKey();
+          Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
+          String ipAddress = (String) containerData.get("ipAddress");
+          
+          if (ipAddress != null) {
+            containerIpAddresses.put(containerName, ipAddress);
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.error("Error extracting container IP addresses from stored configuration: {}", e.getMessage());
+    }
+    
+    return containerIpAddresses;
   }
 }

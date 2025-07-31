@@ -161,34 +161,34 @@ services:
       main:
 
 
-#  file-server:
-#    container_name: file-server
-#    image: python:bullseye
-#    build:
-#      context: .
-#      dockerfile: ./file-server/Dockerfile
-#    ports:
-#      - 8000:8000
-#    volumes:
-#      - shared-data:/usr/share/data
-#    restart: unless-stopped
-#    environment:
-#      - SERVER_PORT=8000
-#    healthcheck:
-#      test: curl -sS http://127.0.0.1:8000|| echo 1
-#    networks:
-#      main:
-#
-#  restarter:
-#    container_name: explorer-restarter
-#    image: docker:cli
-#    restart: unless-stopped
-#    volumes:
-#      - /var/run/docker.sock:/var/run/docker.sock
-#    command: [ "/bin/sh", "-c", "while true; do sleep 3600; echo restarted; docker restart blockchain-explorer; done" ]
-#    depends_on:
-#      blockchain-explorer:
-#        condition: service_healthy
+  file-server:
+    container_name: file-server
+    image: python:bullseye
+    build:
+      context: .
+      dockerfile: ./file-server/Dockerfile
+    ports:
+      - 8000:8000
+    volumes:
+      - shared-data:/usr/share/data
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=8000
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8000|| echo 1
+    networks:
+      main:
+
+  restarter:
+    container_name: explorer-restarter
+    image: docker:cli
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: [ "/bin/sh", "-c", "while true; do sleep 3600; echo restarted; docker restart blockchain-explorer; done" ]
+    depends_on:
+      blockchain-explorer:
+        condition: service_healthy
 
  # ENABLE ADDITIONAL VALIDATORS
 
