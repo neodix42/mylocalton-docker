@@ -1308,7 +1308,7 @@ public class MyRestController {
             failedContainers.add(containerName + ": " + e.getMessage());
           }
         }))
-        .collect(Collectors.toList());
+        .toList();
     
     // Wait for all container recreation operations to complete
     CompletableFuture<Void> allRecreateFutures = CompletableFuture.allOf(
@@ -1359,6 +1359,17 @@ public class MyRestController {
     dockerClient.stopContainerCmd(genesisContainerId).exec();
     dockerClient.removeContainerCmd(genesisContainerId).withForce(true).exec();
 
+    // Create volume mounts for named Docker volumes
+    List<Mount> mounts = new ArrayList<>();
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource(targetVolume)
+        .withTarget(CONTAINER_DB_PATH));
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource("mylocalton-docker_shared-data")
+        .withTarget("/usr/share/data"));
+
     // Create new container with the same configuration but new volume
     CreateContainerResponse newContainer = dockerClient
         .createContainerCmd(GENESIS_IMAGE_NAME)
@@ -1372,10 +1383,7 @@ public class MyRestController {
             newHostConfig()
                 .withNetworkMode(networkMode)
                 .withPortBindings(portBindings)
-                .withBinds(
-                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
-                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
-                )
+                .withMounts(mounts)
         )
         .exec();
 
@@ -1425,6 +1433,17 @@ public class MyRestController {
     dockerClient.stopContainerCmd(validatorContainerId).exec();
     dockerClient.removeContainerCmd(validatorContainerId).withForce(true).exec();
 
+    // Create volume mounts for named Docker volumes
+    List<Mount> mounts = new ArrayList<>();
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource(targetVolume)
+        .withTarget(CONTAINER_DB_PATH));
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource("mylocalton-docker_shared-data")
+        .withTarget("/usr/share/data"));
+
     // Create new container with the same configuration but new volume
     CreateContainerCmd createCmd = dockerClient
         .createContainerCmd(GENESIS_IMAGE_NAME)
@@ -1436,10 +1455,7 @@ public class MyRestController {
             newHostConfig()
                 .withNetworkMode(networkMode)
                 .withPortBindings(portBindings)
-                .withBinds(
-                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
-                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
-                )
+                .withMounts(mounts)
         );
 
     // Add exposed ports if they exist
@@ -1485,6 +1501,17 @@ public class MyRestController {
       }
     }
 
+    // Create volume mounts for named Docker volumes
+    List<Mount> mounts = new ArrayList<>();
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource(targetVolume)
+        .withTarget(CONTAINER_DB_PATH));
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource("mylocalton-docker_shared-data")
+        .withTarget("/usr/share/data"));
+
     // Create new container with the saved configuration but new volume
     CreateContainerCmd createCmd = dockerClient
         .createContainerCmd(GENESIS_IMAGE_NAME)
@@ -1496,10 +1523,7 @@ public class MyRestController {
             newHostConfig()
                 .withNetworkMode(networkMode)
                 .withPortBindings(portBindings)
-                .withBinds(
-                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
-                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
-                )
+                .withMounts(mounts)
         );
 
     // Add exposed ports if they exist
@@ -1550,6 +1574,17 @@ public class MyRestController {
 
     log.info("recreateValidatorContainerWithConfig 2");
 
+    // Create volume mounts for named Docker volumes
+    List<Mount> mounts = new ArrayList<>();
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource(targetVolume)
+        .withTarget(CONTAINER_DB_PATH));
+    mounts.add(new Mount()
+        .withType(MountType.VOLUME)
+        .withSource("mylocalton-docker_shared-data")
+        .withTarget("/usr/share/data"));
+
     // Create new container with the saved configuration but new volume
     CreateContainerCmd createCmd = dockerClient
         .createContainerCmd(GENESIS_IMAGE_NAME)
@@ -1561,10 +1596,7 @@ public class MyRestController {
             newHostConfig()
                 .withNetworkMode(networkMode)
                 .withPortBindings(portBindings)
-                .withBinds(
-                    new Bind(targetVolume, new Volume(CONTAINER_DB_PATH)),
-                    new Bind("mylocalton-docker_shared-data", new Volume("/usr/share/data"))
-                )
+                .withMounts(mounts)
         );
 
     log.info("recreateValidatorContainerWithConfig 3");
