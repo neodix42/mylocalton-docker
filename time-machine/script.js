@@ -784,7 +784,8 @@ class BlockchainGraph {
                     snapshotId: restoreTargetNode.id,
                     snapshotNumber: restoreTargetNode.snapshotNumber,
                     nodeType: restoreTargetNode.type || "snapshot",
-                    instanceNumber: restoreTargetNode.instanceNumber
+                    instanceNumber: restoreTargetNode.instanceNumber,
+                    seqno: restoreTargetNode.seqno
                 })
             });
 

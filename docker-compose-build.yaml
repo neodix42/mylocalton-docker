@@ -52,7 +52,7 @@ services:
 #      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
-      - VERBOSITY=3
+#      - VERBOSITY=3
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
@@ -202,7 +202,7 @@ services:
     environment:
       - NAME=validator-1
       - GENESIS_IP=172.28.1.10
-      - VERBOSITY=3
+#      - VERBOSITY=3
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
@@ -230,7 +230,7 @@ services:
     environment:
       - NAME=validator-2
       - GENESIS_IP=172.28.1.10
-      - VERBOSITY=3
+#      - VERBOSITY=3
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     depends_on:
       - genesis

@@ -1553,7 +1553,8 @@ public class MyRestController {
                 targetVolume,
                 containerConfigs.get(containerName),
                 hostConfigs.get(containerName),
-                containerIpAddresses.get(containerName)
+                containerIpAddresses.get(containerName),
+                seqnoStr
             );
             createdContainers.add(containerName);
             log.info("Successfully recreated container: {}", containerName);
@@ -1592,7 +1593,8 @@ public class MyRestController {
       String targetVolume,
       ContainerConfig config,
       HostConfig hostConfig,
-      String ipAddress) throws Exception {
+      String ipAddress,
+      String seqnoStr) throws Exception {
 
     log.info("Recreating container {} with volume and saved config: {}", containerName, targetVolume);
 
@@ -1603,6 +1605,10 @@ public class MyRestController {
     }
 
     String[] envs = config.getEnv();
+
+    // Add CUSTOM_PARAMETERS with -T seqno flag
+    envs = addCustomParametersWithSeqno(envs, seqnoStr);
+
     ExposedPort[] exposedPorts = config.getExposedPorts();
     HealthCheck healthCheck = config.getHealthcheck();
     String networkMode = hostConfig.getNetworkMode();
@@ -2073,5 +2079,98 @@ public class MyRestController {
     }
 
     return containerIpAddresses;
+  }
+
+
+  /**
+   * Adds or updates CUSTOM_PARAMETERS environment variable with -T seqno flag
+   * @param envs existing environment variables array
+   * @param seqnoStr seqno value from frontend
+   * @return updated environment variables array with CUSTOM_PARAMETERS containing -T seqno
+   */
+  private String[] addCustomParametersWithSeqno(String[] envs, String seqnoStr) {
+    try {
+      // Use seqno from frontend parameter, fallback to current if not provided
+      String seqnoFlag = "";
+      if (seqnoStr != null && !seqnoStr.trim().isEmpty() && (Long.parseLong(seqnoStr)!=0)) {
+        seqnoFlag = "-T " + seqnoStr.trim();
+        log.info("Using seqno from frontend: {}", seqnoStr);
+      } else {
+        log.error("Wrong seqno from frontend {}", seqnoStr);
+        return envs;
+      }
+
+      log.info("Adding CUSTOM_PARAMETERS with seqno flag: {}", seqnoFlag);
+
+      List<String> envList = new ArrayList<>();
+      boolean customParamsFound = false;
+
+      // Process existing environment variables
+      if (envs != null) {
+        for (String env : envs) {
+          if (env.startsWith("CUSTOM_PARAMETERS=")) {
+            // Found existing CUSTOM_PARAMETERS, replace any existing -T parameter
+            String existingValue = env.substring("CUSTOM_PARAMETERS=".length());
+            String newValue = replaceOrAddTParameter(existingValue, seqnoFlag);
+            envList.add("CUSTOM_PARAMETERS=" + newValue);
+            customParamsFound = true;
+            log.info("Updated existing CUSTOM_PARAMETERS: {} -> {}", existingValue, newValue);
+          } else {
+            envList.add(env);
+          }
+        }
+      }
+
+      // If CUSTOM_PARAMETERS wasn't found, add it
+      if (!customParamsFound) {
+        envList.add("CUSTOM_PARAMETERS=" + seqnoFlag);
+        log.info("Added new CUSTOM_PARAMETERS: {}", seqnoFlag);
+      }
+
+      return envList.toArray(new String[0]);
+
+    } catch (Exception e) {
+      log.error("Error adding CUSTOM_PARAMETERS with seqno: {}", e.getMessage());
+      // Return original envs if there's an error
+      return envs;
+    }
+  }
+
+  /**
+   * Replaces existing -T parameter or adds new one to the custom parameters string
+   * @param existingParams existing custom parameters string
+   * @param newTParam new -T parameter to add (e.g., "-T 61")
+   * @return updated parameters string with only one -T parameter
+   */
+  private String replaceOrAddTParameter(String existingParams, String newTParam) {
+    if (existingParams == null || existingParams.trim().isEmpty()) {
+      return newTParam;
+    }
+
+    // Split parameters by spaces, but be careful with quoted values
+    List<String> params = new ArrayList<>();
+    String[] parts = existingParams.trim().split("\\s+");
+    
+    boolean skipNext = false;
+    for (int i = 0; i < parts.length; i++) {
+      if (skipNext) {
+        skipNext = false;
+        continue;
+      }
+      
+      String part = parts[i];
+      if ("-T".equals(part)) {
+        // Skip this -T and its value
+        skipNext = true;
+        continue;
+      }
+      
+      params.add(part);
+    }
+    
+    // Add the new -T parameter
+    params.add(newTParam);
+    
+    return String.join(" ", params);
   }
 }
