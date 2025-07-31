@@ -712,9 +712,21 @@ public class MyRestController {
       String instanceNumberStr = request.get("instanceNumber");
       String seqnoStr = request.get("seqno"); // seqno from frontend
 
-      currentSnapshotStatus = "Saving current blockchain...";
+      currentSnapshotStatus = "Saving current blockchain state...";
 
       log.info("Restoring snapshot for all containers: {} (type: {}, seqno: {})", snapshotId, nodeType, seqnoStr);
+
+      // CRITICAL: Get current seqno BEFORE any shutdown operations to preserve the last known state
+      long lastKnownSeqno = 0;
+      try {
+        MasterchainInfo masterChainInfo = getMasterchainInfo();
+        if (masterChainInfo != null) {
+          lastKnownSeqno = masterChainInfo.getLast().getSeqno();
+          log.info("Captured last known seqno before restoration: {}", lastKnownSeqno);
+        }
+      } catch (Exception e) {
+        log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
+      }
 
       // Determine target volume names for ALL containers using the same logic
       Map<String, String> containerTargetVolumes = new HashMap<>();
@@ -896,6 +908,7 @@ public class MyRestController {
       response.put("instanceNumber", instanceNumber);
       response.put("isNewInstance", isNewInstance);
       response.put("restoredContainers", containerTargetVolumes.keySet());
+      response.put("lastKnownSeqno", lastKnownSeqno); // Include the captured seqno for frontend
       return response;
 
     } catch (Exception e) {

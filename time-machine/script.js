@@ -771,33 +771,6 @@ class BlockchainGraph {
         this.updateStatus("Restoring snapshots for all containers...");
         
         try {
-            // Get current seqno before restoring to store it in the previous active node
-            let currentSeqno = 0;
-            try {
-                const seqnoResponse = await fetch('/seqno-volume', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                if (seqnoResponse.ok) {
-                    const seqnoData = await seqnoResponse.json();
-                    if (seqnoData.success && seqnoData.seqno) {
-                        currentSeqno = seqnoData.seqno;
-                    }
-                }
-            } catch (seqnoError) {
-                console.error('Error fetching current seqno before restore:', seqnoError);
-            }
-            
-            // Store current seqno in the previous active node
-            if (this.activeNodeId) {
-                const previousActiveNode = this.nodes.find(n => n.id === this.activeNodeId);
-                if (previousActiveNode) {
-                    previousActiveNode.seqno = currentSeqno;
-                }
-            }
 
             // Start polling for status updates
             const statusPolling = this.startSnapshotStatusPolling();
@@ -821,6 +794,19 @@ class BlockchainGraph {
             const data = await response.json();
             
             if (data.success) {
+                // Save the last known seqno to the previous active node if provided by backend
+                if (data.lastKnownSeqno && data.lastKnownSeqno > 0 && this.activeNodeId) {
+                    const previousActiveNode = this.nodes.find(n => n.id === this.activeNodeId);
+                    if (previousActiveNode) {
+                        previousActiveNode.seqno = data.lastKnownSeqno;
+                        previousActiveNode.lastSeqnoUpdate = new Date().toISOString();
+                        console.log(`Saved last known seqno ${data.lastKnownSeqno} to previous active node ${this.activeNodeId} before restoration`);
+                        
+                        // Save the graph immediately to persist this seqno update
+                        await this.saveGraph();
+                    }
+                }
+                
                 if (data.isNewInstance) {
                     // Restoring from snapshot node - create new instance node
                     const instanceNumber = data.instanceNumber || 1;
