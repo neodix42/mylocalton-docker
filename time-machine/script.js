@@ -124,7 +124,7 @@ class BlockchainGraph {
         this.nodes = [{
             id: "root",
             snapshotNumber: 0,
-            blockSequence: 0,
+            seqno: 0,
             timestamp: new Date().toISOString(),
             parentId: null,
             isRoot: true,
@@ -698,8 +698,7 @@ class BlockchainGraph {
                 const newNode = {
                     id: `snapshot-${nextSnapshotNumber}`,
                     snapshotNumber: nextSnapshotNumber,
-                    blockSequence: data.blockSequence,
-                    seqno: snapshotParentNode.id === this.activeNodeId ? data.blockSequence : (snapshotParentNode.seqno || data.blockSequence),
+                    seqno: snapshotParentNode.id === this.activeNodeId ? data.seqno : (snapshotParentNode.seqno || data.seqno),
                     timestamp: new Date().toISOString(),
                     parentId: snapshotParentNode.id,
                     isRoot: false,
@@ -834,7 +833,6 @@ class BlockchainGraph {
                         id: instanceNodeId,
                         snapshotNumber: restoreTargetNode.snapshotNumber,
                         instanceNumber: instanceNumber,
-                        blockSequence: restoreTargetNode.blockSequence,
                         seqno: restoreTargetNode.seqno,
                         timestamp: new Date().toISOString(),
                         parentId: restoreTargetNode.id,

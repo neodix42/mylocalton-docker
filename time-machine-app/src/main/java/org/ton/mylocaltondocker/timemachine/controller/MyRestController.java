@@ -479,7 +479,7 @@ public class MyRestController {
         response.put("success", true);
         response.put("snapshotId", snapshotId);
         response.put("snapshotNumber", snapshotNumber);
-        response.put("blockSequence", lastSeqno);
+        response.put("seqno", lastSeqno);
         response.put("volumeName", "ton-db-snapshot-" + snapshotNumber); // Keep for compatibility
         response.put("createdSnapshots", createdSnapshots);
         response.put("blockchainShutdown", shouldShutdownBlockchain);
