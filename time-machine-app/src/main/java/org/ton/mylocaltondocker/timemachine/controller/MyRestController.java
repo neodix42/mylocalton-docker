@@ -1619,7 +1619,7 @@ public class MyRestController {
     String[] envs = config.getEnv();
 
     // Add CUSTOM_PARAMETERS with -T seqno flag
-    envs = addCustomParametersWithSeqno(envs, seqnoStr);
+//    envs = addCustomParametersWithSeqno(envs, seqnoStr);
 
     ExposedPort[] exposedPorts = config.getExposedPorts();
     HealthCheck healthCheck = config.getHealthcheck();
