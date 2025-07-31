@@ -18,7 +18,6 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -27,7 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
-import org.ton.java.adnl.AdnlLiteClient;
 import org.ton.ton4j.tlb.Block;
 import org.ton.ton4j.utils.Utils;
 import org.ton.mylocaltondocker.timemachine.Main;
@@ -47,7 +45,7 @@ public class MyRestController {
   };
   public static final Map<String, String> CONTAINER_VOLUME_MAP = Map.of(
       "genesis", "ton-db",
-      "validator-1", "ton-db-val1", 
+      "validator-1", "ton-db-val1",
       "validator-2", "ton-db-val2",
       "validator-3", "ton-db-val3",
       "validator-4", "ton-db-val4",
@@ -101,14 +99,14 @@ public class MyRestController {
       return response;
     } catch (Throwable e) {
       log.warn("Error getting seqno-volume, attempting reinit");
-      
+
       // Always attempt reinitialization for any error
       try {
         reinitializeAdnlLiteClient();
       } catch (Exception reinitEx) {
         log.error("Reinitialization failed");
       }
-      
+
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
       response.put("message", "Failed to get seqno-volume");
@@ -135,7 +133,7 @@ public class MyRestController {
 
   private int getActiveNodesCount() {
     int count = 0;
-    
+
     // Check genesis container
     try {
       String genesisId = getGenesisContainerId();
@@ -145,7 +143,7 @@ public class MyRestController {
     } catch (Exception e) {
       log.debug("Genesis container not running");
     }
-    
+
     // Check up to 5 validator containers
     for (String validatorContainer : VALIDATOR_CONTAINERS) {
       try {
@@ -160,7 +158,7 @@ public class MyRestController {
         log.debug("Validator container {} not running", validatorContainer);
       }
     }
-    
+
     return count;
   }
 
@@ -230,7 +228,7 @@ public class MyRestController {
     try {
       String graphPath = "/usr/share/data/graph.json";
       File graphFile = new File(graphPath);
-      
+
       if (graphFile.exists()) {
         graphFile.delete();
         log.info("Graph data file deleted: {}", graphPath);
@@ -266,7 +264,7 @@ public class MyRestController {
     try {
       isSnapshotInProgress = true;
       currentSnapshotStatus = "Preparing snapshot...";
-      
+
       log.info("taking snapshot for all containers");
       // Get sequential snapshot number from request or generate next one
       int snapshotNumber;
@@ -296,14 +294,14 @@ public class MyRestController {
       // Check if we're taking snapshot from active (running) node
       String parentId = request.get("parentId");
       boolean isFromActiveNode = parentId != null && parentId.equals(getActiveNodeIdFromVolume());
-      
+
       // Only shutdown blockchain if taking snapshot from active node AND multiple validators are running
       long validatorCount = runningContainers.stream()
           .filter(containerName -> !CONTAINER_GENESIS.equals(containerName))
           .count();
-      
+
       boolean shouldShutdownBlockchain = isFromActiveNode && validatorCount > 0;
-      log.info("Taking snapshot from active node: {}, Validator containers running: {}, should shutdown blockchain: {}", 
+      log.info("Taking snapshot from active node: {}, Validator containers running: {}, should shutdown blockchain: {}",
           isFromActiveNode, validatorCount, shouldShutdownBlockchain);
 
       // Store container configurations before shutdown if needed
@@ -320,11 +318,11 @@ public class MyRestController {
       } catch (Exception e) {
         log.warn("Could not get current block sequence, using 0: {}", e.getMessage());
       }
-      
+
       if (shouldShutdownBlockchain) {
         currentSnapshotStatus = "Stopping blockchain...";
         log.info("Multiple validators detected, capturing container configurations before shutdown");
-        
+
         // Get container configurations BEFORE stopping them
         for (String containerName : runningContainers) {
           try {
@@ -333,17 +331,17 @@ public class MyRestController {
               InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
               containerConfigs.put(containerName, inspectResponse.getConfig());
               hostConfigs.put(containerName, inspectResponse.getHostConfig());
-              
+
               // Get current volume
               String volumeName = getCurrentVolume(dockerClient, containerId);
               if (volumeName != null) {
                 containerVolumes.put(containerName, volumeName);
               }
-              
+
               // Get IP address if available
               try {
-                if (inspectResponse.getNetworkSettings() != null && 
-                    inspectResponse.getNetworkSettings().getNetworks() != null && 
+                if (inspectResponse.getNetworkSettings() != null &&
+                    inspectResponse.getNetworkSettings().getNetworks() != null &&
                     !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
                   String ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
                   if (ipAddress != null) {
@@ -358,7 +356,7 @@ public class MyRestController {
             log.warn("Could not get configuration for container {}: {}", containerName, e.getMessage());
           }
         }
-        
+
         // Stop and remove ALL running containers
         log.info("Shutting down blockchain (all containers) before taking snapshots");
         stopAndRemoveAllContainers();
@@ -378,20 +376,20 @@ public class MyRestController {
       }
 
 
-      
+
       // Create snapshots for all containers in parallel
       currentSnapshotStatus = "Taking snapshots...";
       log.info("Creating snapshots for {} containers in parallel", containerVolumes.size());
-      
+
       // Use thread-safe collections for parallel processing
       List<String> createdSnapshots = Collections.synchronizedList(new ArrayList<>());
       List<String> failedSnapshots = Collections.synchronizedList(new ArrayList<>());
-      
+
       // Process all containers in parallel
       containerVolumes.entrySet().parallelStream().forEach(entry -> {
         String containerName = entry.getKey();
         String currentVolume = entry.getValue();
-        
+
         // Generate backup volume name based on container type
         String backupVolumeName;
         if (CONTAINER_GENESIS.equals(containerName)) {
@@ -401,7 +399,7 @@ public class MyRestController {
           String baseVolumeName = CONTAINER_VOLUME_MAP.get(containerName);
           backupVolumeName = baseVolumeName + "-snapshot-" + snapshotNumber;
         }
-        
+
         try {
           log.info("Creating snapshot for container {}: {} -> {}", containerName, currentVolume, backupVolumeName);
           copyVolumes(dockerClient, currentVolume, backupVolumeName);
@@ -412,7 +410,7 @@ public class MyRestController {
           failedSnapshots.add(containerName + ": " + e.getMessage());
         }
       });
-      
+
       log.info("Parallel snapshot creation completed. Created: {}, Failed: {}", createdSnapshots.size(), failedSnapshots.size());
 
       // Store container configurations for this snapshot
@@ -420,7 +418,7 @@ public class MyRestController {
         try {
           currentSnapshotStatus = "Storing container configurations...";
           log.info("Storing container configurations for snapshot {}", snapshotNumber);
-          
+
           // Check if we're taking snapshot from another snapshot (non-active node)
           if (!isFromActiveNode && parentId != null && parentId.startsWith("snapshot-")) {
             // Extract source snapshot number from parentId (e.g., "snapshot-1" -> 1)
@@ -429,7 +427,7 @@ public class MyRestController {
               // Handle instance format like "snapshot-1-2" -> get "1"
               sourceSnapshotNumber = sourceSnapshotNumber.split("-")[0];
             }
-            
+
             try {
               int sourceSnapshot = Integer.parseInt(sourceSnapshotNumber);
               copySnapshotConfiguration(sourceSnapshot, snapshotNumber);
@@ -442,7 +440,7 @@ public class MyRestController {
             // Taking snapshot from active node, store current configurations
             storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses);
           }
-          
+
           log.info("Container configurations stored successfully for snapshot {}", snapshotNumber);
         } catch (Exception e) {
           log.error("Failed to store container configurations for snapshot {}: {}", snapshotNumber, e.getMessage());
@@ -473,7 +471,7 @@ public class MyRestController {
       }
 
       Map<String, Object> response = new HashMap<>();
-      
+
       if (failedSnapshots.isEmpty()) {
         currentSnapshotStatus = "Snapshot taken successfully";
         response.put("success", true);
@@ -484,7 +482,7 @@ public class MyRestController {
         response.put("createdSnapshots", createdSnapshots);
         response.put("blockchainShutdown", shouldShutdownBlockchain);
         response.put("activeNodes", activeNodesCount); // Include active nodes count
-        response.put("message", "Snapshots created successfully for all containers (" + createdSnapshots.size() + " volumes)" + 
+        response.put("message", "Snapshots created successfully for all containers (" + createdSnapshots.size() + " volumes)" +
             (shouldShutdownBlockchain ? " with blockchain shutdown/restart" : ""));
       } else {
         // If some snapshots failed, clean up successful ones
@@ -496,21 +494,21 @@ public class MyRestController {
             log.warn("Failed to clean up partial snapshot {}: {}", createdSnapshot, cleanupError.getMessage());
           }
         }
-        
+
         currentSnapshotStatus = "Snapshot failed";
         response.put("success", false);
         response.put("message", "Failed to create snapshots for some containers: " + String.join(", ", failedSnapshots));
         response.put("failedSnapshots", failedSnapshots);
         response.put("blockchainShutdown", shouldShutdownBlockchain);
       }
-      
+
       isSnapshotInProgress = false;
 
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
       waitForSeqnoVolumeHealthy();
       currentSnapshotStatus = "Ready";
-      
+
       return response;
 
     } catch (Exception e) {
@@ -538,7 +536,7 @@ public class MyRestController {
 
   private List<String> getAllRunningContainers() {
     List<String> runningContainers = new ArrayList<>();
-    
+
     // Always check genesis
     try {
       String genesisId = getGenesisContainerId();
@@ -548,7 +546,7 @@ public class MyRestController {
     } catch (Exception e) {
       log.warn("Genesis container not running");
     }
-    
+
     // Check each validator
     for (String validatorContainer : VALIDATOR_CONTAINERS) {
       try {
@@ -563,7 +561,7 @@ public class MyRestController {
         log.debug("Validator container {} not running", validatorContainer);
       }
     }
-    
+
     return runningContainers;
   }
 
@@ -585,7 +583,7 @@ public class MyRestController {
 
   private Map<String, String> getContainerVolumeMap(List<String> containers) {
     Map<String, String> containerVolumes = new HashMap<>();
-    
+
     for (String containerName : containers) {
       String containerId = getContainerIdByName(containerName);
       if (containerId != null) {
@@ -595,7 +593,7 @@ public class MyRestController {
         }
       }
     }
-    
+
     return containerVolumes;
   }
 
@@ -605,18 +603,18 @@ public class MyRestController {
       if (StringUtils.isEmpty(genesisContainerId)) {
         return "root"; // Default to root if no genesis container
       }
-      
+
       String currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
       if (currentVolume == null) {
         return "root";
       }
-      
+
       // Determine active node ID based on current volume name
       if (currentVolume.contains("ton-db-snapshot-")) {
         String parts[] = currentVolume.split("ton-db-snapshot-");
         if (parts.length > 1) {
           String numberPart = parts[1];
-          
+
           // Check for instance format: ton-db-snapshot-10-1
           if (numberPart.matches("\\d+-\\d+")) {
             String[] instanceParts = numberPart.split("-");
@@ -635,7 +633,7 @@ public class MyRestController {
           }
         }
       }
-      
+
       return "root"; // Default to root for base volume
     } catch (Exception e) {
       log.warn("Error determining active node ID from volume: {}", e.getMessage());
@@ -740,9 +738,9 @@ public class MyRestController {
         }
 
         // Genesis container - always should exist for instances
-        String genesisTargetVolume = "ton-db-snapshot-" + snapshotNumber + 
+        String genesisTargetVolume = "ton-db-snapshot-" + snapshotNumber +
             (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
-        
+
         // Check if genesis volume exists before adding
         try {
           dockerClient.inspectVolumeCmd(genesisTargetVolume).exec();
@@ -756,7 +754,7 @@ public class MyRestController {
         for (String validatorContainer : VALIDATOR_CONTAINERS) {
           String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
           String targetVolume = baseVolumeName + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
-          
+
           // Only add if the instance volume exists
           try {
             dockerClient.inspectVolumeCmd(targetVolume).exec();
@@ -777,7 +775,7 @@ public class MyRestController {
         // Genesis container - should always exist
         String genesisBackupVolume = "ton-db-snapshot-" + snapshotNumber;
         String genesisTargetVolume = genesisBackupVolume + "-" + instanceNumber;
-        
+
         // Check if genesis backup exists before copying
         try {
           dockerClient.inspectVolumeCmd(genesisBackupVolume).exec();
@@ -804,7 +802,7 @@ public class MyRestController {
             log.info("Validator backup volume {} not found, skipping", validatorBackupVolume);
           }
         }
-        
+
         log.info("Created new instance volumes for {} containers", containerTargetVolumes.size());
       }
 
@@ -812,7 +810,7 @@ public class MyRestController {
       Map<String, ContainerConfig> containerConfigs = new HashMap<>();
       Map<String, HostConfig> hostConfigs = new HashMap<>();
       Map<String, String> containerIpAddresses = new HashMap<>();
-      
+
       List<String> runningContainers = getAllRunningContainers();
       for (String containerName : runningContainers) {
         try {
@@ -821,11 +819,11 @@ public class MyRestController {
             InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
             containerConfigs.put(containerName, inspectResponse.getConfig());
             hostConfigs.put(containerName, inspectResponse.getHostConfig());
-            
+
             // Get IP address if available
             try {
-              if (inspectResponse.getNetworkSettings() != null && 
-                  inspectResponse.getNetworkSettings().getNetworks() != null && 
+              if (inspectResponse.getNetworkSettings() != null &&
+                  inspectResponse.getNetworkSettings().getNetworks() != null &&
                   !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
                 String ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
                 if (ipAddress != null) {
@@ -846,7 +844,7 @@ public class MyRestController {
       Map<String, HostConfig> storedHostConfigs = new HashMap<>();
       Map<String, String> storedContainerIpAddresses = new HashMap<>();
       List<String> containersToRemove = new ArrayList<>();
-      
+
       try {
         currentSnapshotStatus = "Loading stored container configurations...";
         log.info("Loading stored container configurations for snapshot {}", snapshotNumber);
@@ -855,14 +853,14 @@ public class MyRestController {
           storedContainerConfigs = extractContainerConfigs(storedConfig);
           storedHostConfigs = extractHostConfigs(storedConfig);
           storedContainerIpAddresses = extractContainerIpAddresses(storedConfig);
-          
+
           // Get list of containers from stored config to ensure we remove them all
           @SuppressWarnings("unchecked")
           List<String> storedRunningContainers = (List<String>) storedConfig.get("runningContainers");
           if (storedRunningContainers != null) {
             containersToRemove.addAll(storedRunningContainers);
           }
-          
+
           log.info("Successfully loaded stored configurations for {} containers", storedContainerConfigs.size());
           log.info("Containers to remove from stored config: {}", containersToRemove);
         } else {
@@ -879,7 +877,7 @@ public class MyRestController {
       // Stop and remove ALL containers (both running and stopped) that are mentioned in the stored config
       currentSnapshotStatus = "Stopping current blockchain...";
       stopAndRemoveSpecificContainers(containersToRemove);
-      
+
       // Use stored configurations if available, otherwise fall back to current configurations
       Map<String, ContainerConfig> finalContainerConfigs = storedContainerConfigs.isEmpty() ? containerConfigs : storedContainerConfigs;
       Map<String, HostConfig> finalHostConfigs = storedHostConfigs.isEmpty() ? hostConfigs : storedHostConfigs;
@@ -894,10 +892,16 @@ public class MyRestController {
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
       waitForSeqnoVolumeHealthy();
-      
+
       // Restart ton-http-api-v2 container after snapshot restoration
-      restartTonHttpApiV2Container();
-      
+      restartExtraServiceContainer("ton-http-api-v2");
+
+      // Restart faucet container after snapshot restoration
+      restartExtraServiceContainer("faucet");
+
+      // Restart data-generator container after snapshot restoration
+      restartExtraServiceContainer("data-generator");
+
       currentSnapshotStatus = "Ready";
 
       Map<String, Object> response = new HashMap<>();
@@ -962,10 +966,10 @@ public class MyRestController {
       // Check across ALL container types (genesis + validators)
       List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
       int maxInstanceNumber = 0;
-      
+
       // Check genesis instances
       String genesisInstancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
-      
+
       // Check validator instances
       List<String> validatorInstancePrefixes = new ArrayList<>();
       for (String validatorContainer : VALIDATOR_CONTAINERS) {
@@ -975,7 +979,7 @@ public class MyRestController {
 
       for (InspectVolumeResponse volume : volumes) {
         String volumeName = volume.getName();
-        
+
         // Check if this is a genesis instance volume
         if (volumeName.startsWith(genesisInstancePrefix)) {
           try {
@@ -991,7 +995,7 @@ public class MyRestController {
             log.warn("Invalid genesis instance volume name format: {}", volumeName);
           }
         }
-        
+
         // Check if this is a validator instance volume
         for (String validatorPrefix : validatorInstancePrefixes) {
           if (volumeName.startsWith(validatorPrefix)) {
@@ -1043,31 +1047,31 @@ public class MyRestController {
       // Check if any of the volumes to delete are currently in use
       String genesisContainerId = getGenesisContainerId();
       String currentVolume = null;
-      
+
       if (!StringUtils.isEmpty(genesisContainerId)) {
         currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
       }
 
       // Build list of volumes to delete from nodesToDelete list
       List<String> volumesToDelete = new ArrayList<>();
-      
+
       @SuppressWarnings("unchecked")
       List<Map<String, Object>> nodesToDelete = (List<Map<String, Object>>) request.get("nodesToDelete");
-      
+
       if (nodesToDelete != null && !nodesToDelete.isEmpty()) {
         // Delete volumes for all nodes in the list (including all container types)
         for (Map<String, Object> nodeToDelete : nodesToDelete) {
           String nodeSnapshotNumber = String.valueOf(nodeToDelete.get("snapshotNumber"));
-          String nodeInstanceNumber = nodeToDelete.get("instanceNumber") != null ? 
+          String nodeInstanceNumber = nodeToDelete.get("instanceNumber") != null ?
               String.valueOf(nodeToDelete.get("instanceNumber")) : null;
           String nodeNodeType = (String) nodeToDelete.get("type");
-          
+
           if ("instance".equals(nodeNodeType) && nodeInstanceNumber != null) {
             // Delete instance volumes for ALL container types
             // Genesis instance volume
             String genesisInstanceVolume = "ton-db-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
             volumesToDelete.add(genesisInstanceVolume);
-            
+
             // Validator instance volumes
             for (String validatorContainer : VALIDATOR_CONTAINERS) {
               String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
@@ -1079,7 +1083,7 @@ public class MyRestController {
             // Genesis base snapshot volume
             String genesisBaseVolume = "ton-db-snapshot-" + nodeSnapshotNumber;
             volumesToDelete.add(genesisBaseVolume);
-            
+
             // Validator base snapshot volumes
             for (String validatorContainer : VALIDATOR_CONTAINERS) {
               String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
@@ -1095,7 +1099,7 @@ public class MyRestController {
           // Genesis instance volume
           String genesisInstanceVolume = "ton-db-snapshot-" + snapshotNumber + "-" + instanceNumber;
           volumesToDelete.add(genesisInstanceVolume);
-          
+
           // Validator instance volumes
           for (String validatorContainer : VALIDATOR_CONTAINERS) {
             String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
@@ -1107,37 +1111,37 @@ public class MyRestController {
           // Genesis base snapshot volume
           String genesisBaseVolume = "ton-db-snapshot-" + snapshotNumber;
           volumesToDelete.add(genesisBaseVolume);
-          
+
           // Validator base snapshot volumes
           for (String validatorContainer : VALIDATOR_CONTAINERS) {
             String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
             String validatorBaseVolume = baseVolumeName + "-snapshot-" + snapshotNumber;
             volumesToDelete.add(validatorBaseVolume);
           }
-          
+
           // If has children, also delete all instance volumes for this snapshot (all container types)
           if (hasChildren != null && hasChildren) {
             // Find all instance volumes for this snapshot across all container types
             List<InspectVolumeResponse> allVolumes = dockerClient.listVolumesCmd().exec().getVolumes();
-            
+
             // Genesis instance volumes
             String genesisInstancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
-            
+
             // Validator instance volume prefixes
             List<String> validatorInstancePrefixes = new ArrayList<>();
             for (String validatorContainer : VALIDATOR_CONTAINERS) {
               String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
               validatorInstancePrefixes.add(baseVolumeName + "-snapshot-" + snapshotNumber + "-");
             }
-            
+
             for (InspectVolumeResponse volume : allVolumes) {
               String volumeName = volume.getName();
-              
+
               // Check genesis instance volumes
               if (volumeName.startsWith(genesisInstancePrefix)) {
                 volumesToDelete.add(volumeName);
               }
-              
+
               // Check validator instance volumes
               for (String validatorPrefix : validatorInstancePrefixes) {
                 if (volumeName.startsWith(validatorPrefix)) {
@@ -1154,7 +1158,7 @@ public class MyRestController {
       if (currentVolume != null && volumesToDelete.contains(currentVolume)) {
         deletingActiveVolume = true;
         log.warn("Attempting to delete currently active volume: {}", currentVolume);
-        
+
         // If trying to delete active volume, return error immediately
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
@@ -1166,24 +1170,24 @@ public class MyRestController {
       // Delete the volumes
       List<String> deletedVolumes = new ArrayList<>();
       List<String> failedVolumes = new ArrayList<>();
-      
+
       for (String volumeName : volumesToDelete) {
         try {
           // Check if volume exists
           dockerClient.inspectVolumeCmd(volumeName).exec();
-          
+
           // If this is the active volume, we cannot delete it
           if (volumeName.equals(currentVolume)) {
             log.error("Cannot delete active volume: {}", volumeName);
             failedVolumes.add(volumeName + " (currently active)");
             continue;
           }
-          
+
           // Delete the volume
           dockerClient.removeVolumeCmd(volumeName).exec();
           deletedVolumes.add(volumeName);
           log.info("Successfully deleted volume: {}", volumeName);
-          
+
         } catch (NotFoundException e) {
           log.warn("Volume not found (already deleted?): {}", volumeName);
           // Consider this a success since the volume is gone
@@ -1195,7 +1199,7 @@ public class MyRestController {
       }
 
       Map<String, Object> response = new HashMap<>();
-      
+
       if (failedVolumes.isEmpty()) {
         response.put("success", true);
         response.put("message", "Snapshot deleted successfully");
@@ -1208,7 +1212,7 @@ public class MyRestController {
         response.put("failedVolumes", failedVolumes);
         response.put("deletingActiveVolume", deletingActiveVolume);
       }
-      
+
       return response;
 
     } catch (Exception e) {
@@ -1222,15 +1226,15 @@ public class MyRestController {
 
   private void stopAndRemoveAllContainers() {
     log.info("Stopping and removing all containers in parallel");
-    
+
     // Get all running containers that we manage
     List<String> runningContainers = getAllRunningContainers();
-    
+
     if (runningContainers.isEmpty()) {
       log.info("No containers to stop");
       return;
     }
-    
+
     stopAndRemoveSpecificContainers(runningContainers);
   }
 
@@ -1240,19 +1244,19 @@ public class MyRestController {
    */
   private void stopAndRemoveSpecificContainers(List<String> containerNames) {
     log.info("Stopping and removing specific containers in parallel: {}", containerNames);
-    
+
     if (containerNames.isEmpty()) {
       log.info("No containers to stop");
       return;
     }
-    
+
     // Find all containers (both running and stopped) that match the names
     Map<String, String> containerIds = new HashMap<>();
-    
+
     // Check both running and stopped containers
     try {
       List<Container> allContainers = dockerClient.listContainersCmd().withShowAll(true).exec();
-      
+
       for (String containerName : containerNames) {
         for (Container container : allContainers) {
           // Check if container name matches (Docker container names start with "/")
@@ -1280,17 +1284,17 @@ public class MyRestController {
         }
       }
     }
-    
+
     if (containerIds.isEmpty()) {
       log.info("No containers found to remove");
       return;
     }
-    
+
     log.info("Found containers to remove: {}", containerIds);
-    
+
     // Stop all containers in parallel using CompletableFuture for true parallelism
     log.info("Stopping {} containers in parallel", containerIds.size());
-    
+
     List<CompletableFuture<Void>> stopFutures = containerIds.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
@@ -1304,22 +1308,22 @@ public class MyRestController {
           }
         }))
         .toList();
-    
+
     // Wait for all stop operations to complete
     CompletableFuture<Void> allStopFutures = CompletableFuture.allOf(
         stopFutures.toArray(new CompletableFuture[0])
     );
-    
+
     try {
       allStopFutures.get(); // Wait for all containers to stop
       log.info("All containers stopped in parallel");
     } catch (Exception e) {
       log.error("Error waiting for containers to stop: {}", e.getMessage());
     }
-    
+
     // Remove all containers in parallel using CompletableFuture
     log.info("Removing {} containers in parallel", containerIds.size());
-    
+
     List<CompletableFuture<Void>> removeFutures = containerIds.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
@@ -1333,31 +1337,31 @@ public class MyRestController {
           }
         }))
         .toList();
-    
+
     // Wait for all remove operations to complete
     CompletableFuture<Void> allRemoveFutures = CompletableFuture.allOf(
         removeFutures.toArray(new CompletableFuture[0])
     );
-    
+
     try {
       allRemoveFutures.get(); // Wait for all containers to be removed
       log.info("All containers removed in parallel");
     } catch (Exception e) {
       log.error("Error waiting for containers to be removed: {}", e.getMessage());
     }
-    
+
     // Verify all specified containers are actually removed before proceeding
     log.info("Verifying all specified containers are completely removed...");
     int maxRetries = 10;
     int retryCount = 0;
-    
+
     while (retryCount < maxRetries) {
       // Check if any of the specified containers still exist
       List<String> stillExisting = new ArrayList<>();
-      
+
       try {
         List<Container> allContainers = dockerClient.listContainersCmd().withShowAll(true).exec();
-        
+
         for (String containerName : containerNames) {
           for (Container container : allContainers) {
             if (container.getNames() != null) {
@@ -1377,14 +1381,14 @@ public class MyRestController {
         log.error("Error checking remaining containers: {}", e.getMessage());
         break;
       }
-      
+
       if (stillExisting.isEmpty()) {
         log.info("All specified containers successfully removed");
         break;
       }
-      
+
       log.warn("Still found {} containers after removal attempt: {}", stillExisting.size(), stillExisting);
-      
+
       // Force remove any remaining containers in parallel
       List<CompletableFuture<Void>> forceRemoveFutures = stillExisting.stream()
           .map(containerName -> CompletableFuture.runAsync(() -> {
@@ -1399,14 +1403,14 @@ public class MyRestController {
             }
           }))
           .toList();
-      
+
       // Wait for all force remove operations to complete
       try {
         CompletableFuture.allOf(forceRemoveFutures.toArray(new CompletableFuture[0])).get();
       } catch (Exception e) {
         log.error("Error during force removal: {}", e.getMessage());
       }
-      
+
       retryCount++;
       try {
         Thread.sleep(1000); // Wait 1 second before checking again
@@ -1415,11 +1419,11 @@ public class MyRestController {
         break;
       }
     }
-    
+
     if (retryCount >= maxRetries) {
       log.warn("Some containers may still exist after {} attempts, but continuing anyway", maxRetries);
     }
-    
+
     log.info("Container removal process completed for specified containers");
   }
 
@@ -1440,11 +1444,11 @@ public class MyRestController {
    */
   private void recreateContainer(String containerName, String targetVolume) throws Exception {
     log.info("Recreating container {} with volume: {}", containerName, targetVolume);
-    
+
     // First, get the existing container configuration before stopping it
-    String containerId = CONTAINER_GENESIS.equals(containerName) ? 
+    String containerId = CONTAINER_GENESIS.equals(containerName) ?
         getGenesisContainerId() : getContainerIdByName(containerName);
-    
+
     if (StringUtils.isEmpty(containerId)) {
       throw new RuntimeException("Container " + containerName + " not found for configuration retrieval");
     }
@@ -1469,8 +1473,8 @@ public class MyRestController {
     // Get IP address if available
     String ipAddress = null;
     try {
-      if (inspectX.getNetworkSettings() != null && 
-          inspectX.getNetworkSettings().getNetworks() != null && 
+      if (inspectX.getNetworkSettings() != null &&
+          inspectX.getNetworkSettings().getNetworks() != null &&
           !inspectX.getNetworkSettings().getNetworks().isEmpty()) {
         ipAddress = inspectX.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
       }
@@ -1529,19 +1533,19 @@ public class MyRestController {
       Map<String, HostConfig> hostConfigs,
       Map<String, String> containerIpAddresses,
       String seqnoStr) {
-    
+
     log.info("Recreating {} containers in parallel with target volumes and saved configs: {}", containerTargetVolumes.size(), containerTargetVolumes);
-    
+
     // Use thread-safe collections for parallel processing
     List<String> createdContainers = Collections.synchronizedList(new ArrayList<>());
     List<String> failedContainers = Collections.synchronizedList(new ArrayList<>());
-    
+
     // Recreate all containers in parallel using CompletableFuture for true parallelism
     List<CompletableFuture<Void>> recreateFutures = containerTargetVolumes.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
           String targetVolume = entry.getValue();
-          
+
           try {
             log.info("Recreating container {} in parallel with volume and saved config: {}", containerName, targetVolume);
             recreateContainerWithConfig(
@@ -1559,21 +1563,21 @@ public class MyRestController {
           }
         }))
         .toList();
-    
+
     // Wait for all container recreation operations to complete
     CompletableFuture<Void> allRecreateFutures = CompletableFuture.allOf(
         recreateFutures.toArray(new CompletableFuture[0])
     );
-    
+
     try {
       allRecreateFutures.get(); // Wait for all containers to be recreated
       log.info("All containers recreated in parallel");
     } catch (Exception e) {
       log.error("Error waiting for containers to be recreated: {}", e.getMessage());
     }
-    
+
     log.info("Parallel container recreation completed. Created: {}, Failed: {}", createdContainers.size(), failedContainers.size());
-    
+
     if (!failedContainers.isEmpty()) {
       throw new RuntimeException("Failed to recreate some containers: " + String.join(", ", failedContainers));
     }
@@ -1585,13 +1589,13 @@ public class MyRestController {
    */
   private void recreateContainerWithConfig(
       String containerName,
-      String targetVolume, 
-      ContainerConfig config, 
-      HostConfig hostConfig, 
+      String targetVolume,
+      ContainerConfig config,
+      HostConfig hostConfig,
       String ipAddress) throws Exception {
-    
+
     log.info("Recreating container {} with volume and saved config: {}", containerName, targetVolume);
-    
+
     if (config == null || hostConfig == null) {
       log.warn("No saved configuration found for container {}, using default recreation method", containerName);
       recreateContainer(containerName, targetVolume);
@@ -1718,34 +1722,31 @@ public class MyRestController {
    * Restarts the ton-http-api-v2 container if it is running.
    * Saves the container configuration before stopping, then recreates it with the same configuration.
    */
-  private void restartTonHttpApiV2Container() {
-    final String containerName = "ton-http-api-v2";
-    
+  private void restartExtraServiceContainer(String containerName) {
+
     try {
       log.info("Checking if {} container is running", containerName);
-      
+
       // Check if the container exists and is running
       String containerId = getContainerIdByName(containerName);
       if (StringUtils.isEmpty(containerId)) {
         log.info("Container {} is not running, skipping restart", containerName);
         return;
       }
-      currentSnapshotStatus = "Restarting ton-http-api-v2 container";
+      currentSnapshotStatus = "Restarting "+containerName+" container";
 
-      log.info("Found running container {}, proceeding with restart", containerName);
-      
       // Get container configuration before stopping
       InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
       ContainerConfig config = inspectResponse.getConfig();
       HostConfig hostConfig = inspectResponse.getHostConfig();
-      
+
       // Extract configuration details
       String[] envs = config.getEnv();
       ExposedPort[] exposedPorts = config.getExposedPorts();
       HealthCheck healthCheck = config.getHealthcheck();
       String networkMode = hostConfig.getNetworkMode();
       String imageName = config.getImage();
-      
+
       // Get port bindings
       Ports portBindings = new Ports();
       if (exposedPorts != null) {
@@ -1753,19 +1754,19 @@ public class MyRestController {
           portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
         }
       }
-      
+
       // Get IP address if available
       String ipAddress = null;
       try {
-        if (inspectResponse.getNetworkSettings() != null && 
-            inspectResponse.getNetworkSettings().getNetworks() != null && 
+        if (inspectResponse.getNetworkSettings() != null &&
+            inspectResponse.getNetworkSettings().getNetworks() != null &&
             !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
           ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
         }
       } catch (Exception e) {
-        log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
+        log.warn("Could not retrieve IP address for container {}", containerName);
       }
-      
+
       // Get volume mounts
       List<Mount> mounts = new ArrayList<>();
       if (inspectResponse.getMounts() != null) {
@@ -1785,7 +1786,7 @@ public class MyRestController {
           }
         }
       }
-      
+
       // Get volumes for backward compatibility
       List<Volume> volumes = new ArrayList<>();
       if (config.getVolumes() != null) {
@@ -1793,15 +1794,15 @@ public class MyRestController {
           volumes.add(new Volume(volumeEntry.getKey()));
         }
       }
-      
+
       log.info("Stopping container {}", containerName);
       dockerClient.stopContainerCmd(containerId).exec();
-      
+
       log.info("Removing container {}", containerName);
       dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-      
+
       log.info("Recreating container {} with saved configuration", containerName);
-      
+
       // Create new container with the same configuration
       CreateContainerCmd createCmd = dockerClient
           .createContainerCmd(imageName)
@@ -1814,29 +1815,29 @@ public class MyRestController {
                   .withPortBindings(portBindings)
                   .withMounts(mounts)
           );
-      
+
       // Add exposed ports if they exist
       if (exposedPorts != null) {
         createCmd.withExposedPorts(exposedPorts);
       }
-      
+
       // Add volumes if they exist
       if (!volumes.isEmpty()) {
         createCmd.withVolumes(volumes.toArray(new Volume[0]));
       }
-      
+
       // Add IP address if available
       if (ipAddress != null) {
         createCmd.withIpv4Address(ipAddress);
       }
-      
+
       CreateContainerResponse newContainer = createCmd.exec();
-      
+
       log.info("Starting recreated container {}", containerName);
       dockerClient.startContainerCmd(newContainer.getId()).exec();
-      
+
       log.info("Successfully restarted container {}", containerName);
-      
+
     } catch (NotFoundException e) {
       log.info("Container {} not found, skipping restart", containerName);
     } catch (Exception e) {
@@ -1852,34 +1853,34 @@ public class MyRestController {
   private void copySnapshotConfiguration(int sourceSnapshotNumber, int targetSnapshotNumber) throws Exception {
     String sourceConfigPath = "/usr/share/data/config-snapshot-" + sourceSnapshotNumber + ".json";
     String targetConfigPath = "/usr/share/data/config-snapshot-" + targetSnapshotNumber + ".json";
-    
+
     File sourceConfigFile = new File(sourceConfigPath);
     if (!sourceConfigFile.exists()) {
       log.warn("Source configuration file not found: {}, cannot copy to target snapshot {}", sourceConfigPath, targetSnapshotNumber);
       throw new RuntimeException("Source configuration file not found for snapshot " + sourceSnapshotNumber);
     }
-    
+
     // Ensure target directory exists
     File dataDir = new File("/usr/share/data");
     if (!dataDir.exists()) {
       dataDir.mkdirs();
     }
-    
+
     // Read source configuration
     String content = new String(Files.readAllBytes(Paths.get(sourceConfigPath)));
     Gson gson = new GsonBuilder().create();
     TypeToken<Map<String, Object>> typeToken = new TypeToken<Map<String, Object>>() {};
     Map<String, Object> configData = gson.fromJson(content, typeToken.getType());
-    
+
     // Update snapshot number and timestamp for the new snapshot
     configData.put("snapshotNumber", targetSnapshotNumber);
     configData.put("timestamp", System.currentTimeMillis());
-    
+
     // Write to target file
     gson = new GsonBuilder().setPrettyPrinting().create();
     String jsonContent = gson.toJson(configData);
     Files.write(Paths.get(targetConfigPath), jsonContent.getBytes());
-    
+
     log.info("Copied container configuration from snapshot {} to snapshot {}", sourceSnapshotNumber, targetSnapshotNumber);
   }
 
@@ -1893,26 +1894,26 @@ public class MyRestController {
       Map<String, ContainerConfig> containerConfigs,
       Map<String, HostConfig> hostConfigs,
       Map<String, String> containerIpAddresses) throws Exception {
-    
+
     String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
-    
+
     // Ensure directory exists
     File dataDir = new File("/usr/share/data");
     if (!dataDir.exists()) {
       dataDir.mkdirs();
     }
-    
+
     // Build simplified configuration data structure
     Map<String, Object> configData = new HashMap<>();
     configData.put("snapshotNumber", snapshotNumber);
     configData.put("timestamp", System.currentTimeMillis());
     configData.put("runningContainers", runningContainers);
-    
+
     // Store basic container information
     Map<String, Object> containers = new HashMap<>();
     for (String containerName : runningContainers) {
       Map<String, Object> containerData = new HashMap<>();
-      
+
       // Store basic container info
       ContainerConfig config = containerConfigs.get(containerName);
       if (config != null) {
@@ -1921,7 +1922,7 @@ public class MyRestController {
         configMap.put("image", config.getImage());
         containerData.put("config", configMap);
       }
-      
+
       // Store basic host config info
       HostConfig hostConfig = hostConfigs.get(containerName);
       if (hostConfig != null) {
@@ -1929,26 +1930,26 @@ public class MyRestController {
         hostConfigMap.put("networkMode", hostConfig.getNetworkMode());
         containerData.put("hostConfig", hostConfigMap);
       }
-      
+
       // Store IP address
       String ipAddress = containerIpAddresses.get(containerName);
       if (ipAddress != null) {
         containerData.put("ipAddress", ipAddress);
       }
-      
+
       containers.put(containerName, containerData);
     }
-    
+
     configData.put("containers", containers);
-    
+
     // Write to file
     Gson gson = new GsonBuilder().setPrettyPrinting().create();
     String jsonContent = gson.toJson(configData);
     Files.write(Paths.get(configPath), jsonContent.getBytes());
-    
+
     log.info("Stored container configuration for snapshot {} to {}", snapshotNumber, configPath);
   }
-  
+
   /**
    * Loads container configuration data for a snapshot from a JSON file.
    * Returns null if the configuration file doesn't exist.
@@ -1956,28 +1957,28 @@ public class MyRestController {
   private Map<String, Object> loadSnapshotConfiguration(int snapshotNumber) throws Exception {
     String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
     File configFile = new File(configPath);
-    
+
     if (!configFile.exists()) {
       log.warn("Configuration file not found for snapshot {}: {}", snapshotNumber, configPath);
       return null;
     }
-    
+
     String content = new String(Files.readAllBytes(Paths.get(configPath)));
     Gson gson = new GsonBuilder().create();
     TypeToken<Map<String, Object>> typeToken = new TypeToken<Map<String, Object>>() {};
     Map<String, Object> configData = gson.fromJson(content, typeToken.getType());
-    
+
     log.info("Loaded container configuration for snapshot {} from {}", snapshotNumber, configPath);
     return configData;
   }
-  
+
   /**
    * Extracts ContainerConfig objects from stored configuration data.
    */
   @SuppressWarnings("unchecked")
   private Map<String, ContainerConfig> extractContainerConfigs(Map<String, Object> storedConfig) {
     Map<String, ContainerConfig> containerConfigs = new HashMap<>();
-    
+
     try {
       Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
       if (containers != null) {
@@ -1985,22 +1986,22 @@ public class MyRestController {
           String containerName = entry.getKey();
           Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
           Map<String, Object> configMap = (Map<String, Object>) containerData.get("config");
-          
+
           if (configMap != null) {
             ContainerConfig config = new ContainerConfig();
-            
+
             // Set environment variables
             List<String> envList = (List<String>) configMap.get("env");
             if (envList != null && !envList.isEmpty()) {
               config.withEnv(envList.toArray(new String[0]));
             }
-            
+
             // Set image
             String image = (String) configMap.get("image");
             if (image != null) {
               config.withImage(image);
             }
-            
+
             containerConfigs.put(containerName, config);
           }
         }
@@ -2008,17 +2009,17 @@ public class MyRestController {
     } catch (Exception e) {
       log.error("Error extracting container configs from stored configuration: {}", e.getMessage());
     }
-    
+
     return containerConfigs;
   }
-  
+
   /**
    * Extracts HostConfig objects from stored configuration data.
    */
   @SuppressWarnings("unchecked")
   private Map<String, HostConfig> extractHostConfigs(Map<String, Object> storedConfig) {
     Map<String, HostConfig> hostConfigs = new HashMap<>();
-    
+
     try {
       Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
       if (containers != null) {
@@ -2026,16 +2027,16 @@ public class MyRestController {
           String containerName = entry.getKey();
           Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
           Map<String, Object> hostConfigMap = (Map<String, Object>) containerData.get("hostConfig");
-          
+
           if (hostConfigMap != null) {
             HostConfig hostConfig = new HostConfig();
-            
+
             // Set network mode
             String networkMode = (String) hostConfigMap.get("networkMode");
             if (networkMode != null) {
               hostConfig.withNetworkMode(networkMode);
             }
-            
+
             hostConfigs.put(containerName, hostConfig);
           }
         }
@@ -2043,17 +2044,17 @@ public class MyRestController {
     } catch (Exception e) {
       log.error("Error extracting host configs from stored configuration: {}", e.getMessage());
     }
-    
+
     return hostConfigs;
   }
-  
+
   /**
    * Extracts container IP addresses from stored configuration data.
    */
   @SuppressWarnings("unchecked")
   private Map<String, String> extractContainerIpAddresses(Map<String, Object> storedConfig) {
     Map<String, String> containerIpAddresses = new HashMap<>();
-    
+
     try {
       Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
       if (containers != null) {
@@ -2061,7 +2062,7 @@ public class MyRestController {
           String containerName = entry.getKey();
           Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
           String ipAddress = (String) containerData.get("ipAddress");
-          
+
           if (ipAddress != null) {
             containerIpAddresses.put(containerName, ipAddress);
           }
@@ -2070,7 +2071,7 @@ public class MyRestController {
     } catch (Exception e) {
       log.error("Error extracting container IP addresses from stored configuration: {}", e.getMessage());
     }
-    
+
     return containerIpAddresses;
   }
 }
