@@ -63,6 +63,11 @@ class BlockchainGraph {
             this.deleteSnapshot();
         });
         
+        document.getElementById('stop-blockchain-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.stopBlockchain();
+        });
+        
         // Message overlay close
         document.getElementById('message-close').addEventListener('click', () => {
             this.hideMessage();
@@ -1374,6 +1379,49 @@ class BlockchainGraph {
         };
 
         checkSeqno();
+    }
+
+    async stopBlockchain() {
+        // Confirm the action with the user
+        if (!confirm('Are you sure you want to stop the blockchain? This will stop and remove all containers except time-machine.')) {
+            return;
+        }
+        
+        // Clear any previous error state when starting a new action
+        this.clearErrorState();
+        this.showLoading(true);
+        this.updateStatus("Stopping blockchain containers...");
+        
+        try {
+            const response = await fetch('/stop-blockchain', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.showMessage(`Blockchain stopped successfully. ${data.stoppedContainers || 0} containers stopped and removed.`, 'success');
+                
+                // Update the active node to root since blockchain is stopped
+                this.activeNodeId = "root";
+                
+                // Save graph and re-render
+                await this.saveGraph();
+                this.renderGraph();
+                this.updateStats();
+            } else {
+                this.showMessage(`Error stopping blockchain: ${data.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error stopping blockchain:', error);
+            this.showMessage('Failed to stop blockchain. Please try again.', 'error');
+        }
+        
+        this.showLoading(false);
+        this.updateStatus("Ready");
     }
 
     handleResize() {

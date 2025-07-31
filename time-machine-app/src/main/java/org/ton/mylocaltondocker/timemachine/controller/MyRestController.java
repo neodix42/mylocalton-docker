@@ -2095,6 +2095,98 @@ public class MyRestController {
   }
 
 
+  @PostMapping("/stop-blockchain")
+  public Map<String, Object> stopBlockchain() {
+    try {
+      log.info("Stopping blockchain - stopping and removing all containers except time-machine");
+      
+      // Get list of containers from docker-compose-build.yaml (excluding time-machine)
+      List<String> containersToStop = getAllContainers();
+      
+      if (containersToStop.isEmpty()) {
+        log.info("No containers found to stop");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "No containers found to stop");
+        response.put("stoppedContainers", 0);
+        return response;
+      }
+      
+      log.info("Found containers to stop: {}", containersToStop);
+      
+      // Filter to only running containers
+      List<String> runningContainers = new ArrayList<>();
+      for (String containerName : containersToStop) {
+        try {
+          String containerId = getContainerIdByName(containerName);
+          if (containerId != null) {
+            // Check if container is actually running
+            InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
+            if (inspectResponse.getState().getRunning()) {
+              runningContainers.add(containerName);
+            }
+          }
+        } catch (Exception e) {
+          log.debug("Container {} not found or not running", containerName);
+        }
+      }
+      
+      if (runningContainers.isEmpty()) {
+        log.info("No running containers found to stop");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "No running containers found to stop");
+        response.put("stoppedContainers", 0);
+        return response;
+      }
+      
+      log.info("Stopping {} running containers: {}", runningContainers.size(), runningContainers);
+      
+      // Stop and remove the running containers
+      stopAndRemoveSpecificContainers(runningContainers);
+      
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", true);
+      response.put("message", "Blockchain stopped successfully");
+      response.put("stoppedContainers", runningContainers.size());
+      response.put("containerNames", runningContainers);
+      
+      log.info("Successfully stopped {} containers", runningContainers.size());
+      return response;
+      
+    } catch (Exception e) {
+      log.error("Error stopping blockchain", e);
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", false);
+      response.put("message", "Failed to stop blockchain: " + e.getMessage());
+      return response;
+    }
+  }
+
+  private List<String> getAllContainers() {
+    List<String> containers = Arrays.asList(
+        "genesis",
+        "blockchain-explorer", 
+        "validator-1",
+        "validator-2",
+        "file-server",
+        "explorer-restarter",
+        "ton-http-api-v2",
+        "validator-3",
+        "validator-4", 
+        "validator-5",
+        "faucet",
+        "data-generator",
+        "index-event-cache",
+        "index-event-classifier", 
+        "index-api",
+        "index-worker",
+        "index-postgres"
+    );
+    
+    return containers;
+  }
+
   /**
    * Adds or updates CUSTOM_PARAMETERS environment variable with -T seqno flag
    * @param envs existing environment variables array
