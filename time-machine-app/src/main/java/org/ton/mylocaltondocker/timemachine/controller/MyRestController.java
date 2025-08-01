@@ -277,8 +277,8 @@ public class MyRestController {
 
       String snapshotId = "snapshot-" + snapshotNumber;
 
-      // Discover all running containers
-      List<String> runningContainers = getAllRunningContainers();
+      // Discover all running containers (including all services, not just genesis + validators)
+      List<String> runningContainers = getAllCurrentlyRunningContainers();
       if (runningContainers.isEmpty()) {
         log.error("No containers found");
         isSnapshotInProgress = false;
@@ -308,7 +308,7 @@ public class MyRestController {
       Map<String, ContainerConfig> containerConfigs = new HashMap<>();
       Map<String, HostConfig> hostConfigs = new HashMap<>();
       Map<String, String> containerIpAddresses = new HashMap<>();
-      Map<String, String> containerVolumes = new HashMap<>();
+      Map<String, String> containerVolumes;
 
       /// --------------------------------------------------------------------------------
       // Get current block sequence BEFORE shutting down blockchain
@@ -323,6 +323,8 @@ public class MyRestController {
         currentSnapshotStatus = "Stopping blockchain...";
         log.info("Multiple validators detected, capturing container configurations before shutdown");
 
+        containerVolumes = new HashMap<>();
+        
         // Get container configurations BEFORE stopping them
         for (String containerName : runningContainers) {
           try {
@@ -453,7 +455,26 @@ public class MyRestController {
         try {
           currentSnapshotStatus = "Starting blockchain...";
           log.info("Restarting blockchain with original volumes and configurations");
+          
+          // First, recreate containers that have volumes (genesis + validators)
           recreateAllContainersWithConfigs(containerVolumes, containerConfigs, hostConfigs, containerIpAddresses, String.valueOf(lastSeqno));
+          
+          // Then, restart additional service containers that don't have volumes but were running
+          List<String> additionalServices = runningContainers.stream()
+              .filter(containerName -> !containerVolumes.containsKey(containerName))
+              .toList();
+          
+          if (!additionalServices.isEmpty()) {
+            log.info("Restarting additional service containers that were running: {}", additionalServices);
+            for (String serviceName : additionalServices) {
+              try {
+                restartExtraServiceContainerWithConfig(serviceName, containerConfigs.get(serviceName), hostConfigs.get(serviceName), containerIpAddresses.get(serviceName));
+              } catch (Exception e) {
+                log.error("Failed to restart additional service container {}: {}", serviceName, e.getMessage());
+              }
+            }
+          }
+          
           log.info("Blockchain restarted successfully after snapshot creation");
         } catch (Exception e) {
           log.error("Failed to restart blockchain after snapshot creation: {}", e.getMessage());
@@ -568,6 +589,33 @@ public class MyRestController {
       }
     }
 
+    return runningContainers;
+  }
+
+  /**
+   * Gets all currently running containers from the complete list of containers.
+   * This includes genesis, validators, and all other services like faucet, data-generator, etc.
+   */
+  private List<String> getAllCurrentlyRunningContainers() {
+    List<String> runningContainers = new ArrayList<>();
+    List<String> allContainers = getAllContainers();
+
+    for (String containerName : allContainers) {
+      try {
+        String containerId = getContainerIdByName(containerName);
+        if (containerId != null) {
+          // Double-check that container is actually running
+          InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
+          if (inspectResponse.getState().getRunning()) {
+            runningContainers.add(containerName);
+          }
+        }
+      } catch (Exception e) {
+        log.debug("Container {} not running", containerName);
+      }
+    }
+
+    log.info("Found {} currently running containers: {}", runningContainers.size(), runningContainers);
     return runningContainers;
   }
 
@@ -817,7 +865,7 @@ public class MyRestController {
       Map<String, HostConfig> hostConfigs = new HashMap<>();
       Map<String, String> containerIpAddresses = new HashMap<>();
 
-      List<String> runningContainers = getAllRunningContainers();
+      List<String> runningContainers = getAllCurrentlyRunningContainers();
       for (String containerName : runningContainers) {
         try {
           String containerId = getContainerIdByName(containerName);
@@ -850,11 +898,12 @@ public class MyRestController {
       Map<String, HostConfig> storedHostConfigs = new HashMap<>();
       Map<String, String> storedContainerIpAddresses = new HashMap<>();
       List<String> containersToRemove = new ArrayList<>();
+      Map<String, Object> storedConfig = null;
 
       try {
         currentSnapshotStatus = "Loading stored container configurations...";
         log.info("Loading stored container configurations for snapshot {}", snapshotNumber);
-        Map<String, Object> storedConfig = loadSnapshotConfiguration(Integer.parseInt(snapshotNumber));
+        storedConfig = loadSnapshotConfiguration(Integer.parseInt(snapshotNumber));
         if (storedConfig != null) {
           storedContainerConfigs = extractContainerConfigs(storedConfig);
           storedHostConfigs = extractHostConfigs(storedConfig);
@@ -899,14 +948,41 @@ public class MyRestController {
       currentSnapshotStatus = "Waiting for lite-server to be ready";
       if (waitForSeqnoVolumeHealthy()) {
         currentSnapshotStatus = "Ready";
-        // Restart ton-http-api-v2 container after snapshot restoration
-        restartExtraServiceContainer("ton-http-api-v2");
-
-        // Restart faucet container after snapshot restoration
-        restartExtraServiceContainer("faucet");
-
-        // Restart data-generator container after snapshot restoration
-        restartExtraServiceContainer("data-generator");
+        // Restart additional service containers that were running when snapshot was taken
+        // Use stored configuration to determine which containers to restart
+        try {
+          @SuppressWarnings("unchecked")
+          List<String> storedRunningContainers = (List<String>) storedConfig.get("runningContainers");
+          if (storedRunningContainers != null) {
+            // Filter out genesis and validator containers, restart only additional services
+            List<String> additionalServices = storedRunningContainers.stream()
+                .filter(containerName -> !CONTAINER_GENESIS.equals(containerName))
+                .filter(containerName -> !Arrays.asList(VALIDATOR_CONTAINERS).contains(containerName))
+                .toList();
+            
+            log.info("Restarting additional service containers from snapshot: {}", additionalServices);
+            for (String serviceName : additionalServices) {
+              // Use stored configurations if available
+              ContainerConfig serviceConfig = storedContainerConfigs.get(serviceName);
+              HostConfig serviceHostConfig = storedHostConfigs.get(serviceName);
+              String serviceIpAddress = storedContainerIpAddresses.get(serviceName);
+              
+              restartExtraServiceContainer(serviceName, serviceConfig, serviceHostConfig, serviceIpAddress);
+            }
+          } else {
+            // Fallback to default services if no stored config
+            log.warn("No stored container list found, restarting default additional services");
+//            restartExtraServiceContainer("ton-http-api-v2");
+//            restartExtraServiceContainer("faucet");
+//            restartExtraServiceContainer("data-generator");
+          }
+        } catch (Exception e) {
+          log.error("Error restarting additional services from stored config, using defaults: {}", e.getMessage());
+          // Fallback to default services
+//          restartExtraServiceContainer("ton-http-api-v2");
+//          restartExtraServiceContainer("faucet");
+//          restartExtraServiceContainer("data-generator");
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -1240,7 +1316,7 @@ public class MyRestController {
     log.info("Stopping and removing all containers in parallel");
 
     // Get all running containers that we manage
-    List<String> runningContainers = getAllRunningContainers();
+    List<String> runningContainers = getAllContainers();
 
     if (runningContainers.isEmpty()) {
       log.info("No containers to stop");
@@ -1251,16 +1327,53 @@ public class MyRestController {
   }
 
   /**
-   * Stops and removes specific containers by name, including both running and stopped containers.
+   * Stops and removes specific containers by name with proper shutdown ordering.
+   * Extra services are stopped first, then genesis+validators.
    * This method ensures all containers from the list are removed, regardless of their current state.
    */
   private void stopAndRemoveSpecificContainers(List<String> containerNames) {
-    log.info("Stopping and removing specific containers in parallel: {}", containerNames);
+    log.info("Stopping and removing specific containers with proper ordering: {}", containerNames);
 
     if (containerNames.isEmpty()) {
       log.info("No containers to stop");
       return;
     }
+
+    // Separate containers into core blockchain (genesis + validators) and extra services
+    List<String> coreContainers = new ArrayList<>();
+    List<String> extraServices = new ArrayList<>();
+    
+    for (String containerName : containerNames) {
+      if (CONTAINER_GENESIS.equals(containerName) || Arrays.asList(VALIDATOR_CONTAINERS).contains(containerName)) {
+        coreContainers.add(containerName);
+      } else {
+        extraServices.add(containerName);
+      }
+    }
+
+    log.info("Core containers to stop: {}", coreContainers);
+    log.info("Extra services to stop: {}", extraServices);
+
+    // STEP 1: Stop extra services first
+    if (!extraServices.isEmpty()) {
+      log.info("STEP 1: Stopping extra services first");
+      stopAndRemoveContainerGroup(extraServices, "extra services");
+    }
+
+    // STEP 2: Stop core blockchain containers (genesis + validators)
+    if (!coreContainers.isEmpty()) {
+      log.info("STEP 2: Stopping core blockchain containers");
+      stopAndRemoveContainerGroup(coreContainers, "core blockchain");
+    }
+
+    log.info("Container shutdown process completed with proper ordering");
+  }
+
+  /**
+   * Helper method to stop and remove a group of containers in parallel.
+   */
+  private void stopAndRemoveContainerGroup(List<String> containerNames, String groupName) {
+    log.info("Stopping and removing {} containers: {}", groupName, containerNames);
 
     // Find all containers (both running and stopped) that match the names
     Map<String, String> containerIds = new HashMap<>();
@@ -1276,7 +1389,7 @@ public class MyRestController {
             for (String name : container.getNames()) {
               if (name.equals("/" + containerName)) {
                 containerIds.put(containerName, container.getId());
-                log.info("Found container {} with ID {} (state: {})", containerName, container.getId(), container.getState());
+                log.info("Found {} container {} with ID {} (state: {})", groupName, containerName, container.getId(), container.getState());
                 break;
               }
             }
@@ -1287,7 +1400,7 @@ public class MyRestController {
         }
       }
     } catch (Exception e) {
-      log.error("Error listing containers: {}", e.getMessage());
+      log.error("Error listing {} containers: {}", groupName, e.getMessage());
       // Fallback to checking only running containers
       for (String containerName : containerNames) {
         String containerId = getContainerIdByName(containerName);
@@ -1298,25 +1411,25 @@ public class MyRestController {
     }
 
     if (containerIds.isEmpty()) {
-      log.info("No containers found to remove");
+      log.info("No {} containers found to remove", groupName);
       return;
     }
 
-    log.info("Found containers to remove: {}", containerIds);
+    log.info("Found {} containers to remove: {}", groupName, containerIds);
 
-    // Stop all containers in parallel using CompletableFuture for true parallelism
-    log.info("Stopping {} containers in parallel", containerIds.size());
+    // Stop all containers in this group in parallel
+    log.info("Stopping {} {} containers in parallel", containerIds.size(), groupName);
 
     List<CompletableFuture<Void>> stopFutures = containerIds.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
           String containerId = entry.getValue();
           try {
-            log.info("Stopping container: {} ({})", containerName, containerId);
+            log.info("Stopping {} container: {} ({})", groupName, containerName, containerId);
             dockerClient.stopContainerCmd(containerId).exec();
-            log.info("Container stopped: {} ({})", containerName, containerId);
+            log.info("{} container stopped: {} ({})", groupName, containerName, containerId);
           } catch (Exception e) {
-            log.warn("Failed to stop container {} ({}): {}", containerName, containerId, e.getMessage());
+            log.warn("Failed to stop {} container {} ({}): {}", groupName, containerName, containerId, e.getMessage());
           }
         }))
         .toList();
@@ -1328,24 +1441,24 @@ public class MyRestController {
 
     try {
       allStopFutures.get(); // Wait for all containers to stop
-      log.info("All containers stopped in parallel");
+      log.info("All {} containers stopped", groupName);
     } catch (Exception e) {
-      log.error("Error waiting for containers to stop: {}", e.getMessage());
+      log.error("Error waiting for {} containers to stop: {}", groupName, e.getMessage());
     }
 
-    // Remove all containers in parallel using CompletableFuture
-    log.info("Removing {} containers in parallel", containerIds.size());
+    // Remove all containers in this group in parallel
+    log.info("Removing {} {} containers in parallel", containerIds.size(), groupName);
 
     List<CompletableFuture<Void>> removeFutures = containerIds.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
           String containerId = entry.getValue();
           try {
-            log.info("Removing container: {} ({})", containerName, containerId);
+            log.info("Removing {} container: {} ({})", groupName, containerName, containerId);
             dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-            log.info("Container removed: {} ({})", containerName, containerId);
+            log.info("{} container removed: {} ({})", groupName, containerName, containerId);
           } catch (Exception e) {
-            log.warn("Failed to remove container {} ({}): {}", containerName, containerId, e.getMessage());
+            log.warn("Failed to remove {} container {} ({}): {}", groupName, containerName, containerId, e.getMessage());
           }
         }))
         .toList();
@@ -1357,13 +1470,13 @@ public class MyRestController {
 
     try {
       allRemoveFutures.get(); // Wait for all containers to be removed
-      log.info("All containers removed in parallel");
+      log.info("All {} containers removed", groupName);
     } catch (Exception e) {
-      log.error("Error waiting for containers to be removed: {}", e.getMessage());
+      log.error("Error waiting for {} containers to be removed: {}", groupName, e.getMessage());
     }
 
     // Verify all specified containers are actually removed before proceeding
-    log.info("Verifying all specified containers are completely removed...");
+    log.info("Verifying all {} containers are completely removed...", groupName);
     int maxRetries = 10;
     int retryCount = 0;
 
@@ -1390,16 +1503,16 @@ public class MyRestController {
           }
         }
       } catch (Exception e) {
-        log.error("Error checking remaining containers: {}", e.getMessage());
+        log.error("Error checking remaining {} containers: {}", groupName, e.getMessage());
         break;
       }
 
       if (stillExisting.isEmpty()) {
-        log.info("All specified containers successfully removed");
+        log.info("All {} containers successfully removed", groupName);
         break;
       }
 
-      log.warn("Still found {} containers after removal attempt: {}", stillExisting.size(), stillExisting);
+      log.warn("Still found {} {} containers after removal attempt: {}", stillExisting.size(), groupName, stillExisting);
 
       // Force remove any remaining containers in parallel
       List<CompletableFuture<Void>> forceRemoveFutures = stillExisting.stream()
@@ -1407,11 +1520,11 @@ public class MyRestController {
             try {
               String containerId = getContainerIdByName(containerName);
               if (containerId != null) {
-                log.info("Force removing remaining container: {} ({})", containerName, containerId);
+                log.info("Force removing remaining {} container: {} ({})", groupName, containerName, containerId);
                 dockerClient.removeContainerCmd(containerId).withForce(true).exec();
               }
             } catch (Exception e) {
-              log.warn("Failed to force remove container {}: {}", containerName, e.getMessage());
+              log.warn("Failed to force remove {} container {}: {}", groupName, containerName, e.getMessage());
             }
           }))
           .toList();
@@ -1420,7 +1533,7 @@ public class MyRestController {
       try {
         CompletableFuture.allOf(forceRemoveFutures.toArray(new CompletableFuture[0])).get();
       } catch (Exception e) {
-        log.error("Error during force removal: {}", e.getMessage());
+        log.error("Error during force removal of {} containers: {}", groupName, e.getMessage());
       }
 
       retryCount++;
@@ -1433,10 +1546,10 @@ public class MyRestController {
     }
 
     if (retryCount >= maxRetries) {
-      log.warn("Some containers may still exist after {} attempts, but continuing anyway", maxRetries);
+      log.warn("Some {} containers may still exist after {} attempts, but continuing anyway", groupName, maxRetries);
     }
 
-    log.info("Container removal process completed for specified containers");
+    log.info("{} container removal process completed", groupName);
   }
 
 //  private void recreateAllContainers(Map<String, String> containerTargetVolumes) throws Exception {
@@ -1454,7 +1567,7 @@ public class MyRestController {
    * Unified method to recreate any container (genesis or validator) with a new volume.
    * Combines the logic from recreateGenesisContainer() and recreateValidatorContainer().
    */
-  private void recreateContainer(String containerName, String targetVolume) throws Exception {
+  private void recreateContainer(String containerName, String targetVolume) {
     log.info("Recreating container {} with volume: {}", containerName, targetVolume);
 
     // First, get the existing container configuration before stopping it
@@ -1546,20 +1659,70 @@ public class MyRestController {
       Map<String, String> containerIpAddresses,
       String seqnoStr) {
 
-    log.info("Recreating {} containers in parallel with target volumes and saved configs: {}", containerTargetVolumes.size(), containerTargetVolumes);
+    log.info("Recreating {} containers with proper startup ordering and saved configs: {}", containerTargetVolumes.size(), containerTargetVolumes);
+
+    // Separate containers into core blockchain (genesis + validators) and extra services
+    Map<String, String> coreContainerVolumes = new HashMap<>();
+    Map<String, String> extraServiceVolumes = new HashMap<>();
+    
+    for (Map.Entry<String, String> entry : containerTargetVolumes.entrySet()) {
+      String containerName = entry.getKey();
+      if (CONTAINER_GENESIS.equals(containerName) || Arrays.asList(VALIDATOR_CONTAINERS).contains(containerName)) {
+        coreContainerVolumes.put(containerName, entry.getValue());
+      } else {
+        extraServiceVolumes.put(containerName, entry.getValue());
+      }
+    }
+
+    log.info("Core containers to start: {}", coreContainerVolumes.keySet());
+    log.info("Extra services to start: {}", extraServiceVolumes.keySet());
 
     // Use thread-safe collections for parallel processing
     List<String> createdContainers = Collections.synchronizedList(new ArrayList<>());
     List<String> failedContainers = Collections.synchronizedList(new ArrayList<>());
 
-    // Recreate all containers in parallel using CompletableFuture for true parallelism
-    List<CompletableFuture<Void>> recreateFutures = containerTargetVolumes.entrySet().stream()
+    // STEP 1: Start core blockchain containers (genesis + validators) first
+    if (!coreContainerVolumes.isEmpty()) {
+      log.info("STEP 1: Starting core blockchain containers first");
+      recreateContainerGroup(coreContainerVolumes, containerConfigs, hostConfigs, containerIpAddresses, seqnoStr, "core blockchain", createdContainers, failedContainers);
+    }
+
+    // STEP 2: Start extra service containers after core is running
+    if (!extraServiceVolumes.isEmpty()) {
+      log.info("STEP 2: Starting extra service containers");
+      recreateContainerGroup(extraServiceVolumes, containerConfigs, hostConfigs, containerIpAddresses, seqnoStr, "extra services", createdContainers, failedContainers);
+    }
+
+    log.info("Sequential container recreation completed. Created: {}, Failed: {}", createdContainers.size(), failedContainers.size());
+
+    if (!failedContainers.isEmpty()) {
+      throw new RuntimeException("Failed to recreate some containers: " + String.join(", ", failedContainers));
+    }
+  }
+
+  /**
+   * Helper method to recreate a group of containers in parallel.
+   */
+  private void recreateContainerGroup(
+      Map<String, String> containerVolumes,
+      Map<String, ContainerConfig> containerConfigs,
+      Map<String, HostConfig> hostConfigs,
+      Map<String, String> containerIpAddresses,
+      String seqnoStr,
+      String groupName,
+      List<String> createdContainers,
+      List<String> failedContainers) {
+
+    log.info("Recreating {} {} containers in parallel", containerVolumes.size(), groupName);
+
+    // Recreate all containers in this group in parallel using CompletableFuture
+    List<CompletableFuture<Void>> recreateFutures = containerVolumes.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
           String targetVolume = entry.getValue();
 
           try {
-            log.info("Recreating container {} in parallel with volume and saved config: {}", containerName, targetVolume);
+            log.info("Recreating {} container {} with volume and saved config: {}", groupName, containerName, targetVolume);
             recreateContainerWithConfig(
                 containerName,
                 targetVolume,
@@ -1569,30 +1732,24 @@ public class MyRestController {
                 seqnoStr
             );
             createdContainers.add(containerName);
-            log.info("Successfully recreated container: {}", containerName);
+            log.info("Successfully recreated {} container: {}", groupName, containerName);
           } catch (Exception e) {
-            log.error("Failed to recreate container {}: {}", containerName, e.getMessage());
+            log.error("Failed to recreate {} container {}: {}", groupName, containerName, e.getMessage());
             failedContainers.add(containerName + ": " + e.getMessage());
           }
         }))
         .toList();
 
-    // Wait for all container recreation operations to complete
+    // Wait for all container recreation operations in this group to complete
     CompletableFuture<Void> allRecreateFutures = CompletableFuture.allOf(
         recreateFutures.toArray(new CompletableFuture[0])
     );
 
     try {
-      allRecreateFutures.get(); // Wait for all containers to be recreated
-      log.info("All containers recreated in parallel");
+      allRecreateFutures.get(); // Wait for all containers in this group to be recreated
+      log.info("All {} containers recreated", groupName);
     } catch (Exception e) {
-      log.error("Error waiting for containers to be recreated: {}", e.getMessage());
-    }
-
-    log.info("Parallel container recreation completed. Created: {}, Failed: {}", createdContainers.size(), failedContainers.size());
-
-    if (!failedContainers.isEmpty()) {
-      throw new RuntimeException("Failed to recreate some containers: " + String.join(", ", failedContainers));
+      log.error("Error waiting for {} containers to be recreated: {}", groupName, e.getMessage());
     }
   }
 
@@ -1738,26 +1895,29 @@ public class MyRestController {
   }
 
   /**
-   * Restarts the ton-http-api-v2 container if it is running.
-   * Saves the container configuration before stopping, then recreates it with the same configuration.
+   * Restarts an extra service container with provided configuration.
+   * This method is used when we have saved configuration from before shutdown.
    */
-  private void restartExtraServiceContainer(String containerName) {
-
+  private void restartExtraServiceContainerWithConfig(String containerName, ContainerConfig config, HostConfig hostConfig, String ipAddress) {
     try {
-      log.info("Checking if {} container is running", containerName);
+      log.info("Restarting {} container with saved configuration", containerName);
 
-      // Check if the container exists and is running
+      // Check if the container exists first
       String containerId = getContainerIdByName(containerName);
-      if (StringUtils.isEmpty(containerId)) {
-        log.info("Container {} is not running, skipping restart", containerName);
+      if (!StringUtils.isEmpty(containerId)) {
+        // Container exists, stop and remove it first
+        log.info("Stopping existing container {}", containerName);
+        dockerClient.stopContainerCmd(containerId).exec();
+        dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+      }
+
+      if (config == null || hostConfig == null) {
+        log.warn("No saved configuration found for container {}, using fallback restart method", containerName);
+        //restartExtraServiceContainer(containerName);
         return;
       }
-      currentSnapshotStatus = "Restarting "+containerName+" container";
 
-      // Get container configuration before stopping
-      InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
-      ContainerConfig config = inspectResponse.getConfig();
-      HostConfig hostConfig = inspectResponse.getHostConfig();
+      currentSnapshotStatus = "Restarting " + containerName + " container with saved config";
 
       // Extract configuration details
       String[] envs = config.getEnv();
@@ -1774,37 +1934,14 @@ public class MyRestController {
         }
       }
 
-      // Get IP address if available
-      String ipAddress = null;
-      try {
-        if (inspectResponse.getNetworkSettings() != null &&
-            inspectResponse.getNetworkSettings().getNetworks() != null &&
-            !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
-          ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
-        }
-      } catch (Exception e) {
-        log.warn("Could not retrieve IP address for container {}", containerName);
-      }
-
-      // Get volume mounts
+      // Create volume mounts - we need to recreate the mounts from the original container
       List<Mount> mounts = new ArrayList<>();
-      if (inspectResponse.getMounts() != null) {
-        for (var mount : inspectResponse.getMounts()) {
-          if (mount.getName() != null) {
-            // This is a named volume mount
-            mounts.add(new Mount()
-                .withType(MountType.VOLUME)
-                .withSource(mount.getName())
-                .withTarget(mount.getDestination().getPath()));
-          } else if (mount.getSource() != null) {
-            // This is a bind mount
-            mounts.add(new Mount()
-                .withType(MountType.BIND)
-                .withSource(mount.getSource())
-                .withTarget(mount.getDestination().getPath()));
-          }
-        }
-      }
+      
+      // Add common shared data mount that most services use
+      mounts.add(new Mount()
+          .withType(MountType.VOLUME)
+          .withSource("mylocalton-docker_shared-data")
+          .withTarget("/usr/share/data"));
 
       // Get volumes for backward compatibility
       List<Volume> volumes = new ArrayList<>();
@@ -1814,15 +1951,9 @@ public class MyRestController {
         }
       }
 
-      log.info("Stopping container {}", containerName);
-      dockerClient.stopContainerCmd(containerId).exec();
-
-      log.info("Removing container {}", containerName);
-      dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-
       log.info("Recreating container {} with saved configuration", containerName);
 
-      // Create new container with the same configuration
+      // Create new container with the saved configuration
       CreateContainerCmd createCmd = dockerClient
           .createContainerCmd(imageName)
           .withName(containerName)
@@ -1855,14 +1986,33 @@ public class MyRestController {
       log.info("Starting recreated container {}", containerName);
       dockerClient.startContainerCmd(newContainer.getId()).exec();
 
-      log.info("Successfully restarted container {}", containerName);
+      log.info("Successfully restarted container {} with saved configuration", containerName);
 
-    } catch (NotFoundException e) {
-      log.info("Container {} not found, skipping restart", containerName);
     } catch (Exception e) {
-      log.error("Failed to restart container {}: {}", containerName, e.getMessage(), e);
-      // Don't throw exception to avoid breaking the snapshot restoration process
+      log.error("Failed to restart container {} with saved config: {}", containerName, e.getMessage(), e);
+//      // Try fallback restart method
+//      log.info("Attempting fallback restart for container {}", containerName);
+//      try {
+//        restartExtraServiceContainer(containerName);
+//      } catch (Exception fallbackError) {
+//        log.error("Fallback restart also failed for container {}: {}", containerName, fallbackError.getMessage());
+//      }
     }
+  }
+
+  /**
+   * Restarts or starts an extra service container with provided configuration.
+   * Uses the provided configuration if available, otherwise falls back to current container config.
+   */
+  private void restartExtraServiceContainer(String containerName, ContainerConfig config, HostConfig hostConfig, String ipAddress) {
+    // If we have provided configuration, use the existing method that handles config
+    if (config != null && hostConfig != null) {
+      restartExtraServiceContainerWithConfig(containerName, config, hostConfig, ipAddress);
+      return;
+    }
+//
+//    // Otherwise, fall back to the original method logic
+//    restartExtraServiceContainer(containerName);
   }
 
   /**
@@ -2164,27 +2314,26 @@ public class MyRestController {
   }
 
   private List<String> getAllContainers() {
-    List<String> containers = Arrays.asList(
-        "genesis",
-        "blockchain-explorer", 
-        "validator-1",
-        "validator-2",
-        "file-server",
-        "explorer-restarter",
-        "ton-http-api-v2",
-        "validator-3",
-        "validator-4", 
-        "validator-5",
-        "faucet",
-        "data-generator",
-        "index-event-cache",
-        "index-event-classifier", 
-        "index-api",
-        "index-worker",
-        "index-postgres"
-    );
-    
-    return containers;
+
+      return Arrays.asList(
+          "genesis",
+          "blockchain-explorer",
+          "validator-1",
+          "validator-2",
+          "file-server",
+          "explorer-restarter",
+          "ton-http-api-v2",
+          "validator-3",
+          "validator-4",
+          "validator-5",
+          "faucet",
+          "data-generator",
+          "index-event-cache",
+          "index-event-classifier",
+          "index-api",
+          "index-worker",
+          "index-postgres"
+      );
   }
 
   /**
@@ -2255,27 +2404,27 @@ public class MyRestController {
     // Split parameters by spaces, but be careful with quoted values
     List<String> params = new ArrayList<>();
     String[] parts = existingParams.trim().split("\\s+");
-    
+
     boolean skipNext = false;
     for (int i = 0; i < parts.length; i++) {
       if (skipNext) {
         skipNext = false;
         continue;
       }
-      
+
       String part = parts[i];
       if ("-T".equals(part)) {
         // Skip this -T and its value
         skipNext = true;
         continue;
       }
-      
+
       params.add(part);
     }
-    
+
     // Add the new -T parameter
     params.add(newTParam);
-    
+
     return String.join(" ", params);
   }
 }

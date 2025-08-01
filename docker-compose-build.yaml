@@ -88,6 +88,7 @@ services:
         condition: service_healthy
     networks:
       main:
+        ipv4_address: 172.28.1.20
 
 #  faucet:
 #    container_name: faucet
@@ -115,6 +116,7 @@ services:
 #      test: curl -sS http://127.0.0.1:88|| echo 1
 #    networks:
 #      main:
+#        ipv4_address: 172.28.1.21
 #
 #  data:
 #    container_name: data-generator
@@ -137,6 +139,7 @@ services:
 #      test: curl -sS http://127.0.0.1:99|| echo 1
 #    networks:
 #      main:
+#        ipv4_address: 172.28.1.22
 
   time-machine:
     container_name: time-machine
@@ -159,6 +162,7 @@ services:
       test: curl -sS http://127.0.0.1:8083|| echo 1
     networks:
       main:
+        ipv4_address: 172.28.1.23
 
 
   file-server:
@@ -178,6 +182,7 @@ services:
       test: curl -sS http://127.0.0.1:8000|| echo 1
     networks:
       main:
+        ipv4_address: 172.28.1.24
 
   restarter:
     container_name: explorer-restarter
@@ -189,6 +194,10 @@ services:
     depends_on:
       blockchain-explorer:
         condition: service_healthy
+    networks:
+      main:
+        ipv4_address: 172.28.1.25
+
 
  # ENABLE ADDITIONAL VALIDATORS
 
@@ -339,6 +348,7 @@ services:
       retries: 10
     networks:
       main:
+        ipv4_address: 172.28.1.105
 
   ## TonCenter Indexer (v3)
 
@@ -353,6 +363,7 @@ services:
 #      retries: 5
 #    networks:
 #      main:
+#        ipv4_address: 172.28.1.104
 #
 #  event-classifier:
 #    container_name: index-event-classifier
@@ -368,6 +379,7 @@ services:
 #    environment: *index-api
 #    networks:
 #      main:
+#        ipv4_address: 172.28.1.103
 
 
 #  index-api:
@@ -385,6 +397,7 @@ services:
 #    restart: always
 #    networks:
 #      main:
+#        ipv4_address: 172.28.1.102
 #
 #
 #  index-worker:
@@ -403,6 +416,7 @@ services:
 #    restart: unless-stopped
 #    networks:
 #      main:
+#        ipv4_address: 172.28.1.101
 
 #  postgres:
 #    container_name: index-postgres
