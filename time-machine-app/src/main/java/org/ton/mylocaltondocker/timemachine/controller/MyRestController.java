@@ -764,10 +764,11 @@ public class MyRestController {
       String instanceNumberStr = request.get("instanceNumber");
       String seqnoStr = request.get("seqno"); // seqno from frontend
 
-        Map<String, ContainerConfig> containerConfigs = null;
-        Map<String, HostConfig> hostConfigs = null;
-        Map<String, String> containerIpAddresses = null;
-        Map<String, String> containerTargetVolumes = null;
+        // Initialize maps - these will be populated from stored config or current running containers
+        Map<String, ContainerConfig> containerConfigs = new HashMap<>();
+        Map<String, HostConfig> hostConfigs = new HashMap<>();
+        Map<String, String> containerIpAddresses = new HashMap<>();
+        Map<String, String> containerTargetVolumes = new HashMap<>();
         int instanceNumber = 0;
         boolean isNewInstance = false;
         long lastKnownSeqno = 0;
@@ -794,7 +795,6 @@ public class MyRestController {
         }
 
         // Determine target volume names for ALL containers using the same logic
-            containerTargetVolumes = new HashMap<>();
 
         if ("instance".equals(nodeType)) {
           // Restoring from instance node - reuse existing volumes for containers that have them
@@ -932,6 +932,12 @@ public class MyRestController {
           storedHostConfigs = extractHostConfigs(storedConfig);
           storedContainerIpAddresses = extractContainerIpAddresses(storedConfig);
 
+          // Extract container target volumes from stored configuration
+          if (containerTargetVolumes.isEmpty()) {
+            containerTargetVolumes = extractContainerTargetVolumes(storedConfig);
+            log.info("Extracted container target volumes from stored config: {}", containerTargetVolumes);
+          }
+
           // Get list of containers from stored config to ensure we remove them all
           @SuppressWarnings("unchecked")
           List<String> storedRunningContainers = (List<String>) storedConfig.get("runningContainers");
@@ -950,6 +956,101 @@ public class MyRestController {
         log.warn("Failed to load stored configuration for snapshot {}: {}, using current container configurations", snapshotNumber, e.getMessage());
         // Fallback to current running containers if config loading fails
         containersToRemove = getAllRunningContainers();
+      }
+
+      // When blockchain is down, use stored configurations if available
+      if (getAllRunningContainers().isEmpty() && storedConfig != null) {
+        log.info("Blockchain is down, using stored configurations from snapshot {}", snapshotNumber);
+        containerConfigs = storedContainerConfigs;
+        hostConfigs = storedHostConfigs;
+        containerIpAddresses = storedContainerIpAddresses;
+        
+        // Also handle volume creation for snapshot restoration when blockchain is down
+        if ("instance".equals(nodeType)) {
+          // Restoring from instance node - reuse existing volumes for containers that have them
+          if (instanceNumberStr != null) {
+            instanceNumber = Integer.parseInt(instanceNumberStr);
+          }
+
+          // Genesis container - always should exist for instances
+          String genesisTargetVolume =
+              "ton-db-snapshot-"
+                  + snapshotNumber
+                  + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
+
+          // Check if genesis volume exists before adding
+          try {
+            dockerClient.inspectVolumeCmd(genesisTargetVolume).exec();
+            containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+            log.info("Found existing genesis instance volume: {}", genesisTargetVolume);
+          } catch (NotFoundException e) {
+            log.warn("Genesis instance volume {} not found", genesisTargetVolume);
+          }
+
+          // Validator containers - only add if their volumes exist
+          for (String validatorContainer : VALIDATOR_CONTAINERS) {
+            String baseVolumeName =
+                CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
+            String targetVolume =
+                baseVolumeName + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
+
+            // Only add if the instance volume exists
+            try {
+              dockerClient.inspectVolumeCmd(targetVolume).exec();
+              containerTargetVolumes.put(validatorContainer, targetVolume);
+              log.info("Found existing validator instance volume: {}", targetVolume);
+            } catch (NotFoundException e) {
+              log.debug("Validator instance volume {} not found, skipping", targetVolume);
+            }
+          }
+
+          log.info(
+              "Reusing existing instance volumes for {} containers", containerTargetVolumes.size());
+
+        } else {
+          // Restoring from snapshot node - create new instances for containers that have snapshots
+          instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
+          isNewInstance = true;
+
+          // Genesis container - should always exist
+          String genesisBackupVolume = "ton-db-snapshot-" + snapshotNumber;
+          String genesisTargetVolume = genesisBackupVolume + "-" + instanceNumber;
+
+          // Check if genesis backup exists before copying
+          try {
+            dockerClient.inspectVolumeCmd(genesisBackupVolume).exec();
+            log.info("Copying volume {} to {}", genesisBackupVolume, genesisTargetVolume);
+            copyVolumes(dockerClient, genesisBackupVolume, genesisTargetVolume);
+            containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+          } catch (NotFoundException e) {
+            log.error("Genesis backup volume {} not found", genesisBackupVolume);
+            throw new RuntimeException("Genesis backup volume not found: " + genesisBackupVolume);
+          }
+
+          // Validator containers - only copy and add if backup volumes exist
+          for (String validatorContainer : VALIDATOR_CONTAINERS) {
+            String validatorBackupVolume =
+                CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
+            String validatorTargetVolume = validatorBackupVolume + "-" + instanceNumber;
+
+            // Only copy if the backup volume exists (validator was running when snapshot was taken)
+            try {
+              dockerClient.inspectVolumeCmd(validatorBackupVolume).exec();
+              log.info("Copying volume {} to {}", validatorBackupVolume, validatorTargetVolume);
+              copyVolumes(dockerClient, validatorBackupVolume, validatorTargetVolume);
+              containerTargetVolumes.put(validatorContainer, validatorTargetVolume);
+            } catch (NotFoundException e) {
+              log.info("Validator backup volume {} not found, skipping", validatorBackupVolume);
+            }
+          }
+
+          log.info("Created new instance volumes for {} containers", containerTargetVolumes.size());
+        }
+      }
+
+      // Ensure containerTargetVolumes is never null or empty
+      if (containerTargetVolumes.isEmpty()) {
+        log.warn("containerTargetVolumes is empty, this may cause issues during restoration");
       }
 
       // Stop and remove ALL containers (both running and stopped) that are mentioned in the stored config
@@ -986,9 +1087,9 @@ public class MyRestController {
             log.info("Restarting additional service containers from snapshot: {}", additionalServices);
             for (String serviceName : additionalServices) {
               // Use stored configurations if available
-              ContainerConfig serviceConfig = storedContainerConfigs.get(serviceName);
-              HostConfig serviceHostConfig = storedHostConfigs.get(serviceName);
-              String serviceIpAddress = storedContainerIpAddresses.get(serviceName);
+              ContainerConfig serviceConfig = finalContainerConfigs.get(serviceName);
+              HostConfig serviceHostConfig = finalHostConfigs.get(serviceName);
+              String serviceIpAddress = finalContainerIpAddresses.get(serviceName);
               
               restartExtraServiceContainer(serviceName, serviceConfig, serviceHostConfig, serviceIpAddress);
             }
@@ -2028,6 +2129,7 @@ public class MyRestController {
    */
   private void restartExtraServiceContainer(String containerName, ContainerConfig config, HostConfig hostConfig, String ipAddress) {
     // If we have provided configuration, use the existing method that handles config
+    log.info("restartExtraServiceContainer {}, {}", containerName, config);
     if (config != null && hostConfig != null) {
       restartExtraServiceContainerWithConfig(containerName, config, hostConfig, ipAddress);
       return;
@@ -2567,6 +2669,48 @@ public class MyRestController {
     return containerIpAddresses;
   }
 
+  /**
+   * Extracts container target volumes from stored configuration data by looking at the binds.
+   * This method finds the database volume path for each container from the stored binds.
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, String> extractContainerTargetVolumes(Map<String, Object> storedConfig) {
+    Map<String, String> containerTargetVolumes = new HashMap<>();
+
+    try {
+      Map<String, Object> containers = (Map<String, Object>) storedConfig.get("containers");
+      if (containers != null) {
+        for (Map.Entry<String, Object> entry : containers.entrySet()) {
+          String containerName = entry.getKey();
+          Map<String, Object> containerData = (Map<String, Object>) entry.getValue();
+          Map<String, Object> hostConfig = (Map<String, Object>) containerData.get("hostConfig");
+
+          if (hostConfig != null) {
+            List<Map<String, Object>> binds = (List<Map<String, Object>>) hostConfig.get("binds");
+            if (binds != null) {
+              // Look for the database volume bind (mounted to CONTAINER_DB_PATH)
+              for (Map<String, Object> bind : binds) {
+                String containerPath = (String) bind.get("containerPath");
+                String hostPath = (String) bind.get("hostPath");
+                
+                if (CONTAINER_DB_PATH.equals(containerPath) && hostPath != null) {
+                  containerTargetVolumes.put(containerName, hostPath);
+                  log.info("Extracted target volume for container {}: {}", containerName, hostPath);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.error("Error extracting container target volumes from stored configuration: {}", e.getMessage());
+    }
+
+    log.info("Extracted {} container target volumes from stored configuration", containerTargetVolumes.size());
+    return containerTargetVolumes;
+  }
+
 
   @PostMapping("/stop-blockchain")
   public Map<String, Object> stopBlockchain() {
@@ -2765,7 +2909,13 @@ public class MyRestController {
       return ((Integer) value).longValue();
     }
     if (value instanceof Double) {
-      return ((Double) value).longValue();
+      // Handle Double to Long conversion safely
+      Double doubleValue = (Double) value;
+      return doubleValue.longValue();
+    }
+    if (value instanceof Number) {
+      // Handle any other Number type
+      return ((Number) value).longValue();
     }
     if (value instanceof String) {
       try {
@@ -2791,7 +2941,13 @@ public class MyRestController {
       return ((Long) value).intValue();
     }
     if (value instanceof Double) {
-      return ((Double) value).intValue();
+      // Handle Double to Integer conversion safely
+      Double doubleValue = (Double) value;
+      return doubleValue.intValue();
+    }
+    if (value instanceof Number) {
+      // Handle any other Number type
+      return ((Number) value).intValue();
     }
     if (value instanceof String) {
       try {
