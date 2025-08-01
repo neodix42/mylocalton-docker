@@ -436,11 +436,11 @@ public class MyRestController {
               log.info("Copied container configurations from snapshot {} to snapshot {}", sourceSnapshot, snapshotNumber);
             } catch (NumberFormatException e) {
               log.warn("Could not parse source snapshot number from parentId: {}, storing current configurations", parentId);
-              storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses);
+              storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses, createdSnapshots);
             }
           } else {
             // Taking snapshot from active node, store current configurations
-            storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses);
+            storeSnapshotConfiguration(snapshotNumber, runningContainers, containerConfigs, hostConfigs, containerIpAddresses, createdSnapshots);
           }
 
           log.info("Container configurations stored successfully for snapshot {}", snapshotNumber);
@@ -1738,14 +1738,13 @@ public class MyRestController {
 
     log.info("Recreating {} {} containers in parallel", containerVolumes.size(), groupName);
 
-    // Recreate all containers in this group in parallel using CompletableFuture
+    // Create containers in this group in parallel
     List<CompletableFuture<Void>> recreateFutures = containerVolumes.entrySet().stream()
         .map(entry -> CompletableFuture.runAsync(() -> {
           String containerName = entry.getKey();
           String targetVolume = entry.getValue();
-
           try {
-            log.info("Recreating {} container {} with volume and saved config: {}", groupName, containerName, targetVolume);
+            log.info("Recreating {} container: {} with volume {}", groupName, containerName, targetVolume);
             recreateContainerWithConfig(
                 containerName,
                 targetVolume,
@@ -1755,10 +1754,10 @@ public class MyRestController {
                 seqnoStr
             );
             createdContainers.add(containerName);
-            log.info("Successfully recreated {} container: {}", groupName, containerName);
+            log.info("{} container recreated: {}", groupName, containerName);
           } catch (Exception e) {
             log.error("Failed to recreate {} container {}: {}", groupName, containerName, e.getMessage());
-            failedContainers.add(containerName + ": " + e.getMessage());
+            failedContainers.add(containerName + " (" + e.getMessage() + ")");
           }
         }))
         .toList();
@@ -2085,7 +2084,8 @@ public class MyRestController {
       List<String> runningContainers,
       Map<String, ContainerConfig> containerConfigs,
       Map<String, HostConfig> hostConfigs,
-      Map<String, String> containerIpAddresses) throws Exception {
+      Map<String, String> containerIpAddresses,
+      List<String> createdSnapshots) throws Exception {
 
     String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
 
@@ -2100,6 +2100,24 @@ public class MyRestController {
     configData.put("snapshotNumber", snapshotNumber);
     configData.put("timestamp", System.currentTimeMillis());
     configData.put("runningContainers", runningContainers);
+
+    // Create a mapping from container names to their snapshot volume names
+    Map<String, String> containerToSnapshotVolume = new HashMap<>();
+    for (String createdSnapshot : createdSnapshots) {
+      if (createdSnapshot.startsWith("ton-db-snapshot-")) {
+        // Genesis container
+        containerToSnapshotVolume.put(CONTAINER_GENESIS, createdSnapshot);
+      } else {
+        // Validator containers - find which validator this snapshot belongs to
+        for (String validatorContainer : VALIDATOR_CONTAINERS) {
+          String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+          if (createdSnapshot.startsWith(baseVolumeName + "-snapshot-")) {
+            containerToSnapshotVolume.put(validatorContainer, createdSnapshot);
+            break;
+          }
+        }
+      }
+    }
 
     // Store comprehensive container information
     Map<String, Object> containers = new HashMap<>();
@@ -2151,7 +2169,7 @@ public class MyRestController {
         containerData.put("config", configMap);
       }
 
-      // Store comprehensive host config info
+      // Store comprehensive host config info with snapshot volume names embedded in binds
       HostConfig hostConfig = hostConfigs.get(containerName);
       if (hostConfig != null) {
         Map<String, Object> hostConfigMap = new HashMap<>();
@@ -2207,7 +2225,46 @@ public class MyRestController {
           }
           hostConfigMap.put("mounts", mountsList);
         }
+
+        // Store Volume Binds with snapshot volume names embedded
+        List<Map<String, Object>> bindsList = new ArrayList<>();
         
+        // Add standard shared data bind
+        Map<String, Object> sharedDataBind = new HashMap<>();
+        sharedDataBind.put("containerPath", "/usr/share/data");
+        sharedDataBind.put("hostPath", "mylocalton-docker_shared-data");
+        sharedDataBind.put("accessMode", "rw");
+        bindsList.add(sharedDataBind);
+        
+        // Add database volume bind with snapshot volume name
+        String snapshotVolumeName = containerToSnapshotVolume.get(containerName);
+        if (snapshotVolumeName != null) {
+          Map<String, Object> dbBind = new HashMap<>();
+          dbBind.put("containerPath", CONTAINER_DB_PATH);
+          dbBind.put("hostPath", snapshotVolumeName);
+          dbBind.put("accessMode", "rw");
+          bindsList.add(dbBind);
+        } else {
+          // Fallback: try to get current volume binds from host config
+          Bind[] binds = hostConfig.getBinds();
+          if (binds != null) {
+            for (Bind bind : binds) {
+              Map<String, Object> bindMap = new HashMap<>();
+              if (bind.getVolume() != null && bind.getVolume().getPath() != null) {
+                bindMap.put("containerPath", bind.getVolume().getPath());
+              }
+              if (bind.getPath() != null) {
+                bindMap.put("hostPath", bind.getPath());
+              }
+              if (bind.getAccessMode() != null) {
+                bindMap.put("accessMode", bind.getAccessMode().toString());
+              }
+              bindsList.add(bindMap);
+            }
+          }
+        }
+        
+        hostConfigMap.put("binds", bindsList);
         containerData.put("hostConfig", hostConfigMap);
       }
 
@@ -2439,6 +2496,36 @@ public class MyRestController {
               hostConfig.withMounts(mounts);
             }
 
+            // Restore Volume Binds (legacy volume mounts)
+            List<Map<String, Object>> bindsList = (List<Map<String, Object>>) hostConfigMap.get("binds");
+            if (bindsList != null) {
+              List<Bind> binds = new ArrayList<>();
+              for (Map<String, Object> bindMap : bindsList) {
+                String containerPath = (String) bindMap.get("containerPath");
+                String hostPath = (String) bindMap.get("hostPath");
+                String accessModeStr = (String) bindMap.get("accessMode");
+                
+                if (containerPath != null && hostPath != null) {
+                  Volume volume = new Volume(containerPath);
+                  AccessMode accessMode = AccessMode.DEFAULT;
+                  
+                  if (accessModeStr != null) {
+                    try {
+                      accessMode = AccessMode.valueOf(accessModeStr.toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                      log.warn("Invalid access mode: {}, using default", accessModeStr);
+                    }
+                  }
+                  
+                  Bind bind = new Bind(hostPath, volume, accessMode);
+                  binds.add(bind);
+                }
+              }
+              if (!binds.isEmpty()) {
+                hostConfig.withBinds(binds.toArray(new Bind[0]));
+              }
+            }
+
             hostConfigs.put(containerName, hostConfig);
           }
         }
@@ -2553,7 +2640,7 @@ public class MyRestController {
           "blockchain-explorer",
           "validator-1",
           "validator-2",
-          "file-server",
+//          "file-server",
           "explorer-restarter",
           "ton-http-api-v2",
           "validator-3",
