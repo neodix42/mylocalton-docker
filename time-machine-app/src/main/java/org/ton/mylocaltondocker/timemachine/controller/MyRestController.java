@@ -2067,12 +2067,15 @@ public class MyRestController {
     configData.put("snapshotNumber", targetSnapshotNumber);
     configData.put("timestamp", System.currentTimeMillis());
 
+    // Update snapshot numbers in container binds
+    updateSnapshotNumbersInBinds(configData, sourceSnapshotNumber, targetSnapshotNumber);
+
     // Write to target file
     gson = new GsonBuilder().setPrettyPrinting().create();
     String jsonContent = gson.toJson(configData);
     Files.write(Paths.get(targetConfigPath), jsonContent.getBytes());
 
-    log.info("Copied container configuration from snapshot {} to snapshot {}", sourceSnapshotNumber, targetSnapshotNumber);
+    log.info("Copied container configuration from snapshot {} to snapshot {} with updated binds", sourceSnapshotNumber, targetSnapshotNumber);
   }
 
   /**
@@ -2798,5 +2801,74 @@ public class MyRestController {
       }
     }
     return null;
+  }
+
+  /**
+   * Updates snapshot numbers in container binds when copying configuration from one snapshot to another.
+   * This method traverses the configuration data and replaces old snapshot numbers with new ones in volume binds.
+   * 
+   * @param configData The configuration data map to update
+   * @param sourceSnapshotNumber The source snapshot number to replace
+   * @param targetSnapshotNumber The target snapshot number to replace with
+   */
+  @SuppressWarnings("unchecked")
+  private void updateSnapshotNumbersInBinds(Map<String, Object> configData, int sourceSnapshotNumber, int targetSnapshotNumber) {
+    try {
+      Map<String, Object> containers = (Map<String, Object>) configData.get("containers");
+      if (containers == null) {
+        log.warn("No containers found in configuration data, skipping bind updates");
+        return;
+      }
+
+      log.info("Updating snapshot numbers in binds from {} to {} for {} containers", sourceSnapshotNumber, targetSnapshotNumber, containers.size());
+
+      for (Map.Entry<String, Object> containerEntry : containers.entrySet()) {
+        String containerName = containerEntry.getKey();
+        Map<String, Object> containerData = (Map<String, Object>) containerEntry.getValue();
+        
+        if (containerData == null) {
+          continue;
+        }
+
+        Map<String, Object> hostConfig = (Map<String, Object>) containerData.get("hostConfig");
+        if (hostConfig == null) {
+          continue;
+        }
+
+        List<Map<String, Object>> binds = (List<Map<String, Object>>) hostConfig.get("binds");
+        if (binds == null) {
+          continue;
+        }
+
+        // Update snapshot numbers in binds
+        for (Map<String, Object> bind : binds) {
+          String hostPath = (String) bind.get("hostPath");
+          if (hostPath != null && hostPath.contains("snapshot-" + sourceSnapshotNumber)) {
+            String updatedHostPath = hostPath.replace("snapshot-" + sourceSnapshotNumber, "snapshot-" + targetSnapshotNumber);
+            bind.put("hostPath", updatedHostPath);
+            log.info("Updated bind for container {}: {} -> {}", containerName, hostPath, updatedHostPath);
+          }
+        }
+
+        // Also update mounts if they exist
+        List<Map<String, Object>> mounts = (List<Map<String, Object>>) hostConfig.get("mounts");
+        if (mounts != null) {
+          for (Map<String, Object> mount : mounts) {
+            String source = (String) mount.get("source");
+            if (source != null && source.contains("snapshot-" + sourceSnapshotNumber)) {
+              String updatedSource = source.replace("snapshot-" + sourceSnapshotNumber, "snapshot-" + targetSnapshotNumber);
+              mount.put("source", updatedSource);
+              log.info("Updated mount for container {}: {} -> {}", containerName, source, updatedSource);
+            }
+          }
+        }
+      }
+
+      log.info("Successfully updated snapshot numbers in binds from {} to {}", sourceSnapshotNumber, targetSnapshotNumber);
+
+    } catch (Exception e) {
+      log.error("Error updating snapshot numbers in binds: {}", e.getMessage(), e);
+      throw new RuntimeException("Failed to update snapshot numbers in binds", e);
+    }
   }
 }
