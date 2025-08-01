@@ -764,133 +764,156 @@ public class MyRestController {
       String instanceNumberStr = request.get("instanceNumber");
       String seqnoStr = request.get("seqno"); // seqno from frontend
 
-      currentSnapshotStatus = "Saving current blockchain state...";
+        Map<String, ContainerConfig> containerConfigs = null;
+        Map<String, HostConfig> hostConfigs = null;
+        Map<String, String> containerIpAddresses = null;
+        Map<String, String> containerTargetVolumes = null;
+        int instanceNumber = 0;
+        boolean isNewInstance = false;
+        long lastKnownSeqno = 0;
 
-      log.info("Restoring snapshot for all containers: {} (type: {}, seqno: {})", snapshotId, nodeType, seqnoStr);
+        if (!getAllRunningContainers().isEmpty()) { // if not all down
+        currentSnapshotStatus = "Saving current blockchain state...";
 
-      // CRITICAL: Get current seqno BEFORE any shutdown operations to preserve the last known state
-      long lastKnownSeqno = 0;
-      try {
-        MasterchainInfo masterChainInfo = getMasterchainInfo();
-        if (masterChainInfo != null) {
-          lastKnownSeqno = masterChainInfo.getLast().getSeqno();
-          log.info("Captured last known seqno before restoration: {}", lastKnownSeqno);
-        }
-      } catch (Exception e) {
-        log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
-      }
+        log.info(
+            "Restoring snapshot for all containers: {} (type: {}, seqno: {})",
+            snapshotId,
+            nodeType,
+            seqnoStr);
 
-      // Determine target volume names for ALL containers using the same logic
-      Map<String, String> containerTargetVolumes = new HashMap<>();
-      int instanceNumber = 0;
-      boolean isNewInstance = false;
+        // CRITICAL: Get current seqno BEFORE any shutdown to preserve the last known state
 
-      if ("instance".equals(nodeType)) {
-        // Restoring from instance node - reuse existing volumes for containers that have them
-        if (instanceNumberStr != null) {
-          instanceNumber = Integer.parseInt(instanceNumberStr);
-        }
-
-        // Genesis container - always should exist for instances
-        String genesisTargetVolume = "ton-db-snapshot-" + snapshotNumber +
-            (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
-
-        // Check if genesis volume exists before adding
         try {
-          dockerClient.inspectVolumeCmd(genesisTargetVolume).exec();
-          containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
-          log.info("Found existing genesis instance volume: {}", genesisTargetVolume);
-        } catch (NotFoundException e) {
-          log.warn("Genesis instance volume {} not found", genesisTargetVolume);
-        }
-
-        // Validator containers - only add if their volumes exist
-        for (String validatorContainer : VALIDATOR_CONTAINERS) {
-          String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
-          String targetVolume = baseVolumeName + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
-
-          // Only add if the instance volume exists
-          try {
-            dockerClient.inspectVolumeCmd(targetVolume).exec();
-            containerTargetVolumes.put(validatorContainer, targetVolume);
-            log.info("Found existing validator instance volume: {}", targetVolume);
-          } catch (NotFoundException e) {
-            log.debug("Validator instance volume {} not found, skipping", targetVolume);
-          }
-        }
-
-        log.info("Reusing existing instance volumes for {} containers", containerTargetVolumes.size());
-
-      } else {
-        // Restoring from snapshot node - create new instances for containers that have snapshots
-        instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
-        isNewInstance = true;
-
-        // Genesis container - should always exist
-        String genesisBackupVolume = "ton-db-snapshot-" + snapshotNumber;
-        String genesisTargetVolume = genesisBackupVolume + "-" + instanceNumber;
-
-        // Check if genesis backup exists before copying
-        try {
-          dockerClient.inspectVolumeCmd(genesisBackupVolume).exec();
-          log.info("Copying volume {} to {}", genesisBackupVolume, genesisTargetVolume);
-          copyVolumes(dockerClient, genesisBackupVolume, genesisTargetVolume);
-          containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
-        } catch (NotFoundException e) {
-          log.error("Genesis backup volume {} not found", genesisBackupVolume);
-          throw new RuntimeException("Genesis backup volume not found: " + genesisBackupVolume);
-        }
-
-        // Validator containers - only copy and add if backup volumes exist
-        for (String validatorContainer : VALIDATOR_CONTAINERS) {
-          String validatorBackupVolume = CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
-          String validatorTargetVolume = validatorBackupVolume + "-" + instanceNumber;
-
-          // Only copy if the backup volume exists (validator was running when snapshot was taken)
-          try {
-            dockerClient.inspectVolumeCmd(validatorBackupVolume).exec();
-            log.info("Copying volume {} to {}", validatorBackupVolume, validatorTargetVolume);
-            copyVolumes(dockerClient, validatorBackupVolume, validatorTargetVolume);
-            containerTargetVolumes.put(validatorContainer, validatorTargetVolume);
-          } catch (NotFoundException e) {
-            log.info("Validator backup volume {} not found, skipping", validatorBackupVolume);
-          }
-        }
-
-        log.info("Created new instance volumes for {} containers", containerTargetVolumes.size());
-      }
-
-      // Get container configurations BEFORE stopping them
-      Map<String, ContainerConfig> containerConfigs = new HashMap<>();
-      Map<String, HostConfig> hostConfigs = new HashMap<>();
-      Map<String, String> containerIpAddresses = new HashMap<>();
-
-      List<String> runningContainers = getAllCurrentlyRunningContainers();
-      for (String containerName : runningContainers) {
-        try {
-          String containerId = getContainerIdByName(containerName);
-          if (containerId != null) {
-            InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
-            containerConfigs.put(containerName, inspectResponse.getConfig());
-            hostConfigs.put(containerName, inspectResponse.getHostConfig());
-
-            // Get IP address if available
-            try {
-              if (inspectResponse.getNetworkSettings() != null &&
-                  inspectResponse.getNetworkSettings().getNetworks() != null &&
-                  !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
-                String ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
-                if (ipAddress != null) {
-                  containerIpAddresses.put(containerName, ipAddress);
-                }
-              }
-            } catch (Exception e) {
-              log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
-            }
+          MasterchainInfo masterChainInfo = getMasterchainInfo();
+          if (masterChainInfo != null) {
+            lastKnownSeqno = masterChainInfo.getLast().getSeqno();
+            log.info("Captured last known seqno before restoration: {}", lastKnownSeqno);
           }
         } catch (Exception e) {
-          log.warn("Could not get configuration for container {}: {}", containerName, e.getMessage());
+          log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
         }
+
+        // Determine target volume names for ALL containers using the same logic
+            containerTargetVolumes = new HashMap<>();
+
+        if ("instance".equals(nodeType)) {
+          // Restoring from instance node - reuse existing volumes for containers that have them
+          if (instanceNumberStr != null) {
+            instanceNumber = Integer.parseInt(instanceNumberStr);
+          }
+
+          // Genesis container - always should exist for instances
+          String genesisTargetVolume =
+              "ton-db-snapshot-"
+                  + snapshotNumber
+                  + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
+
+          // Check if genesis volume exists before adding
+          try {
+            dockerClient.inspectVolumeCmd(genesisTargetVolume).exec();
+            containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+            log.info("Found existing genesis instance volume: {}", genesisTargetVolume);
+          } catch (NotFoundException e) {
+            log.warn("Genesis instance volume {} not found", genesisTargetVolume);
+          }
+
+          // Validator containers - only add if their volumes exist
+          for (String validatorContainer : VALIDATOR_CONTAINERS) {
+            String baseVolumeName =
+                CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
+            String targetVolume =
+                baseVolumeName + (instanceNumberStr != null ? "-" + instanceNumber : "-latest");
+
+            // Only add if the instance volume exists
+            try {
+              dockerClient.inspectVolumeCmd(targetVolume).exec();
+              containerTargetVolumes.put(validatorContainer, targetVolume);
+              log.info("Found existing validator instance volume: {}", targetVolume);
+            } catch (NotFoundException e) {
+              log.debug("Validator instance volume {} not found, skipping", targetVolume);
+            }
+          }
+
+          log.info(
+              "Reusing existing instance volumes for {} containers", containerTargetVolumes.size());
+
+        } else {
+          // Restoring from snapshot node - create new instances for containers that have snapshots
+          instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
+          isNewInstance = true;
+
+          // Genesis container - should always exist
+          String genesisBackupVolume = "ton-db-snapshot-" + snapshotNumber;
+          String genesisTargetVolume = genesisBackupVolume + "-" + instanceNumber;
+
+          // Check if genesis backup exists before copying
+          try {
+            dockerClient.inspectVolumeCmd(genesisBackupVolume).exec();
+            log.info("Copying volume {} to {}", genesisBackupVolume, genesisTargetVolume);
+            copyVolumes(dockerClient, genesisBackupVolume, genesisTargetVolume);
+            containerTargetVolumes.put(CONTAINER_GENESIS, genesisTargetVolume);
+          } catch (NotFoundException e) {
+            log.error("Genesis backup volume {} not found", genesisBackupVolume);
+            throw new RuntimeException("Genesis backup volume not found: " + genesisBackupVolume);
+          }
+
+          // Validator containers - only copy and add if backup volumes exist
+          for (String validatorContainer : VALIDATOR_CONTAINERS) {
+            String validatorBackupVolume =
+                CONTAINER_VOLUME_MAP.get(validatorContainer) + "-snapshot-" + snapshotNumber;
+            String validatorTargetVolume = validatorBackupVolume + "-" + instanceNumber;
+
+            // Only copy if the backup volume exists (validator was running when snapshot was taken)
+            try {
+              dockerClient.inspectVolumeCmd(validatorBackupVolume).exec();
+              log.info("Copying volume {} to {}", validatorBackupVolume, validatorTargetVolume);
+              copyVolumes(dockerClient, validatorBackupVolume, validatorTargetVolume);
+              containerTargetVolumes.put(validatorContainer, validatorTargetVolume);
+            } catch (NotFoundException e) {
+              log.info("Validator backup volume {} not found, skipping", validatorBackupVolume);
+            }
+          }
+
+          log.info("Created new instance volumes for {} containers", containerTargetVolumes.size());
+        }
+
+
+        // Get container configurations BEFORE stopping them
+        containerConfigs = new HashMap<>();
+        hostConfigs = new HashMap<>();
+        containerIpAddresses = new HashMap<>();
+
+        List<String> runningContainers = getAllCurrentlyRunningContainers();
+
+        for (String containerName : runningContainers) {
+          try {
+            String containerId = getContainerIdByName(containerName);
+            if (containerId != null) {
+              InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
+              containerConfigs.put(containerName, inspectResponse.getConfig());
+              hostConfigs.put(containerName, inspectResponse.getHostConfig());
+
+              // Get IP address if available
+              try {
+                if (inspectResponse.getNetworkSettings() != null &&
+                    inspectResponse.getNetworkSettings().getNetworks() != null &&
+                    !inspectResponse.getNetworkSettings().getNetworks().isEmpty()) {
+                  String ipAddress = inspectResponse.getNetworkSettings().getNetworks().values().iterator().next().getIpAddress();
+                  if (ipAddress != null) {
+                    containerIpAddresses.put(containerName, ipAddress);
+                  }
+                }
+              } catch (Exception e) {
+                log.warn("Could not retrieve IP address for container {}: {}", containerName, e.getMessage());
+              }
+            }
+          } catch (Exception e) {
+            log.warn("Could not get configuration for container {}: {}", containerName, e.getMessage());
+          }
+        }
+      }
+      else {
+        log.info("BLOCKCHAIN IS DOWN !!!!!");
       }
 
       // Try to load stored configuration for this snapshot first
@@ -2072,31 +2095,119 @@ public class MyRestController {
       dataDir.mkdirs();
     }
 
-    // Build simplified configuration data structure
+    // Build comprehensive configuration data structure
     Map<String, Object> configData = new HashMap<>();
     configData.put("snapshotNumber", snapshotNumber);
     configData.put("timestamp", System.currentTimeMillis());
     configData.put("runningContainers", runningContainers);
 
-    // Store basic container information
+    // Store comprehensive container information
     Map<String, Object> containers = new HashMap<>();
     for (String containerName : runningContainers) {
       Map<String, Object> containerData = new HashMap<>();
 
-      // Store basic container info
+      // Store comprehensive container config info
       ContainerConfig config = containerConfigs.get(containerName);
       if (config != null) {
         Map<String, Object> configMap = new HashMap<>();
         configMap.put("env", Arrays.asList(config.getEnv() != null ? config.getEnv() : new String[0]));
         configMap.put("image", config.getImage());
+        
+        // Store ExposedPorts
+        ExposedPort[] exposedPorts = config.getExposedPorts();
+        if (exposedPorts != null) {
+          List<Map<String, Object>> exposedPortsList = new ArrayList<>();
+          for (ExposedPort exposedPort : exposedPorts) {
+            Map<String, Object> portMap = new HashMap<>();
+            portMap.put("port", exposedPort.getPort());
+            portMap.put("protocol", exposedPort.getProtocol().toString());
+            exposedPortsList.add(portMap);
+          }
+          configMap.put("exposedPorts", exposedPortsList);
+        }
+        
+        // Store HealthCheck
+        HealthCheck healthCheck = config.getHealthcheck();
+        if (healthCheck != null) {
+          Map<String, Object> healthCheckMap = new HashMap<>();
+          if (healthCheck.getTest() != null) {
+            healthCheckMap.put("test", Arrays.asList(healthCheck.getTest()));
+          }
+          if (healthCheck.getInterval() != null) {
+            healthCheckMap.put("interval", healthCheck.getInterval());
+          }
+          if (healthCheck.getTimeout() != null) {
+            healthCheckMap.put("timeout", healthCheck.getTimeout());
+          }
+          if (healthCheck.getRetries() != null) {
+            healthCheckMap.put("retries", healthCheck.getRetries());
+          }
+          if (healthCheck.getStartPeriod() != null) {
+            healthCheckMap.put("startPeriod", healthCheck.getStartPeriod());
+          }
+          configMap.put("healthCheck", healthCheckMap);
+        }
+        
         containerData.put("config", configMap);
       }
 
-      // Store basic host config info
+      // Store comprehensive host config info
       HostConfig hostConfig = hostConfigs.get(containerName);
       if (hostConfig != null) {
         Map<String, Object> hostConfigMap = new HashMap<>();
         hostConfigMap.put("networkMode", hostConfig.getNetworkMode());
+        
+        // Store PortBindings
+        Ports portBindings = hostConfig.getPortBindings();
+        if (portBindings != null && portBindings.getBindings() != null) {
+          Map<String, Object> portBindingsMap = new HashMap<>();
+          for (Map.Entry<ExposedPort, Ports.Binding[]> entry : portBindings.getBindings().entrySet()) {
+            ExposedPort exposedPort = entry.getKey();
+            Ports.Binding[] bindings = entry.getValue();
+            
+            String portKey = exposedPort.getPort() + "/" + exposedPort.getProtocol().toString();
+            List<Map<String, Object>> bindingsList = new ArrayList<>();
+            
+            if (bindings != null) {
+              for (Ports.Binding binding : bindings) {
+                Map<String, Object> bindingMap = new HashMap<>();
+                if (binding.getHostIp() != null) {
+                  bindingMap.put("hostIp", binding.getHostIp());
+                }
+                if (binding.getHostPortSpec() != null) {
+                  bindingMap.put("hostPort", binding.getHostPortSpec());
+                }
+                bindingsList.add(bindingMap);
+              }
+            }
+            portBindingsMap.put(portKey, bindingsList);
+          }
+          hostConfigMap.put("portBindings", portBindingsMap);
+        }
+        
+        // Store Volume Mounts
+        List<Mount> mounts = hostConfig.getMounts();
+        if (mounts != null) {
+          List<Map<String, Object>> mountsList = new ArrayList<>();
+          for (Mount mount : mounts) {
+            Map<String, Object> mountMap = new HashMap<>();
+            if (mount.getType() != null) {
+              mountMap.put("type", mount.getType().toString());
+            }
+            if (mount.getSource() != null) {
+              mountMap.put("source", mount.getSource());
+            }
+            if (mount.getTarget() != null) {
+              mountMap.put("target", mount.getTarget());
+            }
+            if (mount.getReadOnly() != null) {
+              mountMap.put("readOnly", mount.getReadOnly());
+            }
+            mountsList.add(mountMap);
+          }
+          hostConfigMap.put("mounts", mountsList);
+        }
+        
         containerData.put("hostConfig", hostConfigMap);
       }
 
@@ -2116,7 +2227,7 @@ public class MyRestController {
     String jsonContent = gson.toJson(configData);
     Files.write(Paths.get(configPath), jsonContent.getBytes());
 
-    log.info("Stored container configuration for snapshot {} to {}", snapshotNumber, configPath);
+    log.info("Stored comprehensive container configuration for snapshot {} to {}", snapshotNumber, configPath);
   }
 
   /**
@@ -2171,6 +2282,60 @@ public class MyRestController {
               config.withImage(image);
             }
 
+            // Set ExposedPorts
+            List<Map<String, Object>> exposedPortsList = (List<Map<String, Object>>) configMap.get("exposedPorts");
+            if (exposedPortsList != null && !exposedPortsList.isEmpty()) {
+              List<ExposedPort> exposedPorts = new ArrayList<>();
+              for (Map<String, Object> portMap : exposedPortsList) {
+                Integer port = (Integer) portMap.get("port");
+                String protocol = (String) portMap.get("protocol");
+                if (port != null && protocol != null) {
+                  InternetProtocol internetProtocol = InternetProtocol.valueOf(protocol.toUpperCase());
+                  exposedPorts.add(new ExposedPort(port, internetProtocol));
+                }
+              }
+              if (!exposedPorts.isEmpty()) {
+                // Create ExposedPorts object from the list
+                ExposedPorts exposedPortsObj = new ExposedPorts(exposedPorts.toArray(new ExposedPort[0]));
+                config.withExposedPorts(exposedPortsObj);
+              }
+            }
+
+            // Set HealthCheck
+            Map<String, Object> healthCheckMap = (Map<String, Object>) configMap.get("healthCheck");
+            if (healthCheckMap != null) {
+              HealthCheck healthCheck = new HealthCheck();
+              
+              List<String> testList = (List<String>) healthCheckMap.get("test");
+              if (testList != null && !testList.isEmpty()) {
+                healthCheck.withTest(testList);
+              }
+              
+              Long interval = getLongValue(healthCheckMap.get("interval"));
+              if (interval != null) {
+                healthCheck.withInterval(interval);
+              }
+              
+              Long timeout = getLongValue(healthCheckMap.get("timeout"));
+              if (timeout != null) {
+                healthCheck.withTimeout(timeout);
+              }
+              
+              Integer retries = getIntegerValue(healthCheckMap.get("retries"));
+              if (retries != null) {
+                healthCheck.withRetries(retries);
+              }
+              
+              Long startPeriod = getLongValue(healthCheckMap.get("startPeriod"));
+              if (startPeriod != null) {
+                healthCheck.withStartPeriod(startPeriod);
+              }
+              
+              // Note: ContainerConfig doesn't have withHealthcheck method
+              // HealthCheck is typically set during container creation, not in config
+              // We'll store it but won't set it on config here
+            }
+
             containerConfigs.put(containerName, config);
           }
         }
@@ -2204,6 +2369,74 @@ public class MyRestController {
             String networkMode = (String) hostConfigMap.get("networkMode");
             if (networkMode != null) {
               hostConfig.withNetworkMode(networkMode);
+            }
+
+            // Restore PortBindings
+            Map<String, Object> portBindingsMap = (Map<String, Object>) hostConfigMap.get("portBindings");
+            if (portBindingsMap != null) {
+              Ports portBindings = new Ports();
+              for (Map.Entry<String, Object> portEntry : portBindingsMap.entrySet()) {
+                String portKey = portEntry.getKey(); // e.g., "8080/tcp"
+                List<Map<String, Object>> bindingsList = (List<Map<String, Object>>) portEntry.getValue();
+                
+                // Parse port and protocol from key
+                String[] portParts = portKey.split("/");
+                if (portParts.length == 2) {
+                  try {
+                    int port = Integer.parseInt(portParts[0]);
+                    InternetProtocol protocol = InternetProtocol.valueOf(portParts[1].toUpperCase());
+                    ExposedPort exposedPort = new ExposedPort(port, protocol);
+                    
+                    // Create bindings
+                    List<Ports.Binding> bindings = new ArrayList<>();
+                    for (Map<String, Object> bindingMap : bindingsList) {
+                      String hostIp = (String) bindingMap.get("hostIp");
+                      String hostPort = (String) bindingMap.get("hostPort");
+                      bindings.add(new Ports.Binding(hostIp, hostPort));
+                    }
+                    
+                    // Bind each binding individually since bind() expects single binding
+                    for (Ports.Binding binding : bindings) {
+                      portBindings.bind(exposedPort, binding);
+                    }
+                  } catch (Exception e) {
+                    log.warn("Failed to parse port binding: {}", portKey, e);
+                  }
+                }
+              }
+              hostConfig.withPortBindings(portBindings);
+            }
+
+            // Restore Volume Mounts
+            List<Map<String, Object>> mountsList = (List<Map<String, Object>>) hostConfigMap.get("mounts");
+            if (mountsList != null) {
+              List<Mount> mounts = new ArrayList<>();
+              for (Map<String, Object> mountMap : mountsList) {
+                Mount mount = new Mount();
+                
+                String type = (String) mountMap.get("type");
+                if (type != null) {
+                  mount.withType(MountType.valueOf(type.toUpperCase()));
+                }
+                
+                String source = (String) mountMap.get("source");
+                if (source != null) {
+                  mount.withSource(source);
+                }
+                
+                String target = (String) mountMap.get("target");
+                if (target != null) {
+                  mount.withTarget(target);
+                }
+                
+                Boolean readOnly = (Boolean) mountMap.get("readOnly");
+                if (readOnly != null) {
+                  mount.withReadOnly(readOnly);
+                }
+                
+                mounts.add(mount);
+              }
+              hostConfig.withMounts(mounts);
             }
 
             hostConfigs.put(containerName, hostConfig);
@@ -2426,5 +2659,57 @@ public class MyRestController {
     params.add(newTParam);
 
     return String.join(" ", params);
+  }
+
+  /**
+   * Helper method to safely convert Object to Long
+   */
+  private Long getLongValue(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Long) {
+      return (Long) value;
+    }
+    if (value instanceof Integer) {
+      return ((Integer) value).longValue();
+    }
+    if (value instanceof Double) {
+      return ((Double) value).longValue();
+    }
+    if (value instanceof String) {
+      try {
+        return Long.parseLong((String) value);
+      } catch (NumberFormatException e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Helper method to safely convert Object to Integer
+   */
+  private Integer getIntegerValue(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Integer) {
+      return (Integer) value;
+    }
+    if (value instanceof Long) {
+      return ((Long) value).intValue();
+    }
+    if (value instanceof Double) {
+      return ((Double) value).intValue();
+    }
+    if (value instanceof String) {
+      try {
+        return Integer.parseInt((String) value);
+      } catch (NumberFormatException e) {
+        return null;
+      }
+    }
+    return null;
   }
 }
