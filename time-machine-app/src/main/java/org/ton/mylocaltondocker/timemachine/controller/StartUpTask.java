@@ -106,10 +106,9 @@ public class StartUpTask {
       // Test the connection
       //      newClient.getMasterchainInfo();
 
-      // Assign the new client
       Main.adnlLiteClient = newClient;
       lastReinitTime.set(System.currentTimeMillis());
-      log.info("AdnlLiteClient reinitialization completed successfully");
+//      log.info("AdnlLiteClient reinitialization completed successfully");
 
     } catch (Exception e) {
       log.error("AdnlLiteClient reinitialization failed: {}", e.getMessage());

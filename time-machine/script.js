@@ -7,6 +7,7 @@ class BlockchainGraph {
         this.edges = [];
         this.selectedNode = null;
         this.activeNodeId = null;
+        this.isOperationInProgress = false; // Flag to prevent re-highlighting during operations
         
         this.initializeGraph();
         this.setupEventListeners();
@@ -751,6 +752,14 @@ class BlockchainGraph {
                     const data = await response.json();
                     if (data.status) {
                         this.updateStatus(data.status);
+                        
+                        // Set operation flag and unhighlight when not ready
+                        if (data.status !== "Ready") {
+                            this.isOperationInProgress = true;
+                            this.unhighlightActiveNode();
+                        } else {
+                            this.isOperationInProgress = false;
+                        }
                     }
                 }
             } catch (error) {
@@ -1236,6 +1245,11 @@ class BlockchainGraph {
     updateActiveNodeFromVolume(targetNodeId) {
         if (!targetNodeId) return;
         
+        // Don't update active node during operations to prevent re-highlighting
+        if (this.isOperationInProgress) {
+            return;
+        }
+        
         // Update active node if it changed
         if (targetNodeId && targetNodeId !== this.activeNodeId) {
             this.activeNodeId = targetNodeId;
@@ -1321,6 +1335,17 @@ class BlockchainGraph {
         
         this.showLoading(false);
         this.updateStatus("Ready");
+    }
+
+    unhighlightActiveNode() {
+        // Remove active node highlighting by clearing activeNodeId
+        this.activeNodeId = null;
+        
+        // Re-render the graph to remove active styling and arrows
+        this.renderGraph();
+        
+        // Save the updated graph state
+        this.saveGraph();
     }
 
     handleResize() {

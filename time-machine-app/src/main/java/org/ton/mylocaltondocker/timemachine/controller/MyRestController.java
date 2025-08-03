@@ -313,7 +313,7 @@ public class MyRestController {
       }
 
       // Create snapshots for all containers in parallel
-      currentSnapshotStatus = "Taking snapshots...";
+      currentSnapshotStatus = "Taking snapshot...";
 
       // copy volumes in parallel
       snapshotConfig.getCoreContainers().parallelStream()
@@ -681,7 +681,7 @@ public class MyRestController {
         storeSnapshotConfiguration(snapshotConfigNew);
       }
 
-      currentSnapshotStatus = "Stopping current blockchain...";
+      currentSnapshotStatus = "Stopping blockchain...";
       stopAndRemoveAllContainers();
 
       currentSnapshotStatus = "Starting blockchain from the snapshot...";
@@ -1231,6 +1231,7 @@ public class MyRestController {
   public Map<String, Object> stopBlockchain() {
     try {
       log.info("Stopping blockchain - stopping and removing all containers except time-machine");
+      currentSnapshotStatus = "Stopping blockchain...";
 
       List<String> containersToStop = getAllRunningContainers();
 
