@@ -1,6 +1,7 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
+import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
 
@@ -315,7 +316,7 @@ public class MyRestController {
         storeSnapshotConfiguration(snapshotConfig);
       }
 
-      String snapshotId = "snapshot-" + snapshotNumber;
+      //String snapshotId = "snapshot-" + snapshotNumber;
 
       log.info("Found running containers: {}", runningContainers);
 
@@ -401,8 +402,8 @@ public class MyRestController {
         try {
           currentSnapshotStatus = "Starting blockchain...";
 
-          // First, recreate containers that have volumes (genesis + validators)
-          createAllContainersGroups(snapshotConfig, String.valueOf(lastSeqno));
+          createContainerGroup(snapshotConfig.getCoreContainers());
+//          createAllContainersGroups(snapshotConfig, String.valueOf(lastSeqno));
           
           log.info("Blockchain restarted successfully after snapshot creation");
         } catch (Exception e) {
@@ -423,7 +424,7 @@ public class MyRestController {
 
         currentSnapshotStatus = "Snapshot taken successfully";
         response.put("success", true);
-        response.put("snapshotId", snapshotId);
+        response.put("snapshotId", snapshotNumber);
         response.put("snapshotNumber", snapshotNumber);
         response.put("seqno", lastSeqno);
         response.put("volumeName", "ton-db-snapshot-" + snapshotNumber); // Keep for compatibility
@@ -437,7 +438,8 @@ public class MyRestController {
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
       if (waitForSeqnoVolumeHealthy()) {
-        currentSnapshotStatus = "Ready";
+        currentSnapshotStatus = "Starting extra services...";
+        createContainerGroup(snapshotConfig.getExtraContainers());
       }
       else {
         response.put("success", false);
@@ -749,6 +751,7 @@ public class MyRestController {
 
       // Wait for lite-server to be ready before setting status to Ready
       currentSnapshotStatus = "Waiting for lite-server to be ready";
+
       if (waitForSeqnoVolumeHealthy()) {
         currentSnapshotStatus = "Starting extra-services...";
         createContainerGroup(snapshotConfigNew.getExtraContainers());
@@ -897,7 +900,12 @@ public class MyRestController {
       String instanceNumber = request.get("instanceNumber") != null ? String.valueOf(request.get("instanceNumber")) : null;
       Boolean hasChildren = (Boolean) request.get("hasChildren");
 
-      log.info("Deleting snapshot: {} (type: {}, hasChildren: {})", snapshotId, nodeType, hasChildren);
+      log.info("Deleting snapshot: id: {}, snapshotNumber: {}, instanceNumber: {} type: {}, hasChildren: {}",
+              snapshotId, snapshotNumber, instanceNumber, nodeType, hasChildren);
+
+      String snapshotInstanceNumber = isNull(instanceNumber)?snapshotNumber:snapshotNumber+"-"+instanceNumber;
+
+      SnapshotConfig snapshotConfig = loadSnapshotConfiguration(snapshotInstanceNumber);
 
       // Check if any of the volumes to delete are currently in use
       String genesisContainerId = getGenesisContainerId();
@@ -907,111 +915,13 @@ public class MyRestController {
         currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
       }
 
-      // Build list of volumes to delete from nodesToDelete list
       List<String> volumesToDelete = new ArrayList<>();
-
-      @SuppressWarnings("unchecked")
-      List<Map<String, Object>> nodesToDelete = (List<Map<String, Object>>) request.get("nodesToDelete");
-
-      if (nodesToDelete != null && !nodesToDelete.isEmpty()) {
-        // Delete volumes for all nodes in the list (including all container types)
-        for (Map<String, Object> nodeToDelete : nodesToDelete) {
-          String nodeSnapshotNumber = String.valueOf(nodeToDelete.get("snapshotNumber"));
-          String nodeInstanceNumber = nodeToDelete.get("instanceNumber") != null ?
-              String.valueOf(nodeToDelete.get("instanceNumber")) : null;
-          String nodeNodeType = (String) nodeToDelete.get("type");
-
-          if ("instance".equals(nodeNodeType) && nodeInstanceNumber != null) {
-            // Delete instance volumes for ALL container types
-            // Genesis instance volume
-            String genesisInstanceVolume = "ton-db-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
-            volumesToDelete.add(genesisInstanceVolume);
-
-            // Validator instance volumes
-            for (String validatorContainer : VALIDATOR_CONTAINERS) {
-              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
-              String validatorInstanceVolume = baseVolumeName + "-snapshot-" + nodeSnapshotNumber + "-" + nodeInstanceNumber;
-              volumesToDelete.add(validatorInstanceVolume);
-            }
-          } else {
-            // Delete base snapshot volumes for ALL container types
-            // Genesis base snapshot volume
-            String genesisBaseVolume = "ton-db-snapshot-" + nodeSnapshotNumber;
-            volumesToDelete.add(genesisBaseVolume);
-
-            // Validator base snapshot volumes
-            for (String validatorContainer : VALIDATOR_CONTAINERS) {
-              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
-              String validatorBaseVolume = baseVolumeName + "-snapshot-" + nodeSnapshotNumber;
-              volumesToDelete.add(validatorBaseVolume);
-            }
-          }
-        }
-      } else {
-        // Fallback to old logic if nodesToDelete is not provided
-        if ("instance".equals(nodeType) && instanceNumber != null) {
-          // Delete instance volumes for ALL container types
-          // Genesis instance volume
-          String genesisInstanceVolume = "ton-db-snapshot-" + snapshotNumber + "-" + instanceNumber;
-          volumesToDelete.add(genesisInstanceVolume);
-
-          // Validator instance volumes
-          for (String validatorContainer : VALIDATOR_CONTAINERS) {
-            String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
-            String validatorInstanceVolume = baseVolumeName + "-snapshot-" + snapshotNumber + "-" + instanceNumber;
-            volumesToDelete.add(validatorInstanceVolume);
-          }
-        } else {
-          // Delete base snapshot volumes for ALL container types
-          // Genesis base snapshot volume
-          String genesisBaseVolume = "ton-db-snapshot-" + snapshotNumber;
-          volumesToDelete.add(genesisBaseVolume);
-
-          // Validator base snapshot volumes
-          for (String validatorContainer : VALIDATOR_CONTAINERS) {
-            String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
-            String validatorBaseVolume = baseVolumeName + "-snapshot-" + snapshotNumber;
-            volumesToDelete.add(validatorBaseVolume);
-          }
-
-          // If has children, also delete all instance volumes for this snapshot (all container types)
-          if (hasChildren != null && hasChildren) {
-            // Find all instance volumes for this snapshot across all container types
-            List<InspectVolumeResponse> allVolumes = dockerClient.listVolumesCmd().exec().getVolumes();
-
-            // Genesis instance volumes
-            String genesisInstancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
-
-            // Validator instance volume prefixes
-            List<String> validatorInstancePrefixes = new ArrayList<>();
-            for (String validatorContainer : VALIDATOR_CONTAINERS) {
-              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
-              validatorInstancePrefixes.add(baseVolumeName + "-snapshot-" + snapshotNumber + "-");
-            }
-
-            for (InspectVolumeResponse volume : allVolumes) {
-              String volumeName = volume.getName();
-
-              // Check genesis instance volumes
-              if (volumeName.startsWith(genesisInstancePrefix)) {
-                volumesToDelete.add(volumeName);
-              }
-
-              // Check validator instance volumes
-              for (String validatorPrefix : validatorInstancePrefixes) {
-                if (volumeName.startsWith(validatorPrefix)) {
-                  volumesToDelete.add(volumeName);
-                  break; // Found matching prefix, no need to check others
-                }
-              }
-            }
-          }
-        }
+      for (DockerContainer dockerContainer : snapshotConfig.getCoreContainers()) {
+        volumesToDelete.add(dockerContainer.getTonDbVolumeName());
       }
 
       boolean deletingActiveVolume = false;
       if (currentVolume != null && volumesToDelete.contains(currentVolume)) {
-        deletingActiveVolume = true;
         log.warn("Attempting to delete currently active volume: {}", currentVolume);
 
         // If trying to delete active volume, return error immediately
@@ -1056,6 +966,7 @@ public class MyRestController {
       Map<String, Object> response = new HashMap<>();
 
       if (failedVolumes.isEmpty()) {
+        deleteSnapshotConfiguration(snapshotInstanceNumber);
         response.put("success", true);
         response.put("message", "Snapshot deleted successfully");
         response.put("deletedVolumes", deletedVolumes);
@@ -1574,7 +1485,19 @@ public class MyRestController {
     return Files.exists(Path.of("/usr/share/data/config-snapshot-" + snapshotNumber + ".json"));
   }
 
-  private SnapshotConfig loadSnapshotConfiguration(String snapshotNumber) throws Exception {
+  private void deleteSnapshotConfiguration(String snapshotNumber) throws Exception {
+    String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
+    log.info("deleting {}", configPath);
+    File configFile = new File(configPath);
+
+    if (!configFile.exists()) {
+      log.error("Snapshot configuration file not found for snapshot {}: {}", snapshotNumber, configPath);
+    }
+
+    Files.delete(Paths.get(configPath));
+  }
+
+    private SnapshotConfig loadSnapshotConfiguration(String snapshotNumber) throws Exception {
     String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
     log.info("loading {}", configPath);
     File configFile = new File(configPath);
