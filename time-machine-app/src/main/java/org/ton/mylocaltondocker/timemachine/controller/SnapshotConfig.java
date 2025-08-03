@@ -1,0 +1,55 @@
+package org.ton.mylocaltondocker.timemachine.controller;
+
+import lombok.Builder;
+import lombok.Data;
+import org.apache.commons.lang3.ArrayUtils;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+@Builder
+@Data
+public class SnapshotConfig {
+  String snapshotNumber;
+  long timestamp;
+  List<String> runningContainers;
+  Map<String, DockerContainer> containers;
+
+  static String[] CORE_CONTAINERS = {
+    "genesis", "validator-1", "validator-2", "validator-3", "validator-4", "validator-5"
+  };
+
+  static String[] EXTRA_CONTAINERS = {
+    "blockchain-explorer",
+    "ton-http-api-v2",
+    "data-generator",
+    "index-event-cache",
+    "index-event-classifier",
+    "index-api",
+    "index-worker",
+    "index-postgres",
+    "explorer-restarter",
+    "faucet",
+  };
+
+  public List<DockerContainer> getCoreContainers() {
+    List<DockerContainer> result = new ArrayList<>();
+    for (Map.Entry<String, DockerContainer> dockerContainer : containers.entrySet()) {
+      if (ArrayUtils.contains(CORE_CONTAINERS, dockerContainer.getKey())) {
+        result.add(dockerContainer.getValue());
+      }
+    }
+    return result;
+  }
+
+  public List<DockerContainer> getExtraContainers() {
+    List<DockerContainer> result = new ArrayList<>();
+    for (Map.Entry<String, DockerContainer> dockerContainer : containers.entrySet()) {
+      if (ArrayUtils.contains(EXTRA_CONTAINERS, dockerContainer.getKey())) {
+        result.add(dockerContainer.getValue());
+      }
+    }
+    return result;
+  }
+}

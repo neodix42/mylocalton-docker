@@ -630,7 +630,7 @@ class BlockchainGraph {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    parentId: snapshotParentNode.id,
+                    parentId: this.selectedNode.isRoot ? 0: snapshotParentNode.id,
                     snapshotNumber: nextSnapshotNumber
                 })
             });

@@ -44,7 +44,7 @@ services:
       - "40001:40001/udp" # validator public port
     volumes:
       - shared-data:/usr/share/data
-      - ton-db:/var/ton-work/db # docker persistent storage for ton db
+      - ton-db-val0:/var/ton-work/db # docker persistent storage for ton db
     environment:
       - GENESIS=true
       - NAME=genesis
@@ -455,7 +455,7 @@ volumes:
   postgres_data:
   event-cache-data:
   ton_index_workdir:
-  ton-db:
+  ton-db-val0:
   ton-db-val1:
   ton-db-val2:
   ton-db-val3:
