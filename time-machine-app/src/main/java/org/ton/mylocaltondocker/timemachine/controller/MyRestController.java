@@ -65,15 +65,15 @@ public class MyRestController {
     try {
 //      log.info("Getting seqno-volume");
 
-      String genesisContainerId = getGenesisContainerId();
-
-      if (StringUtils.isEmpty(genesisContainerId)) {
-        log.error("seqno-volume, Container not found");
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", false);
-        response.put("message", "Container not found");
-        return response;
-      }
+//      String genesisContainerId = getGenesisContainerId();
+//
+//      if (StringUtils.isEmpty(genesisContainerId)) {
+//        log.error("seqno-volume, Container not found");
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("success", false);
+//        response.put("message", "Container not found");
+//        return response;
+//      }
 
       MasterchainInfo masterChainInfo = getMasterchainInfo();
       if (masterChainInfo == null) {
@@ -89,13 +89,14 @@ public class MyRestController {
         return response;
       }
 
-      String volume = getCurrentVolume(dockerClient, genesisContainerId);
+      String id = getActiveNodeIdFromVolume();
+//      String volume = getCurrentVolume(dockerClient, genesisContainerId);
       int activeNodes = getActiveNodesCount();
       long syncDelay = getSyncDelay();
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("seqno", masterChainInfo.getLast().getSeqno());
-      response.put("volume", volume);
+      response.put("id", id);
       response.put("activeNodes", activeNodes);
       response.put("syncDelay", syncDelay);
 //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
@@ -564,32 +565,30 @@ public class MyRestController {
       }
 
       String currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
-      if (currentVolume == null) {
+      if ((currentVolume == null) || currentVolume.equals("mylocalton-docker_ton-db-val0")) {
         return "0";
       }
 
       // Determine active node ID based on current volume name
-      if (currentVolume.contains("ton-db-snapshot-")) {
-        String parts[] = currentVolume.split("ton-db-snapshot-");
+      if (currentVolume.contains("snapshot-")) {
+        String parts[] = currentVolume.split("snapshot-");
         if (parts.length > 1) {
           String numberPart = parts[1];
+          log.info("getActiveNodeIdFromVolume {}", numberPart);
+          return numberPart;
 
-          // Check for instance format: ton-db-snapshot-10-1
-          if (numberPart.matches("\\d+-\\d+")) {
-            String[] instanceParts = numberPart.split("-");
-            String snapshotNumber = instanceParts[0];
-            String instanceNumber = instanceParts[1];
-            return "snapshot-" + snapshotNumber + "-" + instanceNumber;
-          }
-          // Check for old "-latest" format
-          else if (numberPart.endsWith("-latest")) {
-            String snapshotNumber = numberPart.replace("-latest", "");
-            return "snapshot-" + snapshotNumber + "-latest";
-          }
-          // Plain snapshot number
-          else if (numberPart.matches("\\d+")) {
-            return "snapshot-" + numberPart;
-          }
+//          // Check for instance format: ton-db-snapshot-10-1
+//          if (numberPart.matches("\\d+-\\d+")) {
+//            String[] instanceParts = numberPart.split("-");
+//            String snapshotNumber = instanceParts[0];
+//            String instanceNumber = instanceParts[1];
+//            return snapshotNumber + "-" + instanceNumber;
+//          }
+//
+//          // Plain snapshot number
+//          else if (numberPart.matches("\\d+")) {
+//            return numberPart;
+//          }
         }
       }
 
@@ -694,18 +693,20 @@ public class MyRestController {
           log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
         }
 
-
+      String snapshotAndInstanceNumber = "";
         if ("instance".equals(nodeType)) { // todo
           // Restoring from instance node - reuse existing volumes for containers that have them
           if (instanceNumberStr != null) {
             instanceNumber = Integer.parseInt(instanceNumberStr);
+            snapshotAndInstanceNumber=String.valueOf(instanceNumber);
           }
 
         } else { // copy volumes
           // Restoring from snapshot node - create new instances for containers that have snapshots
           instanceNumber = getNextInstanceNumber(Integer.parseInt(snapshotNumber));
           isNewInstance = true;
-          String snapshotAndInstanceNumber = snapshotNumber+"-"+instanceNumber;
+
+          snapshotAndInstanceNumber = snapshotNumber+"-"+instanceNumber;
 
           snapshotConfigNew.setSnapshotNumber(snapshotAndInstanceNumber);
 
@@ -754,7 +755,8 @@ public class MyRestController {
         response.put("success", true);
         response.put("message", "Snapshots restored successfully for all containers");
 //        response.put("volumeName", containerTargetVolumes.get(CONTAINER_GENESIS)); // Keep for compatibility
-        response.put("originalVolumeName", "ton-db-snapshot-" + snapshotNumber);
+//        response.put("originalVolumeName", "ton-db-snapshot-" + snapshotNumber);
+        response.put("id", snapshotAndInstanceNumber);
         response.put("instanceNumber", instanceNumber);
         response.put("isNewInstance", isNewInstance);
 //        response.put("restoredContainers", containerTargetVolumes.keySet());
@@ -1093,6 +1095,7 @@ public class MyRestController {
           String containerId = entry.getValue();
           try {
             dockerClient.stopContainerCmd(containerId).exec();
+//            dockerClient.killContainerCmd(containerId).exec();
             log.info("container stopped: {}", containerName);
           } catch (Exception e) {
             log.warn("Failed to stop container {}: {}", containerName, e.getMessage());
@@ -1360,105 +1363,6 @@ public class MyRestController {
     Block block = Main.adnlLiteClient.getBlock(masterChainInfo.getLast()).getBlock();
     long delta = Utils.now() - block.getBlockInfo().getGenuTime();
     return delta;
-  }
-
-  /**
-   * Restarts an extra service container with provided configuration.
-   * This method is used when we have saved configuration from before shutdown.
-   */
-  private void restartExtraServiceContainerWithConfig(String containerName, ContainerConfig config, HostConfig hostConfig, String ipAddress) {
-    try {
-      log.info("Restarting {} container with saved configuration", containerName);
-
-      // Check if the container exists first
-      String containerId = getContainerIdByName(containerName);
-      if (!StringUtils.isEmpty(containerId)) {
-        // Container exists, stop and remove it first
-        log.info("Stopping existing container {}", containerName);
-        dockerClient.stopContainerCmd(containerId).exec();
-        dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-      }
-
-      if (config == null || hostConfig == null) {
-        log.warn("No saved configuration found for container {}, using fallback restart method", containerName);
-        //restartExtraServiceContainer(containerName);
-        return;
-      }
-
-      currentSnapshotStatus = "Restarting " + containerName + " container with saved config";
-
-      // Extract configuration details
-      String[] envs = config.getEnv();
-      ExposedPort[] exposedPorts = config.getExposedPorts();
-      HealthCheck healthCheck = config.getHealthcheck();
-      String networkMode = hostConfig.getNetworkMode();
-      String imageName = config.getImage();
-
-      // Get port bindings
-      Ports portBindings = new Ports();
-      if (exposedPorts != null) {
-        for (ExposedPort exposedPort : exposedPorts) {
-          portBindings.bind(exposedPort, Ports.Binding.bindPort(exposedPort.getPort()));
-        }
-      }
-
-      // Create volume mounts - we need to recreate the mounts from the original container
-      List<Mount> mounts = new ArrayList<>();
-      
-      // Add common shared data mount that most services use
-      mounts.add(new Mount()
-          .withType(MountType.VOLUME)
-          .withSource("mylocalton-docker_shared-data")
-          .withTarget("/usr/share/data"));
-
-      // Get volumes for backward compatibility
-      List<Volume> volumes = new ArrayList<>();
-      if (config.getVolumes() != null) {
-        for (var volumeEntry : config.getVolumes().entrySet()) {
-          volumes.add(new Volume(volumeEntry.getKey()));
-        }
-      }
-
-      log.info("Recreating container {} with saved configuration", containerName);
-
-      // Create new container with the saved configuration
-      CreateContainerCmd createCmd = dockerClient
-          .createContainerCmd(imageName)
-          .withName(containerName)
-          .withEnv(envs)
-          .withHealthcheck(healthCheck)
-          .withHostConfig(
-              newHostConfig()
-                  .withNetworkMode(networkMode)
-                  .withPortBindings(portBindings)
-                  .withMounts(mounts)
-          );
-
-      // Add exposed ports if they exist
-      if (exposedPorts != null) {
-        createCmd.withExposedPorts(exposedPorts);
-      }
-
-      // Add volumes if they exist
-      if (!volumes.isEmpty()) {
-        createCmd.withVolumes(volumes.toArray(new Volume[0]));
-      }
-
-      // Add IP address if available
-      if (ipAddress != null) {
-        createCmd.withIpv4Address(ipAddress);
-      }
-
-      CreateContainerResponse newContainer = createCmd.exec();
-
-      log.info("Starting recreated container {}", containerName);
-      dockerClient.startContainerCmd(newContainer.getId()).exec();
-
-      log.info("Successfully restarted container {} with saved configuration", containerName);
-
-    } catch (Exception e) {
-      log.error("Failed to restart container {} with saved config: {}", containerName, e.getMessage(), e);
-    }
   }
 
   private void storeSnapshotConfiguration(SnapshotConfig snapshotConfig)  throws Exception {
