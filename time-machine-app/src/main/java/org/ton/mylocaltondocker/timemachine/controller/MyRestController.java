@@ -61,17 +61,6 @@ public class MyRestController {
   @GetMapping("/seqno-volume")
   public Map<String, Object> getSeqno() {
     try {
-      //      log.info("Getting seqno-volume");
-
-      //      String genesisContainerId = getGenesisContainerId();
-      //
-      //      if (StringUtils.isEmpty(genesisContainerId)) {
-      //        log.error("seqno-volume, Container not found");
-      //        Map<String, Object> response = new HashMap<>();
-      //        response.put("success", false);
-      //        response.put("message", "Container not found");
-      //        return response;
-      //      }
 
       MasterchainInfo masterChainInfo = getMasterchainInfo();
       if (masterChainInfo == null) {
@@ -88,8 +77,7 @@ public class MyRestController {
       }
 
       String id = getActiveNodeIdFromVolume();
-      //      String volume = getCurrentVolume(dockerClient, genesisContainerId);
-      int activeNodes = getActiveNodesCount();
+      int activeNodes = getAllCurrentlyRunningValidatorContainers().size();
       long syncDelay = getSyncDelay();
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
@@ -100,7 +88,6 @@ public class MyRestController {
       //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
       return response;
     } catch (Throwable e) {
-      log.warn("Error getting seqno-volume, attempting reinit");
 
       // Always attempt reinitialization for any error
       try {
@@ -119,7 +106,7 @@ public class MyRestController {
   @GetMapping("/active-nodes")
   public Map<String, Object> getActiveNodes() {
     try {
-      int activeNodes = getActiveNodesCount();
+      int activeNodes = getAllCurrentlyRunningValidatorContainers().size();
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("activeNodes", activeNodes);
@@ -131,35 +118,6 @@ public class MyRestController {
       response.put("message", "Failed to get active nodes count: " + e.getMessage());
       return response;
     }
-  }
-
-  private int getActiveNodesCount() {
-    int count = 0;
-
-    // Check genesis container
-    try {
-      String genesisId = getGenesisContainerId();
-      if (!StringUtils.isEmpty(genesisId)) {
-        count++;
-      }
-    } catch (Exception e) {
-      log.debug("Genesis container not running");
-    }
-
-    // Check up to 5 validator containers
-    for (String validatorContainer : VALIDATOR_CONTAINERS) {
-      try {
-        List<Container> containers =
-            dockerClient.listContainersCmd().withNameFilter(List.of(validatorContainer)).exec();
-        if (!containers.isEmpty()) {
-          count++;
-        }
-      } catch (Exception e) {
-        log.debug("Validator container {} not running", validatorContainer);
-      }
-    }
-
-    return count;
   }
 
   @GetMapping("/graph")
@@ -298,8 +256,6 @@ public class MyRestController {
         snapshotNumber = request.get("snapshotNumber");
         log.info("got snapshot number from request {}", snapshotNumber);
       } else {
-        // Fallback: generate next sequential number by counting existing volumes
-        //        snapshotNumber = String.valueOf(getNextSnapshotNumber(dockerClient));
         log.error("snapshotNumber field is missing");
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
@@ -307,7 +263,7 @@ public class MyRestController {
         return response;
       }
 
-      if (!isConfigExist(0)) { // if name ROOT
+      if (!isConfigExist(0)) {
         SnapshotConfig snapshotConfig = getCurrentSnapshotConfig();
         snapshotConfig.setSnapshotNumber("0");
         snapshotConfig.setTimestamp(System.currentTimeMillis());
@@ -327,17 +283,14 @@ public class MyRestController {
 
       boolean isFromActiveNode = parentId != null && parentId.equals(activeNodeId);
 
-      // Only shutdown if taking snapshot from active node AND multiple validators are running
-      long validatorCount =
-          runningContainers.stream()
-              .filter(containerName -> !CONTAINER_GENESIS.equals(containerName))
-              .count();
+      List<String> runningValidators = getAllCurrentlyRunningValidatorContainers();
 
-      boolean shouldShutdownBlockchain = isFromActiveNode && validatorCount > 0;
+      boolean shouldShutdownBlockchain = isFromActiveNode && !runningValidators.isEmpty();
+
       log.info(
           "Taking snapshot from active node: {}, Validator containers running: {}, should shutdown blockchain: {}",
           isFromActiveNode,
-          validatorCount,
+          runningValidators.size(),
           shouldShutdownBlockchain);
 
       // Get current block sequence BEFORE shutting down blockchain
@@ -429,7 +382,7 @@ public class MyRestController {
       // Get active nodes count to include in response
       int activeNodesCount = 0;
       try {
-        activeNodesCount = getActiveNodesCount();
+        activeNodesCount = getAllCurrentlyRunningValidatorContainers().size();
       } catch (Exception e) {
         log.warn("Could not get active nodes count for snapshot response: {}", e.getMessage());
       }
@@ -489,10 +442,6 @@ public class MyRestController {
     return runningContainers;
   }
 
-  /**
-   * Gets all currently running containers from the complete list of containers. This includes
-   * genesis, validators, and all other services like faucet, data-generator, etc.
-   */
   private List<String> getAllCurrentlyRunningContainers() {
     List<String> runningContainers = new ArrayList<>();
     List<String> allContainers = getAllContainers();
@@ -516,6 +465,30 @@ public class MyRestController {
     log.info(
         "Found {} currently running containers: {}", runningContainers.size(), runningContainers);
     return runningContainers;
+  }
+
+  private List<String> getAllCurrentlyRunningValidatorContainers() {
+    List<String> runningValidatorContainers = new ArrayList<>();
+
+    for (String containerName : VALIDATOR_CONTAINERS) {
+      try {
+        String containerId = getContainerIdByName(containerName);
+        if (containerId != null) {
+          // Double-check that container is actually running
+          InspectContainerResponse inspectResponse =
+                  dockerClient.inspectContainerCmd(containerId).exec();
+          if (inspectResponse.getState().getRunning()) {
+            runningValidatorContainers.add(containerName);
+          }
+        }
+      } catch (Exception e) {
+        log.debug("Validator container {} not running", containerName);
+      }
+    }
+
+    log.info(
+            "Found {} currently running containers: {}", runningValidatorContainers.size(), runningValidatorContainers);
+    return runningValidatorContainers;
   }
 
   private String getContainerIdByName(String containerName) {
@@ -1065,8 +1038,8 @@ public class MyRestController {
                           String containerName = entry.getKey();
                           String containerId = entry.getValue();
                           try {
-                            dockerClient.stopContainerCmd(containerId).exec();
-                            //            dockerClient.killContainerCmd(containerId).exec();
+//                            dockerClient.stopContainerCmd(containerId).exec();
+                                        dockerClient.killContainerCmd(containerId).exec();
                             log.info("container stopped: {}", containerName);
                           } catch (Exception e) {
                             log.warn(
@@ -1111,96 +1084,6 @@ public class MyRestController {
     } catch (Exception e) {
       log.error("Error waiting for containers to be removed: {}", e.getMessage());
     }
-
-    //    // Verify all specified containers are actually removed before proceeding
-    //    int maxRetries = 10;
-    //    int retryCount = 0;
-    //
-    //    while (retryCount < maxRetries) {
-    //      // Check if any of the specified containers still exist
-    //      List<String> stillExisting = new ArrayList<>();
-    //
-    //      try {
-    //        List<Container> allContainers =
-    // dockerClient.listContainersCmd().withShowAll(true).exec();
-    //
-    //        for (String containerName : containerNames) {
-    //          for (Container container : allContainers) {
-    //            if (container.getNames() != null) {
-    //              for (String name : container.getNames()) {
-    //                if (name.equals("/" + containerName)) {
-    //                  stillExisting.add(containerName);
-    //                  break;
-    //                }
-    //              }
-    //            }
-    //            if (stillExisting.contains(containerName)) {
-    //              break;
-    //            }
-    //          }
-    //        }
-    //      } catch (Exception e) {
-    //        log.error("Error checking remaining containers: {}", e.getMessage());
-    //        break;
-    //      }
-    //
-    //      if (stillExisting.isEmpty()) {
-    //        //        log.info("All {} containers successfully removed", groupName);
-    //        break;
-    //      }
-    //
-    //      log.warn(
-    //          "Still found {} containers after removal attempt: {}",
-    //          stillExisting.size(),
-    //          stillExisting);
-    //
-    //      // Force remove any remaining containers in parallel
-    //      List<CompletableFuture<Void>> forceRemoveFutures =
-    //          stillExisting.stream()
-    //              .map(
-    //                  containerName ->
-    //                      CompletableFuture.runAsync(
-    //                          () -> {
-    //                            try {
-    //                              String containerId = getContainerIdByName(containerName);
-    //                              if (containerId != null) {
-    //                                log.info(
-    //                                    "Force removing remaining container: {} ({})",
-    //                                    containerName,
-    //                                    containerId);
-    //
-    // dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-    //                              }
-    //                            } catch (Exception e) {
-    //                              log.warn(
-    //                                  "Failed to force remove container {}: {}",
-    //                                  containerName,
-    //                                  e.getMessage());
-    //                            }
-    //                          }))
-    //              .toList();
-    //
-    //      // Wait for all force remove operations to complete
-    //      try {
-    //        CompletableFuture.allOf(forceRemoveFutures.toArray(new CompletableFuture[0])).get();
-    //      } catch (Exception e) {
-    //        log.error("Error during force removal of containers: {}", e.getMessage());
-    //      }
-    //
-    //      retryCount++;
-    //      try {
-    //        Thread.sleep(1000); // Wait 1 second before checking again
-    //      } catch (InterruptedException e) {
-    //        Thread.currentThread().interrupt();
-    //        break;
-    //      }
-    //    }
-    //
-    //    if (retryCount >= maxRetries) {
-    //      log.warn(
-    //          "Some containers may still exist after {} attempts, but continuing anyway",
-    // maxRetries);
-    //    }
   }
 
   /** Helper method to recreate a group of containers in parallel. */
