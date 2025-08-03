@@ -352,11 +352,6 @@ public class MyRestController {
       snapshotConfigNew.setSnapshotNumber(snapshotNumber);
       snapshotConfigNew.setTimestamp(System.currentTimeMillis());
 
-      log.info("snapshots loaded");
-
-
-//      log.info("snapshotConfig: {}", snapshotConfig);
-
       if (shouldShutdownBlockchain) {
         currentSnapshotStatus = "Stopping blockchain...";
         log.info("Shutting down blockchain (all containers) before taking snapshots");
@@ -367,11 +362,11 @@ public class MyRestController {
       currentSnapshotStatus = "Taking snapshots...";
 
       // copy volumes in parallel
-      snapshotConfig.getContainers().entrySet().parallelStream()
+      snapshotConfig.getCoreContainers().parallelStream()
           .forEach(
               entry -> {
-                String containerName = entry.getKey();
-                String currentVolume = entry.getValue().getTonDbVolumeName();
+                String containerName = entry.getName();
+                String currentVolume = entry.getTonDbVolumeName();
                 String backupVolumeName = CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + snapshotNumber;
 
                 try {
@@ -397,14 +392,27 @@ public class MyRestController {
 
       storeSnapshotConfiguration(snapshotConfigNew);
 
+      Map<String, Object> response = new HashMap<>();
+
       // If blockchain was shutdown, restart it with the same volumes and configurations
       if (shouldShutdownBlockchain) {
         try {
           currentSnapshotStatus = "Starting blockchain...";
 
           createContainerGroup(snapshotConfig.getCoreContainers());
-//          createAllContainersGroups(snapshotConfig, String.valueOf(lastSeqno));
-          
+
+          // Wait for lite-server to be ready before setting status to Ready
+          currentSnapshotStatus = "Waiting for lite-server to be ready";
+          if (waitForSeqnoVolumeHealthy()) {
+            currentSnapshotStatus = "Starting extra services...";
+            createContainerGroup(snapshotConfig.getExtraContainers());
+          }
+          else {
+            response.put("success", false);
+            response.put("message","Blockchain cannot be started, see docker logs.");
+            currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
+          }
+
           log.info("Blockchain restarted successfully after snapshot creation");
         } catch (Exception e) {
           log.error("Failed to restart blockchain after snapshot creation: {}", e.getMessage());
@@ -420,7 +428,6 @@ public class MyRestController {
         log.warn("Could not get active nodes count for snapshot response: {}", e.getMessage());
       }
 
-      Map<String, Object> response = new HashMap<>();
 
         currentSnapshotStatus = "Snapshot taken successfully";
         response.put("success", true);
@@ -432,20 +439,7 @@ public class MyRestController {
         response.put("activeNodes", activeNodesCount); // Include active nodes count
         response.put("message", "Snapshots created successfully");
 
-
       isSnapshotInProgress = false;
-
-      // Wait for lite-server to be ready before setting status to Ready
-      currentSnapshotStatus = "Waiting for lite-server to be ready";
-      if (waitForSeqnoVolumeHealthy()) {
-        currentSnapshotStatus = "Starting extra services...";
-        createContainerGroup(snapshotConfig.getExtraContainers());
-      }
-      else {
-        response.put("success", false);
-        response.put("message","Blockchain cannot be started, see docker logs.");
-        currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
-      }
 
       return response;
 
@@ -906,6 +900,13 @@ public class MyRestController {
       String snapshotInstanceNumber = isNull(instanceNumber)?snapshotNumber:snapshotNumber+"-"+instanceNumber;
 
       SnapshotConfig snapshotConfig = loadSnapshotConfiguration(snapshotInstanceNumber);
+      Map<String, Object> response = new HashMap<>();
+
+      if (isNull(snapshotConfig)) {
+        response.put("success", true);
+        response.put("message", "Snapshot not found, nothing to delete");
+        return response;
+      }
 
       // Check if any of the volumes to delete are currently in use
       String genesisContainerId = getGenesisContainerId();
@@ -925,7 +926,6 @@ public class MyRestController {
         log.warn("Attempting to delete currently active volume: {}", currentVolume);
 
         // If trying to delete active volume, return error immediately
-        Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "Cannot delete currently active snapshot. Please switch to a different snapshot first.");
         response.put("deletingActiveVolume", true);
@@ -963,7 +963,6 @@ public class MyRestController {
         }
       }
 
-      Map<String, Object> response = new HashMap<>();
 
       if (failedVolumes.isEmpty()) {
         deleteSnapshotConfiguration(snapshotInstanceNumber);

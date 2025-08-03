@@ -701,7 +701,7 @@ class BlockchainGraph {
                 
                 // Create new node with sequential numbering
                 const newNode = {
-                    id: `snapshot-${nextSnapshotNumber}`,
+                    id: `${nextSnapshotNumber}`,
                     snapshotNumber: nextSnapshotNumber,
                     seqno: snapshotParentNode.id === this.activeNodeId ? data.seqno : (snapshotParentNode.seqno || data.seqno),
                     timestamp: new Date().toISOString(),
