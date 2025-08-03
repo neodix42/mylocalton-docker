@@ -557,7 +557,7 @@ class BlockchainGraph {
         }
         
         // Get active nodes count - will be fetched and updated
-        let activeNodesHtml = '<p><strong>Active nodes:</strong> <span id="active-nodes-count">Loading...</span></p>';
+        let activeNodesHtml = '<p><strong>Nodes:</strong> <span id="active-nodes-count">Loading...</span></p>';
         
         nodeDetails.innerHTML = `
             <p><strong>ID:</strong> ${node.id}</p>
@@ -768,7 +768,7 @@ class BlockchainGraph {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
-        this.updateStatus("Restoring snapshots for all containers...");
+        this.updateStatus("Restoring snapshot...");
         
         try {
 

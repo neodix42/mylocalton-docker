@@ -476,7 +476,7 @@ public class MyRestController {
         if (containerId != null) {
           // Double-check that container is actually running
           InspectContainerResponse inspectResponse =
-                  dockerClient.inspectContainerCmd(containerId).exec();
+              dockerClient.inspectContainerCmd(containerId).exec();
           if (inspectResponse.getState().getRunning()) {
             runningValidatorContainers.add(containerName);
           }
@@ -487,7 +487,9 @@ public class MyRestController {
     }
 
     log.info(
-            "Found {} currently running containers: {}", runningValidatorContainers.size(), runningValidatorContainers);
+        "Found {} currently running containers: {}",
+        runningValidatorContainers.size(),
+        runningValidatorContainers);
     return runningValidatorContainers;
   }
 
@@ -1038,8 +1040,7 @@ public class MyRestController {
                           String containerName = entry.getKey();
                           String containerId = entry.getValue();
                           try {
-//                            dockerClient.stopContainerCmd(containerId).exec();
-                                        dockerClient.killContainerCmd(containerId).exec();
+                            dockerClient.killContainerCmd(containerId).exec();
                             log.info("container stopped: {}", containerName);
                           } catch (Exception e) {
                             log.warn(
@@ -1123,11 +1124,6 @@ public class MyRestController {
     }
   }
 
-  /**
-   * Unified method to recreate any container (genesis or validator) with a new volume and saved
-   * configuration. Combines the logic from recreateGenesisContainerWithConfig() and
-   * recreateValidatorContainerWithConfig().
-   */
   private void createContainerWithConfig(DockerContainer dockerContainer) {
 
     ContainerConfig config = dockerContainer.getContainerConfig();
@@ -1145,13 +1141,10 @@ public class MyRestController {
         dockerClient
             .createContainerCmd(config.getImage())
             .withName(dockerContainer.getName())
-            //        .withVolumes(new Volume(CONTAINER_DB_PATH), new Volume("/usr/share/data"))
             .withEnv(envs)
-            //        .withCmd(config.getCmd())
             .withHealthcheck(healthCheck)
             .withHostConfig(hostConfig);
 
-    // Add exposed ports if they exist
     if (exposedPorts != null) {
       createCmd.withExposedPorts(exposedPorts);
     }
@@ -1160,7 +1153,6 @@ public class MyRestController {
       createCmd.withCmd(config.getCmd());
     }
 
-    // Add IP address if available
     if (ipAddress != null) {
       createCmd.withIpv4Address(ipAddress);
     }
@@ -1298,38 +1290,8 @@ public class MyRestController {
         return response;
       }
 
-      log.info("Found containers to stop: {}", containersToStop);
-
-      //      // Filter to only running containers
-      //      List<String> runningContainers = new ArrayList<>();
-      //      for (String containerName : containersToStop) {
-      //        try {
-      //          String containerId = getContainerIdByName(containerName);
-      //          if (containerId != null) {
-      //            // Check if container is actually running
-      //            InspectContainerResponse inspectResponse =
-      //                dockerClient.inspectContainerCmd(containerId).exec();
-      //            if (inspectResponse.getState().getRunning()) {
-      //              runningContainers.add(containerName);
-      //            }
-      //          }
-      //        } catch (Exception e) {
-      //          log.debug("Container {} not found or not running", containerName);
-      //        }
-      //      }
-      //
-      //      if (runningContainers.isEmpty()) {
-      //        log.info("No running containers found to stop");
-      //        Map<String, Object> response = new HashMap<>();
-      //        response.put("success", true);
-      //        response.put("message", "No running containers found to stop");
-      //        response.put("stoppedContainers", 0);
-      //        return response;
-      //      }
-
       log.info("Stopping {} running containers: {}", containersToStop.size(), containersToStop);
 
-      // Stop and remove the running containers
       stopAndRemoveSpecificContainers(containersToStop);
 
       Map<String, Object> response = new HashMap<>();
