@@ -114,8 +114,7 @@ class BlockchainGraph {
         
         this.calculateLayout();
         this.renderGraph();
-        this.updateStats();
-        
+
         // Ensure active node is properly marked after page refresh
         if (this.activeNodeId) {
             this.renderActiveNodeArrows();
@@ -538,9 +537,6 @@ class BlockchainGraph {
             if (this.selectedNode && this.selectedNode.id === node.id) {
                 this.showNodeInfo(node);
             }
-            
-            // Update stats panel
-            this.updateStats();
         }
     }
 
@@ -722,8 +718,7 @@ class BlockchainGraph {
                 await this.saveGraph();
                 this.calculateLayout();
                 this.renderGraph();
-                this.updateStats();
-                
+
                 // Show appropriate success message based on whether blockchain was shutdown
                 let successMessage = `Snapshot ${nextSnapshotNumber} created successfully`;
                 if (data.blockchainShutdown) {
@@ -852,8 +847,7 @@ class BlockchainGraph {
                 await this.saveGraph();
                 this.calculateLayout();
                 this.renderGraph();
-                this.updateStats();
-                
+
                 // Show success message briefly, then show "Starting blockchain..."
                 this.showMessage(`Snapshot restored successfully: ${restoreTargetNode.id}`, 'success');
                 
@@ -962,8 +956,7 @@ class BlockchainGraph {
                 await this.saveGraph();
                 this.calculateLayout();
                 this.renderGraph();
-                this.updateStats();
-                
+
                 this.showMessage(`Snapshot deleted successfully`, 'success');
             } else {
                 this.showMessage(`Error deleting snapshot: ${data.message}`, 'error');
@@ -1050,15 +1043,6 @@ class BlockchainGraph {
         } catch (error) {
             console.error('Error saving graph:', error);
         }
-    }
-
-    updateStats() {
-        const totalSnapshots = this.nodes.filter(n => !n.isRoot).length;
-        const activeNode = this.nodes.find(n => n.id === this.activeNodeId);
-        
-        document.getElementById('total-snapshots').textContent = totalSnapshots;
-        document.getElementById('active-node').textContent = 
-            activeNode ? (activeNode.isRoot ? 'Root' : (activeNode.customName || `S${activeNode.snapshotNumber}`)) : 'None';
     }
 
     showLoading(show) {
@@ -1257,7 +1241,6 @@ class BlockchainGraph {
             this.activeNodeId = targetNodeId;
             // Re-render nodes to update active styling and arrows
             this.renderNodes();
-            this.updateStats();
             this.saveGraph();
         }
     }
@@ -1328,7 +1311,6 @@ class BlockchainGraph {
                 // Save graph and re-render
                 await this.saveGraph();
                 this.renderGraph();
-                this.updateStats();
             } else {
                 this.showMessage(`Error stopping blockchain: ${data.message}`, 'error');
             }
