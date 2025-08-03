@@ -12,9 +12,12 @@ import java.util.List;
 import java.util.Map;
 
 public class PortsDeserializer implements JsonDeserializer<Ports> {
-    @Override
-    public Ports deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-        Map<String, List<Map<String, String>>> map = context.deserialize(json, new TypeToken<Map<String, List<Map<String, String>>>>(){}.getType());
-        return Ports.fromPrimitive(map);
-    }
+  @Override
+  public Ports deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+      throws JsonParseException {
+    Map<String, List<Map<String, String>>> map =
+        context.deserialize(
+            json, new TypeToken<Map<String, List<Map<String, String>>>>() {}.getType());
+    return Ports.fromPrimitive(map);
+  }
 }

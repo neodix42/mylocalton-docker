@@ -8,12 +8,11 @@ import com.google.gson.JsonSerializer;
 import java.lang.reflect.Type;
 
 public class PortsSerializer implements JsonSerializer<Ports> {
-    @Override
-    public JsonElement serialize(Ports src, Type typeOfSrc, JsonSerializationContext context) {
-        if (src == null) {
-            return null;
-        }
-        // Use the toPrimitive() method to get the map representation
-        return context.serialize(src.toPrimitive());
+  @Override
+  public JsonElement serialize(Ports src, Type typeOfSrc, JsonSerializationContext context) {
+    if (src == null) {
+      return null;
     }
+    return context.serialize(src.toPrimitive());
+  }
 }

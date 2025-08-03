@@ -10,9 +10,9 @@ import java.io.Serializable;
 @Builder
 @Data
 public class DockerContainer implements Serializable {
-    String name;
-    String ip;
-    HostConfig hostConfig;
-    ContainerConfig containerConfig;
-    String tonDbVolumeName;
+  String name;
+  String ip;
+  HostConfig hostConfig;
+  ContainerConfig containerConfig;
+  String tonDbVolumeName;
 }
