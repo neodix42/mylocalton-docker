@@ -462,8 +462,7 @@ public class MyRestController {
       }
     }
 
-    log.info(
-        "Found {} currently running containers: {}", runningContainers.size(), runningContainers);
+//    log.info("Found {} currently running containers: {}", runningContainers.size(), runningContainers);
     return runningContainers;
   }
 
@@ -486,10 +485,10 @@ public class MyRestController {
       }
     }
 
-    log.info(
-        "Found {} currently running containers: {}",
-        runningValidatorContainers.size(),
-        runningValidatorContainers);
+//    log.info(
+//        "Found {} currently running containers: {}",
+//        runningValidatorContainers.size(),
+//        runningValidatorContainers);
     return runningValidatorContainers;
   }
 
@@ -623,14 +622,12 @@ public class MyRestController {
           snapshotNumber,
           instanceNumberStr);
 
-      SnapshotConfig snapshotConfig = loadSnapshotConfiguration(snapshotNumber);
-      SnapshotConfig snapshotConfigNew = loadSnapshotConfiguration(snapshotNumber);
+      SnapshotConfig snapshotConfig = loadSnapshotConfiguration(snapshotId);
+      SnapshotConfig snapshotConfigNew = loadSnapshotConfiguration(snapshotId);
 
       int instanceNumber = 0;
       boolean isNewInstance = false;
       long lastKnownSeqno = 0;
-
-      //        if (!getAllRunningContainers().isEmpty()) { // if running
 
       currentSnapshotStatus = "Saving current blockchain state...";
 
@@ -646,11 +643,12 @@ public class MyRestController {
 
       String snapshotAndInstanceNumber = "";
       if ("instance".equals(nodeType)) { // todo
-        // Restoring from instance node - reuse existing volumes for containers that have them
-        if (instanceNumberStr != null) {
-          instanceNumber = Integer.parseInt(instanceNumberStr);
-          snapshotAndInstanceNumber = String.valueOf(instanceNumber);
-        }
+        log.info("restore instance");
+//        // Restoring from instance node - reuse existing volumes for containers that have them
+//        if (instanceNumberStr != null) {
+//          instanceNumber = Integer.parseInt(instanceNumberStr);
+//          snapshotAndInstanceNumber = String.valueOf(instanceNumber);
+//        }
 
       } else { // copy volumes
         // Restoring from snapshot node - create new instances for containers that have snapshots
@@ -690,7 +688,7 @@ public class MyRestController {
 
       createContainerGroup(snapshotConfigNew.getCoreContainers());
 
-      log.info("Snapshots restored for all containers using instance number: {}", instanceNumber);
+      log.info("Snapshots restored for all containers using snapshotId: {}", snapshotId);
 
       currentSnapshotStatus = "Waiting for lite-server to be ready";
 
@@ -731,41 +729,10 @@ public class MyRestController {
     return Main.adnlLiteClient.getMasterchainInfo();
   }
 
-  //  private int getNextSnapshotNumber(DockerClient dockerClient) {
-  //    try {
-  //      // List all volumes with snapshot prefix to determine next sequential number
-  //      List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
-  //      int maxSnapshotNumber = 0;
-  //
-  //      for (InspectVolumeResponse volume : volumes) {
-  //        String volumeName = volume.getName();
-  //        if (volumeName.contains("ton-db")) {
-  //          try {
-  //            String numberPart = volumeName.substring("ton-db-snapshot-".length());
-  //            int snapshotNumber = Integer.parseInt(numberPart);
-  //            maxSnapshotNumber = Math.max(maxSnapshotNumber, snapshotNumber);
-  //          } catch (NumberFormatException e) {
-  //            // Skip volumes that don't have valid number suffix
-  //            log.warn("Invalid snapshot volume name format: {}", volumeName);
-  //          }
-  //        }
-  //      }
-  //
-  //      return maxSnapshotNumber + 1;
-  //    } catch (Exception e) {
-  //      log.error("Error determining next snapshot number", e);
-  //      // Fallback to timestamp-based number if volume listing fails
-  //      return Utils.getRandomInt();
-  //    }
-  //  }
-
   private int getNextInstanceNumber(int snapshotNumber) {
     try {
       List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
       int maxInstanceNumber = 0;
-
-      // Check genesis instances
-      //      String genesisInstancePrefix = "ton-db-snapshot-" + snapshotNumber + "-";
 
       // Check validator instances
       List<String> validatorInstancePrefixes = new ArrayList<>();
@@ -776,19 +743,6 @@ public class MyRestController {
 
       for (InspectVolumeResponse volume : volumes) {
         String volumeName = volume.getName();
-
-        //        // Check if this is a genesis instance volume
-        //        if (volumeName.startsWith(genesisInstancePrefix)) {
-        //          try {
-        //            String numberPart = volumeName.substring(genesisInstancePrefix.length());
-        //            int instanceNumber = Integer.parseInt(numberPart);
-        //            maxInstanceNumber = Math.max(maxInstanceNumber, instanceNumber);
-        //          } catch (NumberFormatException e) {
-        //            // Skip volumes that don't have valid number suffix
-        //            log.warn("Invalid genesis instance volume name format: {}", volumeName);
-        //          }
-        //        }
-
         // Check if this is a validator instance volume
         for (String validatorPrefix : validatorInstancePrefixes) {
           if (volumeName.startsWith(validatorPrefix)) {
@@ -872,7 +826,6 @@ public class MyRestController {
       if (currentVolume != null && volumesToDelete.contains(currentVolume)) {
         log.warn("Attempting to delete currently active volume: {}", currentVolume);
 
-        // If trying to delete active volume, return error immediately
         response.put("success", false);
         response.put(
             "message",
@@ -1029,7 +982,7 @@ public class MyRestController {
       return;
     }
 
-    log.info("Stopping {} containers in parallel", containerIds.size());
+//    log.info("Stopping {} containers in parallel", containerIds.size());
 
     List<CompletableFuture<Void>> stopFutures =
         containerIds.entrySet().stream()
@@ -1058,7 +1011,7 @@ public class MyRestController {
       log.error("Error waiting for containers to stop: {}", e.getMessage());
     }
 
-    log.info("Removing {} containers in parallel", containerIds.size());
+//    log.info("Removing {} containers in parallel", containerIds.size());
 
     List<CompletableFuture<Void>> removeFutures =
         containerIds.entrySet().stream()
@@ -1090,7 +1043,7 @@ public class MyRestController {
   /** Helper method to recreate a group of containers in parallel. */
   private void createContainerGroup(List<DockerContainer> containers) {
 
-    log.info("Recreating {} containers in parallel", containers.size());
+//    log.info("Recreating {} containers in parallel", containers.size());
 
     // Create containers in this group in parallel
     List<CompletableFuture<Void>> recreateFutures =
