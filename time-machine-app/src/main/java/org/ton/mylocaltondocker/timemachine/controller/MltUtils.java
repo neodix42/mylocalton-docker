@@ -46,10 +46,10 @@ public class MltUtils {
 
   public static void storeSnapshotConfiguration(SnapshotConfig snapshotConfig) throws Exception {
     String configPath =
-        "/usr/share/data/config-snapshot-" + snapshotConfig.getSnapshotNumber() + ".json";
+        "/usr/share/data/config-snapshots/config-snapshot-" + snapshotConfig.getSnapshotNumber() + ".json";
     log.info("saving {}", configPath);
 
-    File dataDir = new File("/usr/share/data");
+    File dataDir = new File("/usr/share/data/config-snapshots");
     if (!dataDir.exists()) {
       dataDir.mkdirs();
     }
@@ -63,7 +63,7 @@ public class MltUtils {
   }
 
   public static boolean isConfigExist(int snapshotNumber) {
-    return Files.exists(Path.of("/usr/share/data/config-snapshot-" + snapshotNumber + ".json"));
+    return Files.exists(Path.of("/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json"));
   }
 
   public static SnapshotConfig getCurrentSnapshotConfig(DockerClient dockerClient) {
@@ -675,7 +675,7 @@ public class MltUtils {
   }
 
   public static void deleteSnapshotConfiguration(String snapshotNumber) throws Exception {
-    String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
+    String configPath = "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
     log.info("deleting {}", configPath);
     File configFile = new File(configPath);
 
@@ -688,7 +688,7 @@ public class MltUtils {
   }
 
   public static SnapshotConfig loadSnapshotConfiguration(String snapshotNumber) throws Exception {
-    String configPath = "/usr/share/data/config-snapshot-" + snapshotNumber + ".json";
+    String configPath = "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
     log.info("loading {}", configPath);
     File configFile = new File(configPath);
 
