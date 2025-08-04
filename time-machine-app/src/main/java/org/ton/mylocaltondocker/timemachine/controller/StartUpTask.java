@@ -111,8 +111,8 @@ public class StartUpTask {
 //      log.info("AdnlLiteClient reinitialization completed successfully");
 
     } catch (Exception e) {
-      log.error("AdnlLiteClient reinitialization failed: {}", e.getMessage());
-      throw new Exception("AdnlLiteClient reinitialization failed", e);
+//      log.error("AdnlLiteClient reinitialization failed: {}", e.getMessage());
+//      throw new Exception("AdnlLiteClient reinitialization failed", e);
     } finally {
       // Always release the lock
       isCreatingClient.set(false);

@@ -363,7 +363,10 @@ class BlockchainGraph {
         nodeUpdate.select(".node-label")
             .text(d => {
                 if (d.isRoot) return "S0";
-                if (d.type === "instance") return (d.customName || `S${d.snapshotNumber}`) + "-" + (d.instanceNumber || "1");
+                if (d.type === "instance") {
+                    // If instance has custom name, use it as-is. Otherwise, use default format with instance number
+                    return d.customName || `S${d.snapshotNumber}-${d.instanceNumber || "1"}`;
+                }
                 return d.customName || `S${d.snapshotNumber}`;
             })
             .attr("x", 0)
@@ -524,7 +527,14 @@ class BlockchainGraph {
     editNodeName(node) {
         if (node.isRoot) return;
         
-        const currentName = node.customName || `S${node.snapshotNumber}`;
+        // For instance nodes, use their own default name format, not parent's
+        let currentName;
+        if (node.type === "instance") {
+            currentName = node.customName || `S${node.snapshotNumber}-${node.instanceNumber || "1"}`;
+        } else {
+            currentName = node.customName || `S${node.snapshotNumber}`;
+        }
+        
         const newName = prompt(`Enter new name for snapshot:`, currentName);
         
         if (newName !== null && newName.trim() !== '' && newName !== currentName) {
@@ -541,12 +551,18 @@ class BlockchainGraph {
             }
         }
     }
-
     showNodeInfo(node) {
         const nodeDetails = document.getElementById('node-details');
         const timestamp = new Date(node.timestamp).toLocaleString();
-        let displayName = node.isRoot ? 'S0' : (node.customName || `S${node.snapshotNumber}`);
-        if (node.type === "instance") displayName += "-" + (node.instanceNumber || "1");
+        let displayName;
+        if (node.isRoot) {
+            displayName = 'S0';
+        } else if (node.type === "instance") {
+            // If instance has custom name, use it as-is. Otherwise, use default format with instance number
+            displayName = node.customName || `S${node.snapshotNumber}-${node.instanceNumber || "1"}`;
+        } else {
+            displayName = node.customName || `S${node.snapshotNumber}`;
+        }
         
         // For active node, show current seqno from left panel, otherwise show stored seqno
         let displaySeqno = 'N/A';
@@ -846,7 +862,7 @@ class BlockchainGraph {
                         parentId: restoreTargetNode.id,
                         isRoot: false,
                         type: "instance",
-                        customName: restoreTargetNode.customName,
+                        // Don't inherit customName from parent - let instance have its own name
                         activeNodes: restoreTargetNode.activeNodes // Inherit active nodes count from parent
                     };
                     
@@ -870,7 +886,8 @@ class BlockchainGraph {
                 this.renderGraph();
 
                 // Show success message briefly, then show "Starting blockchain..."
-                this.showMessage(`Snapshot restored successfully: ${restoreTargetNode.id}`, 'success');
+                const displayName = restoreTargetNode.customName || restoreTargetNode.id;
+                this.showMessage(`Snapshot restored successfully: ${displayName}`, 'success');
                 
                 // After a short delay, show "Starting blockchain..." and wait for valid seqno
                 setTimeout(() => {
@@ -1309,7 +1326,7 @@ class BlockchainGraph {
 
     async stopBlockchain() {
         // Confirm the action with the user
-        if (!confirm('Are you sure you want to stop the blockchain? This will stop and remove all containers except time-machine.')) {
+        if (!confirm('Are you sure you want to stop the blockchain? Later you can restore from any snapshot.')) {
             return;
         }
         
