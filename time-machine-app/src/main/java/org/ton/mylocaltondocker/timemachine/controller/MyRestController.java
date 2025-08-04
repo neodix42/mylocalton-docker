@@ -817,19 +817,49 @@ public class MyRestController {
         currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
       }
 
+
+
+
+
+
+
+
+
+
+
+
+
+      // Build list of volumes to delete from nodesToDelete list
       List<String> volumesToDelete = new ArrayList<>();
-      for (DockerContainer dockerContainer : snapshotConfig.getCoreContainers()) {
-        volumesToDelete.add(dockerContainer.getTonDbVolumeName());
+
+      @SuppressWarnings("unchecked")
+      List<Map<String, Object>> nodesToDelete = (List<Map<String, Object>>) request.get("nodesToDelete");
+
+      if (nodesToDelete != null && !nodesToDelete.isEmpty()) {
+        // Delete volumes for all nodes in the list (including all container types)
+        for (Map<String, Object> nodeToDelete : nodesToDelete) {
+
+          log.info("node to delete {}", nodeToDelete.get("id"));
+          deleteSnapshotConfiguration(nodeToDelete.get("id").toString());
+
+            for (String validatorContainer : VALIDATOR_CONTAINERS) {
+              String baseVolumeName = CONTAINER_VOLUME_MAP.get(validatorContainer);
+              String validatorInstanceVolume =
+                  baseVolumeName + "-snapshot-" + nodeToDelete.get("id");
+              volumesToDelete.add(validatorInstanceVolume);
+            }
+
+        }
       }
 
-      boolean deletingActiveVolume = false;
+      log.info("to delete {}", List.of(volumesToDelete).toArray());
+
       if (currentVolume != null && volumesToDelete.contains(currentVolume)) {
         log.warn("Attempting to delete currently active volume: {}", currentVolume);
 
+        // If trying to delete active volume, return error immediately
         response.put("success", false);
-        response.put(
-            "message",
-            "Cannot delete currently active snapshot. Please switch to a different snapshot first.");
+        response.put("message", "Cannot delete currently active snapshot. Please switch to a different snapshot first.");
         response.put("deletingActiveVolume", true);
         return response;
       }
@@ -852,6 +882,7 @@ public class MyRestController {
 
           // Delete the volume
           dockerClient.removeVolumeCmd(volumeName).exec();
+
           deletedVolumes.add(volumeName);
           log.info("Successfully deleted volume: {}", volumeName);
 
@@ -866,19 +897,64 @@ public class MyRestController {
       }
 
       if (failedVolumes.isEmpty()) {
-        deleteSnapshotConfiguration(snapshotInstanceNumber);
         response.put("success", true);
         response.put("message", "Snapshot deleted successfully");
         response.put("deletedVolumes", deletedVolumes);
-        response.put("deletingActiveVolume", deletingActiveVolume);
       } else {
         response.put("success", false);
-        response.put(
-            "message", "Failed to delete some volumes: " + String.join(", ", failedVolumes));
+        response.put("message", "Failed to delete some volumes: " + String.join(", ", failedVolumes));
         response.put("deletedVolumes", deletedVolumes);
         response.put("failedVolumes", failedVolumes);
-        response.put("deletingActiveVolume", deletingActiveVolume);
       }
+
+
+
+//
+//      // Delete the volumes
+//      List<String> deletedVolumes = new ArrayList<>();
+//      List<String> failedVolumes = new ArrayList<>();
+//
+//      for (String volumeName : volumesToDelete) {
+//        try {
+//          // Check if volume exists
+//          dockerClient.inspectVolumeCmd(volumeName).exec();
+//
+//          // If this is the active volume, we cannot delete it
+//          if (volumeName.equals(currentVolume)) {
+//            log.error("Cannot delete active volume: {}", volumeName);
+//            failedVolumes.add(volumeName + " (currently active)");
+//            continue;
+//          }
+//
+//          // Delete the volume
+//          dockerClient.removeVolumeCmd(volumeName).exec();
+//          deletedVolumes.add(volumeName);
+//          log.info("Successfully deleted volume: {}", volumeName);
+//
+//        } catch (NotFoundException e) {
+//          log.warn("Volume not found (already deleted?): {}", volumeName);
+//          // Consider this a success since the volume is gone
+//          deletedVolumes.add(volumeName + " (not found)");
+//        } catch (Exception e) {
+//          log.error("Failed to delete volume: {}", volumeName, e);
+//          failedVolumes.add(volumeName + " (" + e.getMessage() + ")");
+//        }
+//      }
+//
+//      if (failedVolumes.isEmpty()) {
+//        deleteSnapshotConfiguration(snapshotInstanceNumber);
+//        response.put("success", true);
+//        response.put("message", "Snapshot deleted successfully");
+//        response.put("deletedVolumes", deletedVolumes);
+//        response.put("deletingActiveVolume", deletingActiveVolume);
+//      } else {
+//        response.put("success", false);
+//        response.put(
+//            "message", "Failed to delete some volumes: " + String.join(", ", failedVolumes));
+//        response.put("deletedVolumes", deletedVolumes);
+//        response.put("failedVolumes", failedVolumes);
+//        response.put("deletingActiveVolume", deletingActiveVolume);
+//      }
 
       return response;
 
