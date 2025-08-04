@@ -9,6 +9,7 @@ RUN mkdir -p /scripts/web
 COPY time-machine/index.html /scripts/web
 COPY time-machine/script.js /scripts/web
 COPY time-machine/style.css /scripts/web
+COPY time-machine/favicon.ico /scripts/web
 COPY time-machine-app/target/MyLocalTonTimeMachine.jar /scripts/web
 
 WORKDIR "/scripts/web"

@@ -189,7 +189,7 @@ class BlockchainGraph {
         
         // First pass: calculate estimated node widths based on text content
         const estimateNodeWidth = (node) => {
-            const displayText = node.isRoot ? "S0" : (node.customName || `S${node.snapshotNumber}`);
+            const displayText = node.isRoot ? "Genesis" : (node.customName || `S${node.snapshotNumber}`);
             const estimatedTextWidth = displayText.length * 8; // Rough estimate: 8px per character
             const padding = 16;
             const minWidth = 60;
@@ -362,7 +362,7 @@ class BlockchainGraph {
         // Update text content first
         nodeUpdate.select(".node-label")
             .text(d => {
-                if (d.isRoot) return "S0";
+                if (d.isRoot) return "Genesis";
                 if (d.type === "instance") {
                     // If instance has custom name, use it as-is. Otherwise, use default format with instance number
                     return d.customName || `S${d.snapshotNumber}-${d.instanceNumber || "1"}`;
@@ -402,7 +402,7 @@ class BlockchainGraph {
                 }
             } catch (error) {
                 // Fallback to estimated dimensions based on text length
-                const displayText = d.isRoot ? "S0" : (d.customName || `S${d.snapshotNumber}`);
+                const displayText = d.isRoot ? "Genesis" : (d.customName || `S${d.snapshotNumber}`);
                 textWidth = displayText.length * 8; // Rough estimate
                 textHeight = 16;
             }
@@ -556,7 +556,7 @@ class BlockchainGraph {
         const timestamp = new Date(node.timestamp).toLocaleString();
         let displayName;
         if (node.isRoot) {
-            displayName = 'S0';
+            displayName = 'Genesis';
         } else if (node.type === "instance") {
             // If instance has custom name, use it as-is. Otherwise, use default format with instance number
             displayName = node.customName || `S${node.snapshotNumber}-${node.instanceNumber || "1"}`;
@@ -885,9 +885,7 @@ class BlockchainGraph {
                 this.calculateLayout();
                 this.renderGraph();
 
-                // Show success message briefly, then show "Starting blockchain..."
-                const displayName = restoreTargetNode.customName || restoreTargetNode.id;
-                this.showMessage(`Snapshot restored successfully: ${displayName}`, 'success');
+                this.showMessage("Snapshot restored successfully", 'success');
                 
                 // After a short delay, show "Starting blockchain..." and wait for valid seqno
                 setTimeout(() => {
@@ -1238,7 +1236,7 @@ class BlockchainGraph {
                     
                     if (activeNode) {
                         if (activeNode.isRoot) {
-                            snapshotName = 'S0';
+                            snapshotName = 'Genesis';
                         } else {
                             snapshotName = activeNode.customName || `S${activeNode.snapshotNumber}`;
                             if (activeNode.type === "instance") {

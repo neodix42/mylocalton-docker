@@ -524,7 +524,7 @@ public class MyRestController {
     try {
       String genesisContainerId = getGenesisContainerId();
       if (StringUtils.isEmpty(genesisContainerId)) {
-        return "0"; // Default to root if no genesis container
+        return "0";
       }
 
       String currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
@@ -532,16 +532,14 @@ public class MyRestController {
         return "0";
       }
 
-      // Determine active node ID based on current volume name
       if (currentVolume.contains("snapshot-")) {
         String parts[] = currentVolume.split("snapshot-");
         if (parts.length > 1) {
-          String numberPart = parts[1];
-          return numberPart;
+            return parts[1];
         }
       }
 
-      return "0"; // Default to root for base volume
+      return "0";
     } catch (Exception e) {
       log.warn("Error determining active node ID from volume: {}", e.getMessage());
       return "0";
