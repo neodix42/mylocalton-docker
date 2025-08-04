@@ -584,7 +584,6 @@ class BlockchainGraph {
             <p><strong>Seqno:</strong> ${displaySeqno}</p>
             <p><strong>Created:</strong> ${timestamp}</p>
             ${activeNodesHtml}
-            ${node.parentId ? `<p><strong>Parent:</strong> ${node.parentId}</p>` : ''}
         `;
         
         // Fetch and update active nodes count
@@ -1227,8 +1226,20 @@ class BlockchainGraph {
                     const syncDelay = data.syncDelay !== undefined ? `${data.syncDelay}s` : 'N/A';
                     document.getElementById('current-sync').textContent = syncDelay;
                     
+                    // Update running nodes count
+                    const runningNodes = data.activeNodes !== undefined ? data.activeNodes : 'N/A';
+                    document.getElementById('running-nodes').textContent = runningNodes;
+                    
                     // Update active node if it changed
                     this.updateActiveNodeFromVolume(data.id);
+                    
+                    // Store active nodes count in the active node for future reference
+                    if (this.activeNodeId && data.activeNodes !== undefined) {
+                        const activeNode = this.nodes.find(n => n.id === this.activeNodeId);
+                        if (activeNode) {
+                            activeNode.activeNodes = data.activeNodes;
+                        }
+                    }
                     
                     // Get the actual snapshot name from the active node
                     const activeNode = this.nodes.find(n => n.id === this.activeNodeId);
@@ -1255,17 +1266,20 @@ class BlockchainGraph {
                     document.getElementById('current-seqno').textContent = 'N/A';
                     document.getElementById('current-snapshot-name').textContent = 'N/A';
                     document.getElementById('current-sync').textContent = 'N/A';
+                    document.getElementById('running-nodes').textContent = 'N/A';
                 }
             } else {
                 document.getElementById('current-seqno').textContent = 'N/A';
                 document.getElementById('current-snapshot-name').textContent = 'N/A';
                 document.getElementById('current-sync').textContent = 'N/A';
+                document.getElementById('running-nodes').textContent = 'N/A';
             }
         } catch (error) {
             console.error('Error updating blockchain status:', error);
             document.getElementById('current-seqno').textContent = 'N/A';
             document.getElementById('current-snapshot-name').textContent = 'N/A';
             document.getElementById('current-sync').textContent = 'N/A';
+            document.getElementById('running-nodes').textContent = 'N/A';
         }
     }
 
@@ -1331,7 +1345,7 @@ class BlockchainGraph {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
-        this.updateStatus("Stopping blockchain containers...");
+        this.updateStatus("Stopping blockchain...");
         
         try {
             const response = await fetch('/stop-blockchain', {

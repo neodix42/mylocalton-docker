@@ -5,6 +5,7 @@ import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.github.dockerjava.api.DockerClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -27,8 +28,11 @@ public class StartUpTask {
   // Minimum time between reinitializations (in milliseconds)
   private static final long MIN_REINIT_INTERVAL = 5000; // 5 seconds
 
+  public static DockerClient dockerClient;
+
+
   @EventListener(ApplicationReadyEvent.class)
-  public void onApplicationReady() throws InterruptedException {
+  public void onApplicationReady() throws Exception {
 
     System.out.println("Initializing tonlib");
 
@@ -53,8 +57,24 @@ public class StartUpTask {
       log.error("can't get seqno " + e.getMessage());
     }
 
+    log.info("adnlLiteClient initialized");
+
+    dockerClient = MltUtils.createDockerClient();
+    log.info("dockerClient initialized");
+
+    if (!MltUtils.isConfigExist(0)) {
+      SnapshotConfig snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
+      snapshotConfig.setSnapshotNumber("0");
+      snapshotConfig.setTimestamp(System.currentTimeMillis());
+      MltUtils.storeSnapshotConfiguration(snapshotConfig);
+    }
+
+    log.info("genesis node initialized");
+
+
     log.info("time-machine-app ready");
   }
+
 
   /**
    * Simple thread-safe method to reinitialize AdnlLiteClient. Tries once, if it fails - exits and
