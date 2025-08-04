@@ -1263,6 +1263,12 @@ class BlockchainGraph {
                                 snapshotName += `-${activeNode.instanceNumber || "1"}`;
                             }
                         }
+                    } else {
+                        // If no active node found but backend says active ID is "0", show Genesis
+                        if (data.id === "0") {
+                            snapshotName = 'Genesis';
+                        }
+                        console.warn(`Active node with ID ${this.activeNodeId} not found in nodes array`);
                     }
                     
                     document.getElementById('current-snapshot-name').textContent = snapshotName;
@@ -1302,6 +1308,7 @@ class BlockchainGraph {
         
         // Update active node if it changed
         if (targetNodeId && targetNodeId !== this.activeNodeId) {
+            console.log(`Active node changed from ${this.activeNodeId} to ${targetNodeId}`);
             this.activeNodeId = targetNodeId;
             // Re-render nodes to update active styling and arrows
             this.renderNodes();
@@ -1429,7 +1436,7 @@ class BlockchainGraph {
                 // Update active node to genesis
                 this.activeNodeId = "0";
                 
-                // Save graph and re-render
+                // Save graph and re-render to show genesis as active
                 await this.saveGraph();
                 this.renderGraph();
 

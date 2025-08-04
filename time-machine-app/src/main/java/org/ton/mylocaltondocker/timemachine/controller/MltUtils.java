@@ -1,9 +1,8 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.CreateContainerCmd;
-import com.github.dockerjava.api.command.InspectContainerResponse;
-import com.github.dockerjava.api.command.InspectVolumeResponse;
+import com.github.dockerjava.api.command.*;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
@@ -24,7 +23,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.dockerClient;
+import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
 
 @Slf4j
 public class MltUtils {
@@ -530,7 +529,9 @@ public class MltUtils {
       }
 
       String currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
-      if ((currentVolume == null) || currentVolume.equals("mylocalton-docker_ton-db-val0")) {
+      if ((currentVolume == null)
+          || currentVolume.equals("mylocalton-docker_ton-db-val0")
+          || currentVolume.equals("ton-db-val0-snapshot-0-1")) {
         return "0";
       }
 
@@ -702,5 +703,51 @@ public class MltUtils {
         new GsonBuilder().registerTypeAdapter(Ports.class, new PortsDeserializer()).create();
 
     return gson.fromJson(content, SnapshotConfig.class);
+  }
+
+  public static void copyVolume(
+      DockerClient dockerClient, String sourceVolumeName, String targetVolumeName)
+      throws InterruptedException {
+
+    try {
+      dockerClient.inspectVolumeCmd(targetVolumeName).exec();
+    } catch (Exception e) {
+      dockerClient.createVolumeCmd().withName(targetVolumeName).exec();
+    }
+
+    try {
+      dockerClient.inspectImageCmd("alpine:latest").exec();
+    } catch (NotFoundException e) {
+      dockerClient
+          .pullImageCmd("alpine")
+          .withTag("latest")
+          .exec(new PullImageResultCallback())
+          .awaitCompletion();
+    }
+
+    // Generate unique container name to avoid conflicts in parallel operations
+    String uniqueContainerName =
+        "taking-snapshot-" + System.currentTimeMillis() + "-" + Thread.currentThread().getId();
+
+    // Copy data to backup volume
+    String copyContainerId =
+        dockerClient
+            .createContainerCmd("alpine")
+            .withCmd("/bin/sh", "-c", "cp -rTv /from/. /to/.")
+            .withVolumes(new Volume("/from"), new Volume("/to"))
+            .withName(uniqueContainerName)
+            .withHostConfig(
+                newHostConfig()
+                    .withBinds(
+                        new Bind(sourceVolumeName, new Volume("/from")),
+                        new Bind(targetVolumeName, new Volume("/to"))))
+            .exec()
+            .getId();
+
+    dockerClient.startContainerCmd(copyContainerId).exec();
+    var callback = new WaitContainerResultCallback();
+    dockerClient.waitContainerCmd(copyContainerId).exec(callback);
+    callback.awaitCompletion();
+    dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
   }
 }

@@ -1,16 +1,12 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
-import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 import static org.ton.mylocaltondocker.timemachine.controller.MltUtils.*;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.dockerClient;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.*;
 import com.github.dockerjava.api.exception.NotFoundException;
-import com.github.dockerjava.api.model.*;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -34,31 +30,39 @@ public class MyRestController {
   public Map<String, Object> getSeqno() {
     try {
 
-      MasterchainInfo masterChainInfo = getMasterchainInfo();
-      if (masterChainInfo == null) {
-        log.warn("masterChainInfo is null, attempting reinit");
-        try {
-          reinitializeAdnlLiteClient();
-        } catch (Exception reinitEx) {
-          log.error("Reinitialization failed");
+      int activeNodes = MltUtils.getAllCurrentlyRunningValidatorContainers(dockerClient).size();
+
+      if (activeNodes > 0) {
+
+        MasterchainInfo masterChainInfo = getMasterchainInfo();
+        if (masterChainInfo == null) {
+          log.warn("masterChainInfo is null, attempting reinit");
+          try {
+            reinitializeAdnlLiteClient();
+          } catch (Exception reinitEx) {
+            log.error("Reinitialization failed");
+          }
+          Map<String, Object> response = new HashMap<>();
+          response.put("success", false);
+          response.put("message", "masterChainInfo is null");
+          return response;
         }
+
+        String id = MltUtils.getActiveNodeIdFromVolume(dockerClient);
+        long syncDelay = getSyncDelay();
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("seqno", masterChainInfo.getLast().getSeqno());
+        response.put("id", id);
+        response.put("activeNodes", activeNodes);
+        response.put("syncDelay", syncDelay);
+        return response;
+      } else { // no nodes are running, blockchain is down
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
-        response.put("message", "masterChainInfo is null");
+        response.put("message", "activeNodes = 0");
         return response;
       }
-
-      String id = MltUtils.getActiveNodeIdFromVolume(dockerClient);
-      int activeNodes = MltUtils.getAllCurrentlyRunningValidatorContainers(dockerClient).size();
-      long syncDelay = getSyncDelay();
-      Map<String, Object> response = new HashMap<>();
-      response.put("success", true);
-      response.put("seqno", masterChainInfo.getLast().getSeqno());
-      response.put("id", id);
-      response.put("activeNodes", activeNodes);
-      response.put("syncDelay", syncDelay);
-      //      log.info("return seqno-volume {} {}", masterChainInfo.getLast().getSeqno(), volume);
-      return response;
     } catch (Throwable e) {
 
       // Always attempt reinitialization for any error
@@ -282,7 +286,7 @@ public class MyRestController {
                         containerName,
                         currentVolume,
                         backupVolumeName);
-                    copyVolume(dockerClient, currentVolume, backupVolumeName);
+                    MltUtils.copyVolume(dockerClient, currentVolume, backupVolumeName);
                   }
                 } catch (InterruptedException e) {
                   throw new RuntimeException(e);
@@ -363,52 +367,6 @@ public class MyRestController {
     }
   }
 
-  private void copyVolume(
-      DockerClient dockerClient, String sourceVolumeName, String targetVolumeName)
-      throws InterruptedException {
-
-    try {
-      dockerClient.inspectVolumeCmd(targetVolumeName).exec();
-    } catch (Exception e) {
-      dockerClient.createVolumeCmd().withName(targetVolumeName).exec();
-    }
-
-    try {
-      dockerClient.inspectImageCmd("alpine:latest").exec();
-    } catch (NotFoundException e) {
-      dockerClient
-          .pullImageCmd("alpine")
-          .withTag("latest")
-          .exec(new PullImageResultCallback())
-          .awaitCompletion();
-    }
-
-    // Generate unique container name to avoid conflicts in parallel operations
-    String uniqueContainerName =
-        "taking-snapshot-" + System.currentTimeMillis() + "-" + Thread.currentThread().getId();
-
-    // Copy data to backup volume
-    String copyContainerId =
-        dockerClient
-            .createContainerCmd("alpine")
-            .withCmd("/bin/sh", "-c", "cp -rTv /from/. /to/.")
-            .withVolumes(new Volume("/from"), new Volume("/to"))
-            .withName(uniqueContainerName)
-            .withHostConfig(
-                newHostConfig()
-                    .withBinds(
-                        new Bind(sourceVolumeName, new Volume("/from")),
-                        new Bind(targetVolumeName, new Volume("/to"))))
-            .exec()
-            .getId();
-
-    dockerClient.startContainerCmd(copyContainerId).exec();
-    var callback = new WaitContainerResultCallback();
-    dockerClient.waitContainerCmd(copyContainerId).exec(callback);
-    callback.awaitCompletion();
-    dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
-  }
-
   @PostMapping("/restore-snapshot")
   public Map<String, Object> restoreSnapshot(@RequestBody Map<String, String> request) {
     try {
@@ -444,14 +402,13 @@ public class MyRestController {
         } catch (Exception e) {
           log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
         }
-      }
-      else {
+      } else {
         log.info("Skipping saving blockchain state, since nothing is running...");
       }
 
       String snapshotAndInstanceNumber = "";
-      if ("instance".equals(nodeType)) {
-        log.info("restore instance");
+      if ("instance".equals(nodeType) || "root".equals(nodeType)) {
+        log.info("restore instance or root node");
       } else { // copy volumes
         // Restoring from snapshot node - create new instances for containers that have snapshots
         instanceNumber =
@@ -473,7 +430,7 @@ public class MyRestController {
 
           try {
             log.info("Copy volume {} to {}", oldVolume, newVolume);
-            copyVolume(dockerClient, oldVolume, newVolume);
+            MltUtils.copyVolume(dockerClient, oldVolume, newVolume);
             MltUtils.replaceVolumeInConfig(snapshotConfigNew, containerName, oldVolume, newVolume);
           } catch (NotFoundException e) {
             log.error("error copying volume {}->{}", oldVolume, newVolume);
