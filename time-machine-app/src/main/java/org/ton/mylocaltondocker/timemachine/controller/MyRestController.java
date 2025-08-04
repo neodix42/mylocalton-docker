@@ -431,20 +431,26 @@ public class MyRestController {
       boolean isNewInstance = false;
       long lastKnownSeqno = 0;
 
-      currentSnapshotStatus = "Saving current blockchain state...";
+      if (!MltUtils.getAllCurrentlyRunningValidatorContainers(dockerClient).isEmpty()) {
 
-      try {
-        MasterchainInfo masterChainInfo = getMasterchainInfo();
-        if (masterChainInfo != null) {
-          lastKnownSeqno = masterChainInfo.getLast().getSeqno();
-          log.info("Captured last known seqno before restoration: {}", lastKnownSeqno);
+        currentSnapshotStatus = "Saving current blockchain state...";
+
+        try {
+          MasterchainInfo masterChainInfo = getMasterchainInfo();
+          if (masterChainInfo != null) {
+            lastKnownSeqno = masterChainInfo.getLast().getSeqno();
+            log.info("Captured last known seqno before restoration: {}", lastKnownSeqno);
+          }
+        } catch (Exception e) {
+          log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
         }
-      } catch (Exception e) {
-        log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
+      }
+      else {
+        log.info("Skipping saving blockchain state, since nothing is running...");
       }
 
       String snapshotAndInstanceNumber = "";
-      if ("instance".equals(nodeType)) { // todo
+      if ("instance".equals(nodeType)) {
         log.info("restore instance");
       } else { // copy volumes
         // Restoring from snapshot node - create new instances for containers that have snapshots

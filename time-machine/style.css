@@ -484,6 +484,18 @@ body {
     border: 1px solid rgba(14, 132, 184, 0.3);
 }
 
+.admin-link.success {
+    background: linear-gradient(135deg, #ffffff, #f8f9fa);
+    color: #0e84b8;
+    border: 1px solid rgba(14, 132, 184, 0.2);
+}
+
+.admin-link.success:hover {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    color: #0056b3;
+    border: 1px solid rgba(14, 132, 184, 0.3);
+}
+
 .admin-link:disabled {
     background: linear-gradient(135deg, #6c757d, #adb5bd);
     cursor: not-allowed;

@@ -70,6 +70,11 @@ class BlockchainGraph {
             this.stopBlockchain();
         });
         
+        document.getElementById('start-blockchain-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.startBlockchain();
+        });
+        
         // Message overlay close
         document.getElementById('message-close').addEventListener('click', () => {
             this.hideMessage();
@@ -504,6 +509,8 @@ class BlockchainGraph {
         const takeSnapshotLink = document.getElementById('take-snapshot-link');
         const restoreSnapshotLink = document.getElementById('restore-snapshot-link');
         const deleteSnapshotLink = document.getElementById('delete-snapshot-link');
+        const startBlockchainLink = document.getElementById('start-blockchain-link');
+        const stopBlockchainLink = document.getElementById('stop-blockchain-link');
         
         // Show admin links and hide placeholder
         adminLinks.classList.remove('hidden');
@@ -513,6 +520,8 @@ class BlockchainGraph {
         takeSnapshotLink.style.display = 'block';
         restoreSnapshotLink.style.display = node.isRoot ? 'none' : 'block';
         deleteSnapshotLink.style.display = node.isRoot ? 'none' : 'block';
+        startBlockchainLink.style.display = node.isRoot ? 'block' : 'none';
+        
     }
 
     hideAdminLinks() {
@@ -1379,6 +1388,70 @@ class BlockchainGraph {
         
         this.showLoading(false);
         this.updateStatus("Ready");
+    }
+
+    async startBlockchain() {
+        if (!this.selectedNode || !this.selectedNode.isRoot) return;
+        
+        // Clear any previous error state when starting a new action
+        this.clearErrorState();
+        this.showLoading(true);
+        this.updateStatus("Starting blockchain from Genesis...");
+        
+        try {
+            // Start polling for status updates
+            const statusPolling = this.startSnapshotStatusPolling();
+            
+            const response = await fetch('/restore-snapshot', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    snapshotId: "0",
+                    snapshotNumber: "0",
+                    nodeType: "root",
+                    instanceNumber: null,
+                    seqno: 0
+                })
+            });
+
+            const data = await response.json();
+            
+            // Stop status polling after getting response
+            clearInterval(statusPolling);
+            
+            // Reset operation flags and restore highlighting
+            this.isOperationInProgress = false;
+            this.shouldShowActiveHighlight = true;
+            
+            if (data.success) {
+                // Update active node to genesis
+                this.activeNodeId = "0";
+                
+                // Save graph and re-render
+                await this.saveGraph();
+                this.renderGraph();
+
+                this.showMessage("Blockchain started from Genesis successfully", 'success');
+                
+                // After a short delay, show "Starting blockchain..." and wait for valid seqno
+                setTimeout(() => {
+                    this.isWaitingForBlockchain = true;
+                    this.updateStatus("Starting blockchain...");
+                    this.waitForValidSeqno();
+                }, 2000); // Wait 2 seconds to let user see the success message
+            } else {
+                this.showMessage(`Error starting blockchain: ${data.message}`, 'error');
+                this.showLoading(false);
+                this.updateStatus("Not Ready");
+            }
+        } catch (error) {
+            console.error('Error starting blockchain:', error);
+            this.showMessage('Failed to start blockchain. Please try again.', 'error');
+            this.showLoading(false);
+            this.updateStatus("Not Ready");
+        }
     }
 
     unhighlightActiveNode() {
