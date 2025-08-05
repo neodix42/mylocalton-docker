@@ -454,7 +454,6 @@ services:
 volumes:
   shared-data:
   postgres_data:
-  event-cache-data:
   ton_index_workdir:
   ton-db-val0:
   ton-db-val1:

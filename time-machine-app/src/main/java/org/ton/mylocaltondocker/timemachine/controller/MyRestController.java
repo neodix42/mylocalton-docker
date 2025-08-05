@@ -207,6 +207,8 @@ public class MyRestController {
         response.put("success", false);
         response.put("message", "No containers found");
         return response;
+      } else {
+        log.info("Found running containers: {}", runningContainers);
       }
 
       isSnapshotInProgress = true;
@@ -224,7 +226,6 @@ public class MyRestController {
         return response;
       }
 
-      log.info("Found running containers: {}", runningContainers);
 
       // Check if we're taking snapshot from active (running) node
       String parentId = request.get("parentId");
@@ -248,6 +249,11 @@ public class MyRestController {
           runningValidators.size(),
           shouldShutdownBlockchain);
 
+      SnapshotConfig snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
+      snapshotConfig.setSnapshotNumber(parentId);
+      snapshotConfig.setTimestamp(System.currentTimeMillis());
+      MltUtils.storeSnapshotConfiguration(snapshotConfig);
+
       // Get current block sequence BEFORE shutting down blockchain
       long lastSeqno = 0;
       try {
@@ -256,7 +262,7 @@ public class MyRestController {
         log.warn("Could not get current block sequence, using 0: {}", e.getMessage());
       }
 
-      SnapshotConfig snapshotConfig = MltUtils.loadSnapshotConfiguration(parentId);
+      snapshotConfig = MltUtils.loadSnapshotConfiguration(parentId);
       SnapshotConfig snapshotConfigNew = MltUtils.loadSnapshotConfiguration(parentId);
       snapshotConfigNew.setSnapshotNumber(snapshotNumber);
       snapshotConfigNew.setTimestamp(System.currentTimeMillis());
@@ -402,6 +408,10 @@ public class MyRestController {
         } catch (Exception e) {
           log.warn("Could not get current seqno before restoration, using 0: {}", e.getMessage());
         }
+
+        currentSnapshotStatus = "Stopping blockchain...";
+        stopAndRemoveAllContainers();
+
       } else {
         log.info("Skipping saving blockchain state, since nothing is running...");
       }
@@ -440,9 +450,6 @@ public class MyRestController {
 
         MltUtils.storeSnapshotConfiguration(snapshotConfigNew);
       }
-
-      currentSnapshotStatus = "Stopping blockchain...";
-      stopAndRemoveAllContainers();
 
       currentSnapshotStatus = "Starting blockchain from the snapshot...";
 
@@ -681,6 +688,16 @@ public class MyRestController {
   public Map<String, Object> stopBlockchain() {
     try {
       log.info("Stopping blockchain - stopping and removing all containers except time-machine");
+
+      currentSnapshotStatus = "Saving current state...";
+      String id = MltUtils.getActiveNodeIdFromVolume(dockerClient);
+      log.info("found active snapshot id: {}", id);
+
+      SnapshotConfig snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
+      snapshotConfig.setSnapshotNumber(id);
+      snapshotConfig.setTimestamp(System.currentTimeMillis());
+      MltUtils.storeSnapshotConfiguration(snapshotConfig);
+
       currentSnapshotStatus = "Stopping blockchain...";
 
       List<String> containersToStop = MltUtils.getAllRunningContainers(dockerClient);

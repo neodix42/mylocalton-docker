@@ -71,7 +71,6 @@ public class StartUpTask {
 
     log.info("genesis node initialized");
 
-
     log.info("time-machine-app ready");
   }
 

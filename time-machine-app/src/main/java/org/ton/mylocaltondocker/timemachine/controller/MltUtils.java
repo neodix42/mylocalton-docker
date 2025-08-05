@@ -89,7 +89,7 @@ public class MltUtils {
     for (String containerName : allContainers) {
       try {
         String containerId = getContainerIdByName(dockerClient, containerName);
-        if (containerId != null) {
+        if (StringUtils.isNotEmpty(containerId)) {
           // Double-check that container is actually running
           InspectContainerResponse inspectResponse =
               dockerClient.inspectContainerCmd(containerId).exec();
@@ -155,6 +155,7 @@ public class MltUtils {
     } catch (Exception e) {
       log.warn("Could not get configuration for container {}: {}", containerName, e.getMessage());
     }
+    log.warn("Could not get configuration for container {}", containerName);
     return null;
   }
 
@@ -199,6 +200,7 @@ public class MltUtils {
         "validator-5",
         "faucet",
         "data-generator",
+        "run-migrations",
         "index-event-cache",
         "index-event-classifier",
         "index-api",
@@ -254,7 +256,7 @@ public class MltUtils {
 
   public static List<String> getAllRunningContainers(DockerClient dockerClient) {
     List<String> runningContainers = new ArrayList<>();
-
+    runningContainers.add("run-migrations"); // exception
     // Check each validator
     for (String validatorContainer : MltUtils.getAllContainers()) {
       try {
