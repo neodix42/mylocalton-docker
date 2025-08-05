@@ -385,7 +385,7 @@ services:
     image: toncenter/ton-indexer-api:v1.2.0-rc.2
     depends_on:
       - index-worker
-    command: -prefork -threads ${TON_INDEXER_WORKERS:-1}
+    command: -prefork -threads ${TON_INDEXER_WORKERS:-12}
     ports:
       - target: 8081
         published: 8081

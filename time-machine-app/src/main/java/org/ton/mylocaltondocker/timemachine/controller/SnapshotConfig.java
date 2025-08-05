@@ -20,6 +20,8 @@ public class SnapshotConfig {
     "genesis", "validator-1", "validator-2", "validator-3", "validator-4", "validator-5"
   };
 
+  static String[] INDEXER_CONTAINERS = {"index-worker", "index-postgres"};
+
   static String[] EXTRA_CONTAINERS = {
     "blockchain-explorer",
     "ton-http-api-v2",
@@ -37,6 +39,16 @@ public class SnapshotConfig {
     List<DockerContainer> result = new ArrayList<>();
     for (Map.Entry<String, DockerContainer> dockerContainer : containers.entrySet()) {
       if (ArrayUtils.contains(CORE_CONTAINERS, dockerContainer.getKey())) {
+        result.add(dockerContainer.getValue());
+      }
+    }
+    return result;
+  }
+
+  public List<DockerContainer> getIndexerContainers() {
+    List<DockerContainer> result = new ArrayList<>();
+    for (Map.Entry<String, DockerContainer> dockerContainer : containers.entrySet()) {
+      if (ArrayUtils.contains(INDEXER_CONTAINERS, dockerContainer.getKey())) {
         result.add(dockerContainer.getValue());
       }
     }

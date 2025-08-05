@@ -226,12 +226,11 @@ public class MyRestController {
         return response;
       }
 
-
       // Check if we're taking snapshot from active (running) node
       String parentId = request.get("parentId");
       String activeNodeId = MltUtils.getActiveNodeIdFromVolume(dockerClient);
       log.info(
-          "/take-snapshot, parentSnapshotNumber: {}, nextSnapshotNumber {}, activeNodeId {}",
+          "/take-snapshot, parentSnapshotNumber: {}, snapshotNumber {}, activeNodeId {}",
           parentId,
           snapshotNumber,
           activeNodeId);
@@ -249,11 +248,6 @@ public class MyRestController {
           runningValidators.size(),
           shouldShutdownBlockchain);
 
-      SnapshotConfig snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
-      snapshotConfig.setSnapshotNumber(parentId);
-      snapshotConfig.setTimestamp(System.currentTimeMillis());
-      MltUtils.storeSnapshotConfiguration(snapshotConfig);
-
       // Get current block sequence BEFORE shutting down blockchain
       long lastSeqno = 0;
       try {
@@ -262,54 +256,36 @@ public class MyRestController {
         log.warn("Could not get current block sequence, using 0: {}", e.getMessage());
       }
 
-      snapshotConfig = MltUtils.loadSnapshotConfiguration(parentId);
-      SnapshotConfig snapshotConfigNew = MltUtils.loadSnapshotConfiguration(parentId);
-      snapshotConfigNew.setSnapshotNumber(snapshotNumber);
-      snapshotConfigNew.setTimestamp(System.currentTimeMillis());
+      SnapshotConfig snapshotConfig;
+      SnapshotConfig snapshotConfigNew;
 
       if (shouldShutdownBlockchain) {
+        snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
+        snapshotConfig.setSnapshotNumber(parentId);
+        MltUtils.storeSnapshotConfiguration(snapshotConfig);
+
+        snapshotConfigNew = MltUtils.loadSnapshotConfiguration(parentId);
+        snapshotConfigNew.setSnapshotNumber(snapshotNumber);
+        snapshotConfigNew.setTimestamp(System.currentTimeMillis());
+
         currentSnapshotStatus = "Stopping blockchain...";
         log.info("Shutting down blockchain (all containers) before taking snapshots");
         stopAndRemoveAllContainers();
+      } else {
+        snapshotConfig = MltUtils.loadSnapshotConfiguration(parentId);
+        snapshotConfigNew = MltUtils.loadSnapshotConfiguration(parentId);
+        snapshotConfigNew.setSnapshotNumber(snapshotNumber);
+        snapshotConfigNew.setTimestamp(System.currentTimeMillis());
       }
 
       // Create snapshots for all containers in parallel
       currentSnapshotStatus = "Taking snapshot...";
 
       // copy volumes in parallel
-      snapshotConfig.getCoreContainers().parallelStream()
-          .forEach(
-              entry -> {
-                String containerName = entry.getName();
-                String currentVolume = entry.getTonDbVolumeName();
-                String backupVolumeName =
-                    CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + snapshotNumber;
+      copyVolumesInParallel(dockerClient, snapshotConfig.getCoreContainers(), snapshotNumber);
+      copyVolumesInParallel(dockerClient, snapshotConfig.getIndexerContainers(), snapshotNumber);
 
-                try {
-                  if (nonNull(currentVolume)) {
-                    log.info(
-                        "Copy volumes in container {}: {} -> {}",
-                        containerName,
-                        currentVolume,
-                        backupVolumeName);
-                    MltUtils.copyVolume(dockerClient, currentVolume, backupVolumeName);
-                  }
-                } catch (InterruptedException e) {
-                  throw new RuntimeException(e);
-                }
-              });
-
-      // copy volumes in parallel
-      snapshotConfig
-          .getContainers()
-          .forEach(
-              (containerName, value) -> {
-                String currentVolume = value.getTonDbVolumeName();
-                String backupVolumeName =
-                    CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + snapshotNumber;
-                MltUtils.replaceVolumeInConfig(
-                    snapshotConfigNew, containerName, currentVolume, backupVolumeName);
-              });
+      replaceVolumesInConfig(snapshotConfig, snapshotConfigNew);
 
       MltUtils.storeSnapshotConfiguration(snapshotConfigNew);
 
@@ -432,21 +408,13 @@ public class MyRestController {
         log.info(
             "instanceNumber: {}, newSnapshotNumber {}", instanceNumber, snapshotAndInstanceNumber);
 
-        for (DockerContainer dockerContainer : snapshotConfig.getCoreContainers()) { // todo review
-          String containerName = dockerContainer.getName();
-          String oldVolume = dockerContainer.getTonDbVolumeName();
-          String newVolume =
-              CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + snapshotAndInstanceNumber;
+        // copy volume to instance volume
+        copyVolumesInParallel(
+            dockerClient, snapshotConfig.getCoreContainers(), snapshotAndInstanceNumber);
+        copyVolumesInParallel(
+            dockerClient, snapshotConfig.getIndexerContainers(), snapshotAndInstanceNumber);
 
-          try {
-            log.info("Copy volume {} to {}", oldVolume, newVolume);
-            MltUtils.copyVolume(dockerClient, oldVolume, newVolume);
-            MltUtils.replaceVolumeInConfig(snapshotConfigNew, containerName, oldVolume, newVolume);
-          } catch (NotFoundException e) {
-            log.error("error copying volume {}->{}", oldVolume, newVolume);
-            throw new RuntimeException("error copying volume: " + oldVolume + "->" + newVolume);
-          }
-        }
+        replaceVolumesInConfig(snapshotConfig, snapshotConfigNew);
 
         MltUtils.storeSnapshotConfiguration(snapshotConfigNew);
       }

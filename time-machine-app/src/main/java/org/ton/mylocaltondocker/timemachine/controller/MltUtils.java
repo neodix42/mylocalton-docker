@@ -24,19 +24,23 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
+import static java.util.Objects.nonNull;
 
 @Slf4j
 public class MltUtils {
 
   public static final String CONTAINER_GENESIS = "genesis";
-  public static final String CONTAINER_DB_PATH = "/var/ton-work/db";
-  public static final String GENESIS_IMAGE_NAME = "mylocaltondocker";
+  public static final String VALIDATOR_DB_PATH = "/var/ton-work/db";
+  public static final String INDEXER_DB_PATH = "/ton_index_workdir";
+  public static final String POSTGRES_DB_PATH = "/var/lib/postgresql/data";
   public static final String[] VALIDATOR_CONTAINERS = {
     "genesis", "validator-1", "validator-2", "validator-3", "validator-4", "validator-5"
   };
 
   public static final Map<String, String> CONTAINER_VOLUME_MAP =
       Map.of(
+          "index-worker", "ton_index_workdir",
+          "index-postgres", "postgres_data",
           "genesis", "ton-db-val0",
           "validator-1", "ton-db-val1",
           "validator-2", "ton-db-val2",
@@ -46,7 +50,9 @@ public class MltUtils {
 
   public static void storeSnapshotConfiguration(SnapshotConfig snapshotConfig) throws Exception {
     String configPath =
-        "/usr/share/data/config-snapshots/config-snapshot-" + snapshotConfig.getSnapshotNumber() + ".json";
+        "/usr/share/data/config-snapshots/config-snapshot-"
+            + snapshotConfig.getSnapshotNumber()
+            + ".json";
     log.info("saving {}", configPath);
 
     File dataDir = new File("/usr/share/data/config-snapshots");
@@ -63,7 +69,8 @@ public class MltUtils {
   }
 
   public static boolean isConfigExist(int snapshotNumber) {
-    return Files.exists(Path.of("/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json"));
+    return Files.exists(
+        Path.of("/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json"));
   }
 
   public static SnapshotConfig getCurrentSnapshotConfig(DockerClient dockerClient) {
@@ -115,7 +122,7 @@ public class MltUtils {
       HostConfig hostConfig;
       String ip = "";
 
-      if (containerId != null) {
+      if (nonNull(containerId)) {
         InspectContainerResponse inspectResponse =
             dockerClient.inspectContainerCmd(containerId).exec();
         containerConfig = inspectResponse.getConfig();
@@ -176,9 +183,13 @@ public class MltUtils {
     InspectContainerResponse inspectX = dockerClient.inspectContainerCmd(containerId).exec();
     String volumeName = null;
     for (var mount : inspectX.getMounts()) {
-      if (mount.getSource() != null && mount.getDestination().getPath().equals(CONTAINER_DB_PATH)) {
-        volumeName = mount.getName();
-        break;
+      if (nonNull(mount.getSource())) {
+        if (mount.getDestination().getPath().equals(VALIDATOR_DB_PATH)
+            || mount.getDestination().getPath().equals(INDEXER_DB_PATH)
+            || mount.getDestination().getPath().equals(POSTGRES_DB_PATH)) {
+          volumeName = mount.getName();
+          break;
+        }
       }
     }
     return volumeName;
@@ -662,6 +673,24 @@ public class MltUtils {
     dockerContainer.setTonDbVolumeName(newVolume);
   }
 
+  public static void replaceVolumesInConfig (SnapshotConfig oldConfig, SnapshotConfig newConfig) {
+    oldConfig
+            .getContainers()
+            .forEach(
+                    (containerName, value) -> {
+                      String currentVolume = value.getTonDbVolumeName();
+                      String backupVolumeName =
+                              CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + newConfig.getSnapshotNumber();
+
+                      if (nonNull(currentVolume)) {
+                        log.info(
+                                "replaceConfig {}: {} -> {}", containerName, currentVolume, backupVolumeName);
+                        MltUtils.replaceVolumeInConfig(
+                                newConfig, containerName, currentVolume, backupVolumeName);
+                      }
+                    });
+  }
+
   public static long getCurrentBlockSequence() throws Exception {
     return getMasterchainInfo().getLast().getSeqno();
   }
@@ -677,7 +706,8 @@ public class MltUtils {
   }
 
   public static void deleteSnapshotConfiguration(String snapshotNumber) throws Exception {
-    String configPath = "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
+    String configPath =
+        "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
     log.info("deleting {}", configPath);
     File configFile = new File(configPath);
 
@@ -690,7 +720,8 @@ public class MltUtils {
   }
 
   public static SnapshotConfig loadSnapshotConfiguration(String snapshotNumber) throws Exception {
-    String configPath = "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
+    String configPath =
+        "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
     log.info("loading {}", configPath);
     File configFile = new File(configPath);
 
@@ -751,5 +782,32 @@ public class MltUtils {
     dockerClient.waitContainerCmd(copyContainerId).exec(callback);
     callback.awaitCompletion();
     dockerClient.removeContainerCmd(copyContainerId).withForce(true).exec();
+  }
+
+  public static void copyVolumesInParallel(
+      DockerClient dockerClient, List<DockerContainer> dockerContainers, String snapshotNumber) {
+    if (nonNull(dockerContainers) && !dockerContainers.isEmpty()) {
+      dockerContainers.parallelStream()
+          .forEach(
+              entry -> {
+                String containerName = entry.getName();
+                String currentVolume = entry.getTonDbVolumeName();
+                String backupVolumeName =
+                    CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + snapshotNumber;
+
+                try {
+                  if (nonNull(currentVolume)) {
+                    log.info(
+                        "Copy volumes in container {}: {} -> {}",
+                        containerName,
+                        currentVolume,
+                        backupVolumeName);
+                    MltUtils.copyVolume(dockerClient, currentVolume, backupVolumeName);
+                  }
+                } catch (InterruptedException e) {
+                  throw new RuntimeException(e);
+                }
+              });
+    }
   }
 }
