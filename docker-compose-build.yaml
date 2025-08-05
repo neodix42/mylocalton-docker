@@ -13,7 +13,7 @@ x-indexer-environment: &index-common
 x-index-api: &index-api
   TON_INDEXER_API_ROOT_PATH:
   TON_INDEXER_API_PORT: 8081
-  TON_INDEXER_TON_HTTP_API_ENDPOINT: http://127.0.0.1:8081/
+  TON_INDEXER_TON_HTTP_API_ENDPOINT: http://172.28.1.102:8081/
   TON_INDEXER_IS_TESTNET:
   TON_INDEXER_REDIS_DSN: redis://event-cache:6379
   <<: *index-common
@@ -224,28 +224,28 @@ services:
       main:
         ipv4_address: 172.28.1.11
 
-  validator-2:
-    container_name: validator-2
-    image: mylocaltondocker
-    restart: unless-stopped
-    volumes:
-      - shared-data:/usr/share/data
-      - ton-db-val2:/var/ton-work/db
-    healthcheck:
-      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    environment:
-      - NAME=validator-2
-      - GENESIS_IP=172.28.1.10
-#      - VERBOSITY=3
-      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
-    depends_on:
-      - genesis
-    networks:
-      main:
-        ipv4_address: 172.28.1.12
+#  validator-2:
+#    container_name: validator-2
+#    image: mylocaltondocker
+#    restart: unless-stopped
+#    volumes:
+#      - shared-data:/usr/share/data
+#      - ton-db-val2:/var/ton-work/db
+#    healthcheck:
+#      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+#      interval: 15s
+#      timeout: 10s
+#      retries: 10
+#    environment:
+#      - NAME=validator-2
+#      - GENESIS_IP=172.28.1.10
+##      - VERBOSITY=3
+#      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
+#    depends_on:
+#      - genesis
+#    networks:
+#      main:
+#        ipv4_address: 172.28.1.12
 #
 #  validator-3:
 #    container_name: validator-3
@@ -319,7 +319,7 @@ services:
     container_name: ton-http-api-v2
     image: toncenter/ton-http-api:v2.0.58
     ports:
-      - 8081:8081
+      - 8082:8082
     volumes:
       - shared-data:/usr/share/data
     environment:
@@ -340,7 +340,7 @@ services:
     depends_on:
       genesis:
         condition: service_healthy
-    command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8081 pyTON.main:app"
+    command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8082 pyTON.main:app"
     healthcheck:
       test: curl -sS http://127.0.0.1:8081${TON_API_ROOT_PATH}/healthcheck || echo 1
       interval: 30s
@@ -352,103 +352,104 @@ services:
 
   ## TonCenter Indexer (v3)
 
-#  event-cache:
-#    container_name: index-event-cache
-#    image: redis:latest
-#    command: redis-server --maxclients 40000
-#    healthcheck:
-#      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
-#      interval: 5s
-#      timeout: 5s
-#      retries: 5
-#    networks:
-#      main:
-#        ipv4_address: 172.28.1.104
-#
-#  event-classifier:
-#    container_name: index-event-classifier
-#    image: toncenter/ton-indexer-classifier:v1.2.0-rc.1
-#    depends_on:
-#      postgres:
-#        condition: service_healthy
-#      event-cache:
-#        condition: service_healthy
-##    secrets:
-##      - postgres_password
-#    command: --pool-size ${TON_INDEXER_WORKERS:-8} --prefetch-size 10000 --batch-size 1000 --expected-total 720000000
-#    environment: *index-api
-#    networks:
-#      main:
-#        ipv4_address: 172.28.1.103
+  event-cache:
+    container_name: index-event-cache
+    image: redis:latest
+    command: redis-server --maxclients 40000
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      main:
+        ipv4_address: 172.28.1.104
+
+  event-classifier:
+    container_name: index-event-classifier
+    image: toncenter/ton-indexer-classifier:v1.2.0-rc.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      event-cache:
+        condition: service_healthy
+    command: --pool-size ${TON_INDEXER_WORKERS:-8} --prefetch-size 10000 --batch-size 1000 --expected-total 720000000
+    environment: *index-api
+    networks:
+      main:
+        ipv4_address: 172.28.1.103
 
 
-#  index-api:
-#    container_name: index-api
-#    image: toncenter/ton-indexer-api:v1.2.0-rc.1
-##    secrets:
-##      - postgres_password
-#    depends_on:
-#      - index-worker
-#    command: -prefork -threads ${TON_INDEXER_WORKERS:-1}
-#    ports:
-#      - target: 8082
-#        published: 8082
-#    environment: *index-api
-#    restart: always
-#    networks:
-#      main:
-#        ipv4_address: 172.28.1.102
-#
-#
-#  index-worker:
-#    container_name: index-worker
-#    image: toncenter/ton-indexer-worker:v1.2.0-rc.1
-#    depends_on:
-#      postgres:
-#        condition: service_healthy
-##    secrets:
-##      - postgres_password
-#    volumes:
-#      - ton-db:/tondb
-#      - ton_index_workdir:/ton_index_workdir
-#    environment: *index-worker
-#    command: --pg postgresql://postgres:PostgreSQL1234@172.28.1.100:5432/ton_index --db /tondb --working-dir /ton_index_workdir --from 1
-#    restart: unless-stopped
-#    networks:
-#      main:
-#        ipv4_address: 172.28.1.101
+  index-api:
+    container_name: index-api
+    image: toncenter/ton-indexer-api:v1.2.0-rc.2
+    depends_on:
+      - index-worker
+    command: -prefork -threads ${TON_INDEXER_WORKERS:-1}
+    ports:
+      - target: 8081
+        published: 8081
+    environment: *index-api
+    restart: always
+    networks:
+      main:
+        ipv4_address: 172.28.1.102
 
-#  postgres:
-#    container_name: index-postgres
-#    image: postgres:17
-#    environment: *index-common
-#    ports:
-#      - ${POSTGRES_PUBLISH_PORT:-5432}:5432
-##    secrets:
-##      - postgres_password
-#    command: postgres -c max_connections=1024 -c shared_buffers=2GB -c work_mem=64MB -c max_wal_size=1GB -c tcp_keepalives_idle=60 -c tcp_keepalives_interval=60 -c tcp_keepalives_count=60
-#    depends_on:
-#      genesis:
-#        condition: service_healthy
-#    healthcheck:
-#      test: ["CMD-SHELL", "pg_isready -d ton_index -U postgres"]
-#      interval: 10s
-#      timeout: 5s
-#      retries: 5
-#      start_period: 60s
-#    shm_size: 2G
-#    restart: always
-#    volumes:
-#      - postgres_data:/var/lib/postgresql/data
-#    logging:
-#      driver: local
-#      options:
-#        max-size: 4G
-#    networks:
-#      main:
-#        ipv4_address: 172.28.1.100
+  run-migrations:
+    container_name: run-migrations
+    image: toncenter/ton-indexer-worker:v1.2.0-rc.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *index-migrate
+    networks:
+      main:
+    command: --pg postgresql://postgres:PostgreSQL1234@172.28.1.100:5432/ton_index
+    restart: on-failure
 
+  index-worker:
+    container_name: index-worker
+    image: toncenter/ton-indexer-worker:v1.2.0-rc.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ton-db-val0:/tondb
+      - ton_index_workdir:/ton_index_workdir
+    environment: *index-worker
+    command: --pg postgresql://postgres:PostgreSQL1234@172.28.1.100:5432/ton_index --db /tondb --working-dir /ton_index_workdir --from 1
+    restart: unless-stopped
+    networks:
+      main:
+        ipv4_address: 172.28.1.101
 
+  postgres:
+    container_name: index-postgres
+    image: postgres:17
+    environment: *index-common
+    ports:
+      - ${POSTGRES_PUBLISH_PORT:-5432}:5432
+    command: postgres -c max_connections=1024 -c shared_buffers=2GB -c work_mem=64MB -c max_wal_size=1GB -c tcp_keepalives_idle=60 -c tcp_keepalives_interval=60 -c tcp_keepalives_count=60
+    depends_on:
+      genesis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ton_index -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    shm_size: 2G
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    logging:
+      driver: local
+      options:
+        max-size: 4G
+    networks:
+      main:
+        ipv4_address: 172.28.1.100
 
 volumes:
   shared-data:
@@ -466,7 +467,7 @@ volumes:
 # driver_opts:
 #   o: bind
 #   type: none
-#   device: /home/user/ton-db
+#   device: /home/user/ton-db-val0
 
 networks:
   main:

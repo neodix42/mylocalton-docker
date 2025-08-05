@@ -110,7 +110,7 @@ More details
 <tr>
 <td>ton-http-api v2</td>
 <td>
-By default TON HTTP API runs on port <b>8081.</b>
+By default TON HTTP API runs on port <b>8082.</b>
 <ul>
 <li><b>TON_API_GET_METHODS_ENABLED</b> - default value 1;</li>
 <li><b>TON_API_JSON_RPC_ENABLED</b> - default value 1.</li>
@@ -120,7 +120,7 @@ By default TON HTTP API runs on port <b>8081.</b>
 <tr>
 <td>ton-http-api v3, index-worker, index-postgres, index-api, event-classifier</td>
 <td>
-By default TON indexer V3 runs on port <b>8082</b>.
+By default TON indexer V3 runs on port <b>8081</b>.
 
 These containers share below environment variables:
 <ul>
@@ -144,8 +144,8 @@ Clone this repo, build Java projects and execute:
 
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
-| TON-HTTP-API V2     | http://127.0.0.1:8081/                                                                   | 
-| TON-HTTP-API V3     | http://127.0.0.1:8082/                                                                   |
+| TON-HTTP-API V2     | http://127.0.0.1:8082/                                                                   | 
+| TON-HTTP-API V3     | http://127.0.0.1:8081/                                                                   |
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
 | Faucet              | http://127.0.0.1:88                                                                      |
 | Traffic generation  | http://127.0.0.1:99/                                                                     |
