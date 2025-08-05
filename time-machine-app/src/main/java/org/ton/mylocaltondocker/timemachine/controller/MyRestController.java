@@ -1,7 +1,6 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
 import static java.util.Objects.isNull;
-import static java.util.Objects.nonNull;
 import static org.ton.mylocaltondocker.timemachine.controller.MltUtils.*;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.dockerClient;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
@@ -283,7 +282,7 @@ public class MyRestController {
 
       // copy volumes in parallel
       copyVolumesInParallel(dockerClient, snapshotConfig.getCoreContainers(), snapshotNumber);
-      copyVolumesInParallel(dockerClient, snapshotConfig.getIndexerContainers(), snapshotNumber);
+      copyVolumesInParallel(dockerClient, snapshotConfig.getIndexerContainersWithVolumes(), snapshotNumber);
 
       replaceVolumesInConfig(snapshotConfig, snapshotConfigNew);
 
@@ -303,6 +302,7 @@ public class MyRestController {
           if (waitForSeqnoVolumeHealthy()) {
             currentSnapshotStatus = "Starting extra services...";
             MltUtils.createContainerGroup(dockerClient, snapshotConfig.getExtraContainers());
+            MltUtils.createIndexerV3ContainersSequentially(dockerClient, snapshotConfig.getAllIndexerContainers());
           } else {
             response.put("success", false);
             response.put("message", "Blockchain cannot be started, see docker logs.");
@@ -412,7 +412,7 @@ public class MyRestController {
         copyVolumesInParallel(
             dockerClient, snapshotConfig.getCoreContainers(), snapshotAndInstanceNumber);
         copyVolumesInParallel(
-            dockerClient, snapshotConfig.getIndexerContainers(), snapshotAndInstanceNumber);
+            dockerClient, snapshotConfig.getIndexerContainersWithVolumes(), snapshotAndInstanceNumber);
 
         replaceVolumesInConfig(snapshotConfig, snapshotConfigNew);
 
@@ -430,6 +430,7 @@ public class MyRestController {
       if (waitForSeqnoVolumeHealthy()) {
         currentSnapshotStatus = "Starting extra-services...";
         MltUtils.createContainerGroup(dockerClient, snapshotConfigNew.getExtraContainers());
+        MltUtils.createIndexerV3ContainersSequentially(dockerClient, snapshotConfigNew.getAllIndexerContainers());
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -437,7 +438,7 @@ public class MyRestController {
         response.put("id", snapshotAndInstanceNumber);
         response.put("instanceNumber", instanceNumber);
         response.put("isNewInstance", isNewInstance);
-        response.put("lastKnownSeqno", lastKnownSeqno); // Include the captured seqno for frontend
+        response.put("lastKnownSeqno", lastKnownSeqno);
         return response;
       } else {
         currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";

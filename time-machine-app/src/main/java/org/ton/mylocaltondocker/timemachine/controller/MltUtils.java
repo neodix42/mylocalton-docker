@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
 import static java.util.Objects.nonNull;
+import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_INDEXER_CONTAINERS;
 
 @Slf4j
 public class MltUtils {
@@ -423,38 +424,79 @@ public class MltUtils {
   /** Helper method to recreate a group of containers in parallel. */
   public static void createContainerGroup(
       DockerClient dockerClient, List<DockerContainer> containers) {
+    log.info("createContainerGroup");
+    if (nonNull(containers)) {
+      // Create containers in this group in parallel
+      List<CompletableFuture<Void>> recreateFutures =
+          containers.stream()
+              .map(
+                  entry ->
+                      CompletableFuture.runAsync(
+                          () -> {
+                            String containerName = entry.getName();
+                            String targetVolume = entry.getTonDbVolumeName();
+                            DockerContainer dockerContainer = entry;
+                            try {
+                              log.info("Creating: {} with volume {}", containerName, targetVolume);
+                              createContainerWithConfig(dockerClient, dockerContainer);
+                            } catch (Exception e) {
+                              log.error(
+                                  "Failed to recreate container {}: {}",
+                                  containerName,
+                                  e.getMessage());
+                            }
+                          }))
+              .toList();
 
-    //    log.info("Recreating {} containers in parallel", containers.size());
+      CompletableFuture<Void> allRecreateFutures =
+          CompletableFuture.allOf(recreateFutures.toArray(new CompletableFuture[0]));
 
-    // Create containers in this group in parallel
-    List<CompletableFuture<Void>> recreateFutures =
-        containers.stream()
-            .map(
-                entry ->
-                    CompletableFuture.runAsync(
-                        () -> {
-                          String containerName = entry.getName();
-                          String targetVolume = entry.getTonDbVolumeName();
-                          DockerContainer dockerContainer = entry;
-                          try {
-                            log.info("Creating: {} with volume {}", containerName, targetVolume);
-                            createContainerWithConfig(dockerClient, dockerContainer);
-                          } catch (Exception e) {
-                            log.error(
-                                "Failed to recreate container {}: {}",
-                                containerName,
-                                e.getMessage());
-                          }
-                        }))
-            .toList();
+      try {
+        allRecreateFutures.get(); // Wait for all containers in this group to be recreated
+      } catch (Exception e) {
+        log.error("Error waiting for containers to be recreated: {}", e.getMessage());
+      }
+    }
+  }
 
-    CompletableFuture<Void> allRecreateFutures =
-        CompletableFuture.allOf(recreateFutures.toArray(new CompletableFuture[0]));
+  /** Helper method to recreate a group of containers sequentially. */
+  public static void createContainerGroupSequentially(
+      DockerClient dockerClient, List<DockerContainer> containers) {
+    log.info("createContainerGroupSequentially");
+    if (nonNull(containers)) {
+      containers.forEach(
+          (entry) -> {
+            try {
+              log.info("Creating: {}", entry.getName());
+              createContainerWithConfig(dockerClient, entry);
+              Thread.sleep(1000);
+            } catch (Exception e) {
+              log.error("Failed to recreate container {}", entry.getName());
+            }
+          });
+    }
+  }
 
-    try {
-      allRecreateFutures.get(); // Wait for all containers in this group to be recreated
-    } catch (Exception e) {
-      log.error("Error waiting for containers to be recreated: {}", e.getMessage());
+  /** Helper method to recreate a group of containers sequentially. */
+  public static void createIndexerV3ContainersSequentially(
+      DockerClient dockerClient, List<DockerContainer> containers) {
+    log.info("createIndexerV3ContainersSequentially");
+    if (nonNull(containers)) {
+      for (String container : ALL_INDEXER_CONTAINERS) { // exactly in this order
+        try {
+          for (DockerContainer dockerContainer : containers) {
+            if (dockerContainer.getName().equals(container)) {
+              log.info("Creating: {}", container);
+              createContainerWithConfig(
+                  dockerClient, dockerContainer);
+              Thread.sleep(1000);
+              break;
+            }
+          }
+        } catch (Exception e) {
+          log.error("Failed to recreate container {}", container);
+        }
+      }
     }
   }
 
@@ -469,7 +511,6 @@ public class MltUtils {
 
     ExposedPort[] exposedPorts = config.getExposedPorts();
     HealthCheck healthCheck = config.getHealthcheck();
-    String networkMode = hostConfig.getNetworkMode();
 
     // Create new container with the saved configuration but new volume
     CreateContainerCmd createCmd =
@@ -673,22 +714,24 @@ public class MltUtils {
     dockerContainer.setTonDbVolumeName(newVolume);
   }
 
-  public static void replaceVolumesInConfig (SnapshotConfig oldConfig, SnapshotConfig newConfig) {
+  public static void replaceVolumesInConfig(SnapshotConfig oldConfig, SnapshotConfig newConfig) {
     oldConfig
-            .getContainers()
-            .forEach(
-                    (containerName, value) -> {
-                      String currentVolume = value.getTonDbVolumeName();
-                      String backupVolumeName =
-                              CONTAINER_VOLUME_MAP.get(containerName) + "-snapshot-" + newConfig.getSnapshotNumber();
+        .getContainers()
+        .forEach(
+            (containerName, value) -> {
+              String currentVolume = value.getTonDbVolumeName();
+              String backupVolumeName =
+                  CONTAINER_VOLUME_MAP.get(containerName)
+                      + "-snapshot-"
+                      + newConfig.getSnapshotNumber();
 
-                      if (nonNull(currentVolume)) {
-                        log.info(
-                                "replaceConfig {}: {} -> {}", containerName, currentVolume, backupVolumeName);
-                        MltUtils.replaceVolumeInConfig(
-                                newConfig, containerName, currentVolume, backupVolumeName);
-                      }
-                    });
+              if (nonNull(currentVolume)) {
+                log.info(
+                    "replaceConfig {}: {} -> {}", containerName, currentVolume, backupVolumeName);
+                MltUtils.replaceVolumeInConfig(
+                    newConfig, containerName, currentVolume, backupVolumeName);
+              }
+            });
   }
 
   public static long getCurrentBlockSequence() throws Exception {

@@ -15,7 +15,7 @@ x-index-api: &index-api
   TON_INDEXER_API_PORT: 8081
   TON_INDEXER_TON_HTTP_API_ENDPOINT: http://172.28.1.102:8081/
   TON_INDEXER_IS_TESTNET:
-  TON_INDEXER_REDIS_DSN: redis://event-cache:6379
+  TON_INDEXER_REDIS_DSN: redis://172.28.1.104:6379
   <<: *index-common
 
 x-index-worker: &index-worker
@@ -373,7 +373,7 @@ services:
         condition: service_healthy
       event-cache:
         condition: service_healthy
-    command: --pool-size ${TON_INDEXER_WORKERS:-8} --prefetch-size 10000 --batch-size 1000 --expected-total 720000000
+    command: --pool-size ${TON_INDEXER_WORKERS:-12} --prefetch-size 10000 --batch-size 1000 --expected-total 720000000
     environment: *index-api
     networks:
       main:

@@ -23,16 +23,11 @@ public class SnapshotConfig {
   static String[] INDEXER_CONTAINERS = {"index-worker", "index-postgres"};
 
   static String[] EXTRA_CONTAINERS = {
-    "blockchain-explorer",
-    "ton-http-api-v2",
-    "data-generator",
-    "index-event-cache",
-    "index-event-classifier",
-    "index-api",
-    "index-worker",
-    "index-postgres",
-    "explorer-restarter",
-    "faucet",
+    "blockchain-explorer", "explorer-restarter", "faucet", "ton-http-api-v2", "data-generator"
+  };
+
+  static String[] ALL_INDEXER_CONTAINERS = {
+    "index-postgres", "index-event-cache", "index-event-classifier", "index-worker", "index-api"
   };
 
   public List<DockerContainer> getCoreContainers() {
@@ -45,10 +40,20 @@ public class SnapshotConfig {
     return result;
   }
 
-  public List<DockerContainer> getIndexerContainers() {
+  public List<DockerContainer> getIndexerContainersWithVolumes() {
     List<DockerContainer> result = new ArrayList<>();
     for (Map.Entry<String, DockerContainer> dockerContainer : containers.entrySet()) {
       if (ArrayUtils.contains(INDEXER_CONTAINERS, dockerContainer.getKey())) {
+        result.add(dockerContainer.getValue());
+      }
+    }
+    return result;
+  }
+
+  public List<DockerContainer> getAllIndexerContainers() {
+    List<DockerContainer> result = new ArrayList<>();
+    for (Map.Entry<String, DockerContainer> dockerContainer : containers.entrySet()) {
+      if (ArrayUtils.contains(ALL_INDEXER_CONTAINERS, dockerContainer.getKey())) {
         result.add(dockerContainer.getValue());
       }
     }
