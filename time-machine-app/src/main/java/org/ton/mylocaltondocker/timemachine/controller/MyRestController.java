@@ -677,7 +677,7 @@ public class MyRestController {
           return true; // Success, exit the method
         }
 
-      } catch (Exception e) {
+      } catch (Throwable e) {
         log.warn("waitForSeqnoVolumeHealthy error (attempt {})", retryCount + 1);
         // Don't return on error, continue trying
       }
@@ -746,6 +746,113 @@ public class MyRestController {
       Map<String, Object> response = new HashMap<>();
       response.put("success", false);
       response.put("message", "Failed to stop blockchain: " + e.getMessage());
+      return response;
+    }
+  }
+
+  @PostMapping("/start-over")
+  public Map<String, Object> startOver(@RequestBody Map<String, String> request) {
+    try {
+      log.info("Starting blockchain reset with new configuration");
+
+      currentSnapshotStatus = "Stopping current blockchain...";
+
+      // Stop all running containers first
+      List<String> containersToStopAndRemove = MltUtils.getAllRunningContainers(dockerClient);
+      if (!containersToStopAndRemove.isEmpty()) {
+        log.info("Stopping {} running containers before reset", containersToStopAndRemove.size());
+        MltUtils.stopAndRemoveSpecificContainers(dockerClient, containersToStopAndRemove);
+      }
+
+      deleteVolumes(dockerClient, "ton-db-");
+
+      deleteSnapshots();
+
+      currentSnapshotStatus = "Updating genesis configuration...";
+
+      // Load the genesis snapshot configuration (snapshot 0)
+      SnapshotConfig snapshotConfig = MltUtils.loadSnapshotConfiguration("0");
+      if (isNull(snapshotConfig)) {
+        log.error("Genesis snapshot configuration not found");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Genesis snapshot configuration not found");
+        return response;
+      }
+
+      // Get the genesis container
+      DockerContainer genesis = snapshotConfig.getContainers().get("genesis");
+      if (isNull(genesis)) {
+        log.error("Genesis container not found in snapshot configuration");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Genesis container not found in snapshot configuration");
+        return response;
+      }
+
+      // Update environment variables in the genesis container
+      String[] currentEnv = genesis.getContainerConfig().getEnv();
+      List<String> newEnvList = new ArrayList<>();
+
+      // Create a map of existing environment variables
+      Map<String, String> existingEnvMap = new HashMap<>();
+      if (currentEnv != null) {
+        for (String env : currentEnv) {
+          String[] parts = env.split("=", 2);
+          if (parts.length == 2) {
+            existingEnvMap.put(parts[0], parts[1]);
+          }
+        }
+      }
+
+      // Update with new values from the request
+      for (Map.Entry<String, String> entry : request.entrySet()) {
+        String key = entry.getKey();
+        String value = entry.getValue();
+        existingEnvMap.put(key, value);
+        log.info("Updated environment variable: {}={}", key, value);
+      }
+
+      // Convert back to array format
+      for (Map.Entry<String, String> entry : existingEnvMap.entrySet()) {
+        newEnvList.add(entry.getKey() + "=" + entry.getValue());
+      }
+
+      // Update the container configuration with new environment variables
+      genesis.getContainerConfig().withEnv(newEnvList.toArray(new String[0]));
+
+      // Save the updated configuration
+      MltUtils.storeSnapshotConfiguration(snapshotConfig);
+
+      currentSnapshotStatus = "Starting new blockchain...";
+
+      // Start the blockchain with the updated configuration
+      MltUtils.createContainerGroup(dockerClient, snapshotConfig.getCoreContainers());
+
+      // Wait for lite-server to be ready
+      currentSnapshotStatus = "Waiting for lite-server to be ready";
+      if (waitForSeqnoVolumeHealthy()) {
+        currentSnapshotStatus = "Starting extra services...";
+        MltUtils.createContainerGroup(dockerClient, snapshotConfig.getExtraContainers());
+        MltUtils.createIndexerV3ContainersSequentially(dockerClient, snapshotConfig.getAllIndexerContainers());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Blockchain reset successfully with new configuration");
+        return response;
+      } else {
+        currentSnapshotStatus = "Blockchain cannot be started, see docker logs.";
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Blockchain cannot be started after reset, see docker logs.");
+        return response;
+      }
+
+    } catch (Exception e) {
+      log.error("Error resetting blockchain", e);
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", false);
+      response.put("message", "Failed to reset blockchain: " + e.getMessage());
       return response;
     }
   }

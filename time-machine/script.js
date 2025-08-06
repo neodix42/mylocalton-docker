@@ -80,6 +80,32 @@ class BlockchainGraph {
             this.hideMessage();
         });
         
+        // Reset functionality
+        document.getElementById('start-over-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.showResetConfirmation();
+        });
+        
+        // Reset confirmation modal
+        document.getElementById('reset-confirm-no').addEventListener('click', () => {
+            this.hideResetConfirmation();
+        });
+        
+        document.getElementById('reset-confirm-yes').addEventListener('click', () => {
+            this.hideResetConfirmation();
+            this.showResetConfiguration();
+        });
+        
+        // Reset configuration modal
+        document.getElementById('reset-config-cancel').addEventListener('click', () => {
+            this.hideResetConfiguration();
+        });
+        
+        document.getElementById('reset-config-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.submitResetConfiguration();
+        });
+        
         // Click outside to deselect
         this.svg.on('click', (event) => {
             if (event.target === event.currentTarget) {
@@ -1560,6 +1586,81 @@ class BlockchainGraph {
             
         this.calculateLayout();
         this.renderGraph();
+    }
+
+    // Reset functionality methods
+    showResetConfirmation() {
+        const modal = document.getElementById('reset-confirmation-modal');
+        modal.classList.remove('hidden');
+    }
+
+    hideResetConfirmation() {
+        const modal = document.getElementById('reset-confirmation-modal');
+        modal.classList.add('hidden');
+    }
+
+    showResetConfiguration() {
+        const modal = document.getElementById('reset-config-modal');
+        modal.classList.remove('hidden');
+    }
+
+    hideResetConfiguration() {
+        const modal = document.getElementById('reset-config-modal');
+        modal.classList.add('hidden');
+    }
+
+    async submitResetConfiguration() {
+        const form = document.getElementById('reset-config-form');
+        const formData = new FormData(form);
+        
+        // Convert form data to object
+        const configData = {};
+        for (let [key, value] of formData.entries()) {
+            configData[key] = value;
+        }
+        
+        this.hideResetConfiguration();
+        this.clearErrorState();
+        this.showLoading(true);
+        this.updateStatus("Resetting blockchain...");
+        
+        try {
+            const response = await fetch('/start-over', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(configData)
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Reset the graph to initial state
+                this.initializeRootNode();
+                await this.saveGraph();
+                this.calculateLayout();
+                this.renderGraph();
+                
+                this.showMessage('Blockchain reset successfully with new configuration', 'success');
+                
+                // After a short delay, show "Starting blockchain..." and wait for valid seqno
+                setTimeout(() => {
+                    this.isWaitingForBlockchain = true;
+                    this.updateStatus("Starting new blockchain...");
+                    this.waitForValidSeqno();
+                }, 2000);
+            } else {
+                this.showMessage(`Error resetting blockchain: ${data.message}`, 'error');
+                this.showLoading(false);
+                this.updateStatus("Reset failed");
+            }
+        } catch (error) {
+            console.error('Error resetting blockchain:', error);
+            this.showMessage('Failed to reset blockchain. Please try again.', 'error');
+            this.showLoading(false);
+            this.updateStatus("Reset failed");
+        }
     }
 }
 

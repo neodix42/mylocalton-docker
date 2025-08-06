@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
+import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_CONTAINERS;
 import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_INDEXER_CONTAINERS;
@@ -485,10 +486,35 @@ public class MltUtils {
 
   public static void createContainerWithConfig(
       DockerClient dockerClient, DockerContainer dockerContainer) {
+    createContainerWithConfig(dockerClient, dockerContainer, false);
+  }
+
+  public static void createContainerWithConfig(
+      DockerClient dockerClient, DockerContainer dockerContainer, boolean createMissingVolumes) {
 
     ContainerConfig config = dockerContainer.getContainerConfig();
     HostConfig hostConfig = dockerContainer.getHostConfig();
     String ipAddress = dockerContainer.getIp();
+
+    // Check and create missing volumes if requested
+    if (createMissingVolumes && hostConfig.getBinds() != null) {
+      for (Bind bind : hostConfig.getBinds()) {
+        String volumeName = bind.getPath();
+        if (volumeName != null && !volumeName.startsWith("/")) {
+          // This is a named volume, check if it exists
+          try {
+            dockerClient.inspectVolumeCmd(volumeName).exec();
+            log.debug("Volume {} already exists", volumeName);
+          } catch (NotFoundException e) {
+            // Volume doesn't exist, create it
+            log.info("Creating missing volume: {}", volumeName);
+            dockerClient.createVolumeCmd().withName(volumeName).exec();
+          } catch (Exception e) {
+            log.warn("Error checking volume {}: {}", volumeName, e.getMessage());
+          }
+        }
+      }
+    }
 
     String[] envs = config.getEnv();
 
@@ -745,6 +771,63 @@ public class MltUtils {
     Files.delete(Paths.get(configPath));
   }
 
+  /**
+   * Deletes all snapshot configuration files except snapshot "0" from the config-snapshots directory.
+   * Files follow the naming convention: config-snapshot-{snapshotNumber}.json
+   * 
+   * @throws Exception if there's an error accessing the directory or deleting files
+   */
+  public static void deleteSnapshots() throws Exception {
+    String snapshotsDir = "/usr/share/data/config-snapshots/";
+    log.info("Deleting all snapshots (except '0') from directory: {}", snapshotsDir);
+    
+    File directory = new File(snapshotsDir);
+    
+    if (!directory.exists()) {
+      log.warn("Snapshots directory does not exist: {}", snapshotsDir);
+      return;
+    }
+    
+    if (!directory.isDirectory()) {
+      log.error("Path is not a directory: {}", snapshotsDir);
+      return;
+    }
+    
+    File[] files = directory.listFiles();
+    if (isNull(files)) {
+      log.warn("Could not list files in directory: {}", snapshotsDir);
+      return;
+    }
+    
+    int deletedCount = 0;
+    int skippedCount = 0;
+    
+    for (File file : files) {
+      if (file.isFile() && file.getName().startsWith("config-snapshot-") && file.getName().endsWith(".json")) {
+        // Extract snapshot number from filename
+        String fileName = file.getName();
+        String snapshotNumber = fileName.substring("config-snapshot-".length(), fileName.length() - ".json".length());
+        
+        // Skip snapshot "0"
+        if ("0".equals(snapshotNumber)) {
+          log.info("Skipping snapshot 0: {}", fileName);
+          skippedCount++;
+          continue;
+        }
+        
+        try {
+          deleteSnapshotConfiguration(snapshotNumber);
+          log.info("Deleted snapshot configuration: {}", fileName);
+          deletedCount++;
+        } catch (Exception e) {
+          log.error("Failed to delete snapshot configuration {}: {}", fileName, e.getMessage());
+        }
+      }
+    }
+    
+    log.info("Snapshot deletion completed. Deleted: {}, Skipped: {}", deletedCount, skippedCount);
+  }
+
   public static SnapshotConfig loadSnapshotConfiguration(String snapshotNumber) throws Exception {
     String configPath =
         "/usr/share/data/config-snapshots/config-snapshot-" + snapshotNumber + ".json";
@@ -838,14 +921,106 @@ public class MltUtils {
   }
 
   /**
+   * Deletes all containers that contain "ton-db-" in their name.
+   * This method will stop and remove all matching containers.
+   * 
+   * @param dockerClient the Docker client instance
+   */
+  public static void deleteContainersByVolume(DockerClient dockerClient, String pattern) {
+    try {
+      log.info("Searching for containers with pattern in their names");
+      
+      // Get all containers (including stopped ones)
+      List<Container> allContainers = dockerClient.listContainersCmd().withShowAll(true).exec();
+      List<String> containersToDelete = new ArrayList<>();
+      
+      for (Container container : allContainers) {
+        if (container.getNames() != null) {
+          for (String name : container.getNames()) {
+            // Docker container names start with "/", so we need to check the actual name
+            String containerName = name.startsWith("/") ? name.substring(1) : name;
+            if (containerName.contains(pattern)) {
+              containersToDelete.add(containerName);
+              log.info("Found container to delete: {}", containerName);
+              break; // Found matching name, no need to check other names for this container
+            }
+          }
+        }
+      }
+      
+      if (containersToDelete.isEmpty()) {
+        log.info("No containers found with {} in their names",pattern);
+        return;
+      }
+
+      log.info("Deleting {} containers with {} in their names: {}",
+               containersToDelete.size(), pattern, containersToDelete);
+
+      // Use existing method to stop and remove containers
+      stopAndRemoveContainerGroup(dockerClient, containersToDelete);
+      
+      log.info("Successfully deleted all containers with {} in their names",pattern );
+      
+    } catch (Exception e) {
+      log.error("Error deleting containers with {} in their names: {}", pattern, e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Deletes all volumes that contain pattern in their name.
+   * This method will remove all matching volumes.
+   * 
+   * @param dockerClient the Docker client instance
+   */
+  public static void deleteVolumes(DockerClient dockerClient, String pattern) {
+    try {
+      log.info("Searching for volumes with {} in their names", pattern);
+      
+      // Get all volumes
+      List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
+      List<String> volumesToDelete = new ArrayList<>();
+      
+      for (InspectVolumeResponse volume : volumes) {
+        String volumeName = volume.getName();
+        if (volumeName.contains(pattern)) {
+          volumesToDelete.add(volumeName);
+          log.info("Found volume to delete: {}", volumeName);
+        }
+      }
+      
+      if (volumesToDelete.isEmpty()) {
+        log.info("No volumes found with {} in their names", pattern);
+        return;
+      }
+      
+      log.info("Deleting {} volumes with {} in their names: {}",
+               volumesToDelete.size(), pattern, volumesToDelete);
+      
+      // Delete volumes one by one
+      for (String volumeName : volumesToDelete) {
+        try {
+          dockerClient.removeVolumeCmd(volumeName).exec();
+          log.info("Successfully deleted volume: {}", volumeName);
+        } catch (Exception e) {
+          log.warn("Failed to delete volume {}: {}", volumeName, e.getMessage());
+        }
+      }
+      
+      log.info("Finished deleting volumes with {} in their names", pattern);
+      
+    } catch (Exception e) {
+      log.error("Error deleting volumes with {} in their names: {}", pattern, e.getMessage(), e);
+    }
+  }
+
+  /**
    * Starts the run-migrations Docker container using Docker client.
    * This container runs database migrations for the TON indexer.
    * 
    * @param dockerClient the Docker client instance
    * @return the container ID of the started container
-   * @throws Exception if container creation or start fails
    */
-  public static String startRunMigrationsContainer(DockerClient dockerClient) throws Exception {
+  public static String startRunMigrationsContainer(DockerClient dockerClient) {
     final String containerName = "run-migrations";
     final String imageName = "toncenter/ton-indexer-worker:v1.2.0-rc.2";
     final String networkName = "mylocalton-network";
