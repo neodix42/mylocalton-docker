@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static com.github.dockerjava.api.model.HostConfig.newHostConfig;
 import static java.util.Objects.nonNull;
+import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_CONTAINERS;
 import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_INDEXER_CONTAINERS;
 
 @Slf4j
@@ -92,7 +93,7 @@ public class MltUtils {
 
   public static List<String> getAllCurrentlyRunningContainers(DockerClient dockerClient) {
     List<String> runningContainers = new ArrayList<>();
-    List<String> allContainers = getAllContainers();
+    List<String> allContainers = List.of(ALL_CONTAINERS);
 
     for (String containerName : allContainers) {
       try {
@@ -196,30 +197,6 @@ public class MltUtils {
     return volumeName;
   }
 
-  public static List<String> getAllContainers() {
-
-    return Arrays.asList(
-        "genesis",
-        "blockchain-explorer",
-        "validator-1",
-        "validator-2",
-        // "file-server",
-        // "time-machine-server",
-        "explorer-restarter",
-        "ton-http-api-v2",
-        "validator-3",
-        "validator-4",
-        "validator-5",
-        "faucet",
-        "data-generator",
-        "run-migrations",
-        "index-event-cache",
-        "index-event-classifier",
-        "index-api",
-        "index-worker",
-        "index-postgres");
-  }
-
   public static DockerClient createDockerClient() {
     DefaultDockerClientConfig defaultConfig =
         DefaultDockerClientConfig.createDefaultConfigBuilder().build();
@@ -270,7 +247,7 @@ public class MltUtils {
     List<String> runningContainers = new ArrayList<>();
     runningContainers.add("run-migrations"); // exception
     // Check each validator
-    for (String validatorContainer : MltUtils.getAllContainers()) {
+    for (String validatorContainer : List.of(ALL_CONTAINERS)) {
       try {
         List<Container> containers =
             dockerClient.listContainersCmd().withNameFilter(List.of(validatorContainer)).exec();
@@ -490,6 +467,12 @@ public class MltUtils {
               createContainerWithConfig(
                   dockerClient, dockerContainer);
               Thread.sleep(1000);
+
+              if (container.contains("index-postgres")) { // right after index-worker we have to run run-migrations
+                log.info("Creating: {}", "run-migrations");
+                startRunMigrationsContainer(dockerClient);
+                Thread.sleep(1000);
+              }
               break;
             }
           }
@@ -852,5 +835,77 @@ public class MltUtils {
                 }
               });
     }
+  }
+
+  /**
+   * Starts the run-migrations Docker container using Docker client.
+   * This container runs database migrations for the TON indexer.
+   * 
+   * @param dockerClient the Docker client instance
+   * @return the container ID of the started container
+   * @throws Exception if container creation or start fails
+   */
+  public static String startRunMigrationsContainer(DockerClient dockerClient) throws Exception {
+    final String containerName = "run-migrations";
+    final String imageName = "toncenter/ton-indexer-worker:v1.2.0-rc.2";
+    final String networkName = "mylocalton-network";
+    
+    log.info("Starting run-migrations container");
+    
+    // Check if container already exists and remove it if it does
+    try {
+      String existingContainerId = getContainerIdByName(dockerClient, containerName);
+      if (existingContainerId != null) {
+        log.info("Removing existing run-migrations container");
+        dockerClient.killContainerCmd(existingContainerId).exec();
+        dockerClient.removeContainerCmd(existingContainerId).withForce(true).exec();
+      }
+    } catch (Exception e) {
+      log.debug("No existing container to remove: {}", e.getMessage());
+    }
+    
+    // Environment variables from *index-migrate configuration
+    String[] environmentVars = {
+        "TON_WORKER_BINARY=ton-index-postgres-migrate",
+        "POSTGRES_DIALECT=postgresql+asyncpg",
+        "POSTGRES_HOST=172.28.1.100",
+        "POSTGRES_PORT=5432",
+        "POSTGRES_DBNAME=ton_index",
+        "POSTGRES_DB=ton_index",
+        "POSTGRES_USER=postgres",
+        "PGUSER=postgres",
+        "POSTGRES_PASSWORD=PostgreSQL1234",
+        "POSTGRES_DBROOT=",
+        "POSTGRES_PUBLISH_PORT=5432"
+    };
+    
+    // Command to run
+    String[] command = {
+        "--pg", "postgresql://postgres:PostgreSQL1234@172.28.1.100:5432/ton_index"
+    };
+    
+    // Create the container
+    CreateContainerCmd createCmd = dockerClient
+        .createContainerCmd(imageName)
+        .withName(containerName)
+        .withEnv(environmentVars)
+        .withCmd(command)
+        .withHostConfig(
+            newHostConfig()
+                .withRestartPolicy(RestartPolicy.onFailureRestart(0))
+                .withNetworkMode(networkName)
+        );
+    
+    CreateContainerResponse container = createCmd.exec();
+    String containerId = container.getId();
+    
+    log.info("Created run-migrations container with ID: {}", containerId);
+    
+    // Start the container
+    dockerClient.startContainerCmd(containerId).exec();
+    
+    log.info("Started run-migrations container successfully");
+    
+    return containerId;
   }
 }

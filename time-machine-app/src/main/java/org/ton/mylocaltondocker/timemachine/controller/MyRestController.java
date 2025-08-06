@@ -2,6 +2,7 @@ package org.ton.mylocaltondocker.timemachine.controller;
 
 import static java.util.Objects.isNull;
 import static org.ton.mylocaltondocker.timemachine.controller.MltUtils.*;
+import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_CONTAINERS;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.dockerClient;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
 
@@ -600,7 +601,7 @@ public class MyRestController {
     //    log.info("Stopping and removing all containers in parallel");
 
     // Get all running containers that we manage
-    List<String> runningContainers = MltUtils.getAllContainers();
+    List<String> runningContainers = List.of(ALL_CONTAINERS);;
 
     if (runningContainers.isEmpty()) {
       log.info("No containers to stop");
@@ -669,9 +670,9 @@ public class MyRestController {
 
       currentSnapshotStatus = "Stopping blockchain...";
 
-      List<String> containersToStop = MltUtils.getAllRunningContainers(dockerClient);
+      List<String> containersToStopAndRemove = MltUtils.getAllRunningContainers(dockerClient);
 
-      if (containersToStop.isEmpty()) {
+      if (containersToStopAndRemove.isEmpty()) {
         log.info("No containers found to stop");
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -680,17 +681,17 @@ public class MyRestController {
         return response;
       }
 
-      log.info("Stopping {} running containers: {}", containersToStop.size(), containersToStop);
+      log.info("Stopping {} running containers: {}", containersToStopAndRemove.size(), containersToStopAndRemove);
 
-      MltUtils.stopAndRemoveSpecificContainers(dockerClient, containersToStop);
+      MltUtils.stopAndRemoveSpecificContainers(dockerClient, containersToStopAndRemove);
 
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("message", "Blockchain stopped successfully");
-      response.put("stoppedContainers", containersToStop.size());
-      response.put("containerNames", containersToStop);
+      response.put("stoppedContainers", containersToStopAndRemove.size());
+      response.put("containerNames", containersToStopAndRemove);
 
-      log.info("Successfully stopped {} containers", containersToStop.size());
+      log.info("Successfully stopped {} containers", containersToStopAndRemove.size());
       return response;
 
     } catch (Exception e) {
