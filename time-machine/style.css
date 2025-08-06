@@ -518,19 +518,20 @@ body {
 
 .link-item {
     margin: 8px 0;
-}
-
-.quick-link {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 8px 0;
+    border-bottom: 1px solid rgba(14, 132, 184, 0.1);
+}
+
+.quick-link {
     text-decoration: none;
     color: #0e84b8;
     font-size: 14px;
     font-weight: 500;
     transition: color 0.3s ease;
-    border-bottom: 1px solid rgba(14, 132, 184, 0.1);
+    flex: 1;
 }
 
 .quick-link:hover {
@@ -546,26 +547,25 @@ body {
     font-size: 12px;
     font-weight: bold;
     padding: 2px 6px;
-    border-radius: 4px;
     margin-left: 8px;
     min-width: 50px;
     text-align: center;
     transition: all 0.3s ease;
+    pointer-events: none; /* Prevent status label from interfering with link hover */
+    text-decoration: none !important; /* Prevent underline on status labels */
+    color: #0e84b8;
 }
 
 .link-status.online {
-    background-color: #28a745;
-    color: white;
+    color: #39904b;
 }
 
 .link-status.offline {
-    background-color: #dc3545;
-    color: white;
+    color: #ba3f4b;
 }
 
 .link-status.checking {
-    background-color: #6c757d;
-    color: white;
+    color: #0e84b8;
     animation: pulse 1.5s ease-in-out infinite;
 }
 
