@@ -106,11 +106,12 @@ public class MyRestController {
     // Define the links to check with their Docker network IP addresses
     Map<String, String> linksToCheck = new HashMap<>();
     linksToCheck.put("8080", "http://172.28.1.20:8080/last"); // blockchain-explorer
-    linksToCheck.put("8082", "http://172.28.1.105:8082"); // tonhttpapi (TON Center V2)
+    linksToCheck.put("8082", "http://172.28.1.105:8082"); // ton-http-api (TON Center V2)
     linksToCheck.put("8081", "http://172.28.1.102:8081"); // index-api (TON Center V3)
     linksToCheck.put("88", "http://172.28.1.21:88"); // faucet
     linksToCheck.put("99", "http://172.28.1.22:99"); // data-generator
-    
+    linksToCheck.put("8000", "http://172.28.1.24:8000"); // file-server
+
     for (Map.Entry<String, String> entry : linksToCheck.entrySet()) {
       String port = entry.getKey();
       String url = entry.getValue();
@@ -131,15 +132,13 @@ public class MyRestController {
       connection.setConnectTimeout(2000); // 2 second timeout
       connection.setReadTimeout(2000); // 2 second timeout
       
-      int responseCode = connection.getResponseCode();
+      connection.getResponseCode();
       connection.disconnect();
       
       // Consider any response (even errors like 404, 500) as "online" since the service is responding
       return "online";
       
     } catch (Exception e) {
-      // If connection fails, the service is down
-      log.info("Health check failed for {}: {}", urlString, e.getMessage());
       return "down";
     }
   }

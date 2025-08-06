@@ -1482,7 +1482,8 @@ class BlockchainGraph {
             '8082': 'status-8082', // tonhttpapi (TON Center V2)
             '8081': 'status-8081', // index-api (TON Center V3)
             '88': 'status-88',     // faucet
-            '99': 'status-99'      // data-generator
+            '99': 'status-99',      // data-generator
+            '8000': 'status-8000'      // file-server
         };
 
         // Check immediately
