@@ -1149,6 +1149,9 @@ class BlockchainGraph {
         
         // Start auto-save functionality - save graph state every 10 seconds
         this.startAutoSave();
+        
+        // Start link status checking
+        this.startLinkStatusChecking();
     }
 
     startAutoSave() {
@@ -1470,6 +1473,79 @@ class BlockchainGraph {
         
         // Save the updated graph state
         this.saveGraph();
+    }
+
+    startLinkStatusChecking() {
+        // Define the status element IDs for each port
+        this.statusElements = {
+            '8080': 'status-8080', // blockchain-explorer
+            '8082': 'status-8082', // tonhttpapi (TON Center V2)
+            '8081': 'status-8081', // index-api (TON Center V3)
+            '88': 'status-88',     // faucet
+            '99': 'status-99'      // data-generator
+        };
+
+        // Check immediately
+        this.checkAllLinkStatuses();
+
+        // Then check every 3 seconds
+        setInterval(() => {
+            this.checkAllLinkStatuses();
+        }, 3000);
+    }
+
+    async checkAllLinkStatuses() {
+        try {
+            // Call the backend health check endpoint
+            const response = await fetch('/health-check', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.linkStatuses) {
+                    // Update each status element with the result from backend
+                    Object.entries(data.linkStatuses).forEach(([port, status]) => {
+                        const statusId = this.statusElements[port];
+                        if (statusId) {
+                            const statusElement = document.getElementById(statusId);
+                            if (statusElement) {
+                                if (status === 'online') {
+                                    statusElement.textContent = 'online';
+                                    statusElement.className = 'link-status online';
+                                } else {
+                                    statusElement.textContent = 'down';
+                                    statusElement.className = 'link-status offline';
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    // If backend call failed, mark all as down
+                    this.markAllLinksAsDown();
+                }
+            } else {
+                // If backend call failed, mark all as down
+                this.markAllLinksAsDown();
+            }
+        } catch (error) {
+            console.error('Error checking link statuses:', error);
+            // If backend call failed, mark all as down
+            this.markAllLinksAsDown();
+        }
+    }
+
+    markAllLinksAsDown() {
+        Object.values(this.statusElements).forEach(statusId => {
+            const statusElement = document.getElementById(statusId);
+            if (statusElement) {
+                statusElement.textContent = 'down';
+                statusElement.className = 'link-status offline';
+            }
+        });
     }
 
     handleResize() {

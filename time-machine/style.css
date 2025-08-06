@@ -521,7 +521,9 @@ body {
 }
 
 .quick-link {
-    display: block;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding: 8px 0;
     text-decoration: none;
     color: #0e84b8;
@@ -537,7 +539,40 @@ body {
 }
 
 .link-text {
-    display: block;
+    flex: 1;
+}
+
+.link-status {
+    font-size: 12px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    min-width: 50px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.link-status.online {
+    background-color: #28a745;
+    color: white;
+}
+
+.link-status.offline {
+    background-color: #dc3545;
+    color: white;
+}
+
+.link-status.checking {
+    background-color: #6c757d;
+    color: white;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
 }
 
 .node-info {

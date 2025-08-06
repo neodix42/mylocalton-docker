@@ -9,6 +9,8 @@ import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinit
 import com.github.dockerjava.api.exception.NotFoundException;
 
 import java.io.File;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
@@ -93,6 +95,52 @@ public class MyRestController {
       response.put("success", false);
       response.put("message", "Failed to get active nodes count: " + e.getMessage());
       return response;
+    }
+  }
+
+  @GetMapping("/health-check")
+  public Map<String, Object> checkLinksHealth() {
+    Map<String, Object> response = new HashMap<>();
+    Map<String, String> linkStatuses = new HashMap<>();
+    
+    // Define the links to check with their Docker network IP addresses
+    Map<String, String> linksToCheck = new HashMap<>();
+    linksToCheck.put("8080", "http://172.28.1.20:8080/last"); // blockchain-explorer
+    linksToCheck.put("8082", "http://172.28.1.105:8082"); // tonhttpapi (TON Center V2)
+    linksToCheck.put("8081", "http://172.28.1.102:8081"); // index-api (TON Center V3)
+    linksToCheck.put("88", "http://172.28.1.21:88"); // faucet
+    linksToCheck.put("99", "http://172.28.1.22:99"); // data-generator
+    
+    for (Map.Entry<String, String> entry : linksToCheck.entrySet()) {
+      String port = entry.getKey();
+      String url = entry.getValue();
+      String status = checkSingleLinkHealth(url);
+      linkStatuses.put(port, status);
+    }
+    
+    response.put("success", true);
+    response.put("linkStatuses", linkStatuses);
+    return response;
+  }
+  
+  private String checkSingleLinkHealth(String urlString) {
+    try {
+      URL url = new URL(urlString);
+      HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+      connection.setRequestMethod("GET");
+      connection.setConnectTimeout(2000); // 2 second timeout
+      connection.setReadTimeout(2000); // 2 second timeout
+      
+      int responseCode = connection.getResponseCode();
+      connection.disconnect();
+      
+      // Consider any response (even errors like 404, 500) as "online" since the service is responding
+      return "online";
+      
+    } catch (Exception e) {
+      // If connection fails, the service is down
+      log.info("Health check failed for {}: {}", urlString, e.getMessage());
+      return "down";
     }
   }
 
