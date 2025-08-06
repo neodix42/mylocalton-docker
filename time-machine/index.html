@@ -176,189 +176,198 @@
 
 <!-- Reset Configuration Modal -->
 <div id="reset-config-modal" class="modal-overlay hidden">
-    <div class="modal-content large">
+    <div class="modal-content race-car-modal">
         <h3>Configure new TON Blockchain</h3>
-        <form id="reset-config-form">
-            <div class="config-section">
-                <h4>Blockchain</h4>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label for="global-id">GLOBAL_ID</label>
-                        <input type="number" id="global-id" name="GLOBAL_ID" value="-217">
-                    </div>
-                    <div class="config-item">
-                        <label for="blockchain-initial-balance">BLOCKCHAIN_INITIAL_BALANCE</label>
-                        <input type="number" id="blockchain-initial-balance" name="BLOCKCHAIN_INITIAL_BALANCE" value="5000000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="validator-0-initial-balance">VALIDATOR_0_INITIAL_BALANCE</label>
-                        <input type="number" id="validator-0-initial-balance" name="VALIDATOR_0_INITIAL_BALANCE" value="500000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="validator-1-initial-balance">VALIDATOR_1_INITIAL_BALANCE</label>
-                        <input type="number" id="validator-1-initial-balance" name="VALIDATOR_1_INITIAL_BALANCE" value="500000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="validator-2-initial-balance">VALIDATOR_2_INITIAL_BALANCE</label>
-                        <input type="number" id="validator-2-initial-balance" name="VALIDATOR_2_INITIAL_BALANCE" value="500000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="validator-3-initial-balance">VALIDATOR_3_INITIAL_BALANCE</label>
-                        <input type="number" id="validator-3-initial-balance" name="VALIDATOR_3_INITIAL_BALANCE" value="500000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="validator-4-initial-balance">VALIDATOR_4_INITIAL_BALANCE</label>
-                        <input type="number" id="validator-4-initial-balance" name="VALIDATOR_4_INITIAL_BALANCE" value="500000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="validator-5-initial-balance">VALIDATOR_5_INITIAL_BALANCE</label>
-                        <input type="number" id="validator-5-initial-balance" name="VALIDATOR_5_INITIAL_BALANCE" value="500000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="max-validators">MAX_VALIDATORS</label>
-                        <input type="number" id="max-validators" name="MAX_VALIDATORS" value="1000">
-                    </div>
-                    <div class="config-item">
-                        <label for="max-main-validators">MAX_MAIN_VALIDATORS</label>
-                        <input type="number" id="max-main-validators" name="MAX_MAIN_VALIDATORS" value="100">
-                    </div>
-                    <div class="config-item">
-                        <label for="min-validators">MIN_VALIDATORS</label>
-                        <input type="number" id="min-validators" name="MIN_VALIDATORS" value="1">
-                    </div>
-                    <div class="config-item">
-                        <label for="version-capabilities">VERSION_CAPABILITIES</label>
-                        <input type="number" id="version-capabilities" name="VERSION_CAPABILITIES" value="11">
-                    </div>
-                    <div class="config-item">
-                        <label for="actual-min-split">ACTUAL_MIN_SPLIT</label>
-                        <input type="number" id="actual-min-split" name="ACTUAL_MIN_SPLIT" value="0">
-                    </div>
-                    <div class="config-item">
-                        <label for="min-split">MIN_SPLIT</label>
-                        <input type="number" id="min-split" name="MIN_SPLIT" value="0">
-                    </div>
-                    <div class="config-item">
-                        <label for="max-split">MAX_SPLIT</label>
-                        <input type="number" id="max-split" name="MAX_SPLIT" value="4">
-                    </div>
-                    <div class="config-item">
-                        <label for="masterchain-only">MASTERCHAIN_ONLY</label>
-                        <select id="masterchain-only" name="MASTERCHAIN_ONLY">
-                            <option value="false">false</option>
-                            <option value="true">true</option>
-                        </select>
-                    </div>
-                    <div class="config-item">
-                        <label for="next-block-generation-delay">NEXT_BLOCK_GENERATION_DELAY</label>
-                        <input type="number" id="next-block-generation-delay" name="NEXT_BLOCK_GENERATION_DELAY" value="2">
-                    </div>
-                </div>
-            </div>
-
-            <div class="config-section">
-                <h4>Elections</h4>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label for="min-stake">MIN_STAKE</label>
-                        <input type="number" id="min-stake" name="MIN_STAKE" value="1000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="max-stake">MAX_STAKE</label>
-                        <input type="number" id="max-stake" name="MAX_STAKE" value="1000000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="max-factor">MAX_FACTOR</label>
-                        <input type="number" id="max-factor" name="MAX_FACTOR" value="10">
-                    </div>
-                    <div class="config-item">
-                        <label for="min-total-stake">MIN_TOTAL_STAKE</label>
-                        <input type="number" id="min-total-stake" name="MIN_TOTAL_STAKE" value="10000">
-                    </div>
-                    <div class="config-item">
-                        <label for="election-start-before">ELECTION_START_BEFORE</label>
-                        <input type="number" id="election-start-before" name="ELECTION_START_BEFORE" value="900">
-                    </div>
-                    <div class="config-item">
-                        <label for="election-end-before">ELECTION_END_BEFORE</label>
-                        <input type="number" id="election-end-before" name="ELECTION_END_BEFORE" value="300">
-                    </div>
-                    <div class="config-item">
-                        <label for="election-stake-frozen">ELECTION_STAKE_FROZEN</label>
-                        <input type="number" id="election-stake-frozen" name="ELECTION_STAKE_FROZEN" value="180">
-                    </div>
-                    <div class="config-item">
-                        <label for="validation-period">VALIDATION_PERIOD</label>
-                        <input type="number" id="validation-period" name="VALIDATION_PERIOD" value="1200">
-                    </div>
-                    <div class="config-item">
-                        <label for="original-validator-set-valid-for">ORIGINAL_VALIDATOR_SET_VALID_FOR</label>
-                        <input type="number" id="original-validator-set-valid-for" name="ORIGINAL_VALIDATOR_SET_VALID_FOR" value="120">
+        <div class="race-car-container">
+            <!-- Race Car Background Image -->
+            <div class="race-car-bg"></div>
+            
+            <form id="reset-config-form">
+                <!-- Blockchain section - Engine area -->
+                <div class="config-section engine-section">
+                    <h4>🔧 Blockchain Engine</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="global-id">GLOBAL_ID</label>
+                            <input type="number" id="global-id" name="GLOBAL_ID" value="-217">
+                        </div>
+                        <div class="config-item">
+                            <label for="blockchain-initial-balance">BLOCKCHAIN_INITIAL_BALANCE</label>
+                            <input type="number" id="blockchain-initial-balance" name="BLOCKCHAIN_INITIAL_BALANCE" value="5000000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-0-initial-balance">VALIDATOR_0_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-0-initial-balance" name="VALIDATOR_0_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-1-initial-balance">VALIDATOR_1_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-1-initial-balance" name="VALIDATOR_1_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-2-initial-balance">VALIDATOR_2_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-2-initial-balance" name="VALIDATOR_2_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-3-initial-balance">VALIDATOR_3_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-3-initial-balance" name="VALIDATOR_3_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-4-initial-balance">VALIDATOR_4_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-4-initial-balance" name="VALIDATOR_4_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-5-initial-balance">VALIDATOR_5_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-5-initial-balance" name="VALIDATOR_5_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-validators">MAX_VALIDATORS</label>
+                            <input type="number" id="max-validators" name="MAX_VALIDATORS" value="1000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-main-validators">MAX_MAIN_VALIDATORS</label>
+                            <input type="number" id="max-main-validators" name="MAX_MAIN_VALIDATORS" value="100">
+                        </div>
+                        <div class="config-item">
+                            <label for="min-validators">MIN_VALIDATORS</label>
+                            <input type="number" id="min-validators" name="MIN_VALIDATORS" value="1">
+                        </div>
+                        <div class="config-item">
+                            <label for="version-capabilities">VERSION_CAPABILITIES</label>
+                            <input type="number" id="version-capabilities" name="VERSION_CAPABILITIES" value="11">
+                        </div>
+                        <div class="config-item">
+                            <label for="actual-min-split">ACTUAL_MIN_SPLIT</label>
+                            <input type="number" id="actual-min-split" name="ACTUAL_MIN_SPLIT" value="0">
+                        </div>
+                        <div class="config-item">
+                            <label for="min-split">MIN_SPLIT</label>
+                            <input type="number" id="min-split" name="MIN_SPLIT" value="0">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-split">MAX_SPLIT</label>
+                            <input type="number" id="max-split" name="MAX_SPLIT" value="4">
+                        </div>
+                        <div class="config-item">
+                            <label for="masterchain-only">MASTERCHAIN_ONLY</label>
+                            <select id="masterchain-only" name="MASTERCHAIN_ONLY">
+                                <option value="false">false</option>
+                                <option value="true">true</option>
+                            </select>
+                        </div>
+                        <div class="config-item">
+                            <label for="next-block-generation-delay">NEXT_BLOCK_GENERATION_DELAY</label>
+                            <input type="number" id="next-block-generation-delay" name="NEXT_BLOCK_GENERATION_DELAY" value="2">
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="config-section">
-                <h4>Storage</h4>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label for="bit-price-per-second-mc">BIT_PRICE_PER_SECOND_MC</label>
-                        <input type="number" id="bit-price-per-second-mc" name="BIT_PRICE_PER_SECOND_MC" value="1000">
-                    </div>
-                    <div class="config-item">
-                        <label for="cell-price-per-second-mc">CELL_PRICE_PER_SECOND_MC</label>
-                        <input type="number" id="cell-price-per-second-mc" name="CELL_PRICE_PER_SECOND_MC" value="500000">
-                    </div>
-                    <div class="config-item">
-                        <label for="bit-price-per-second">BIT_PRICE_PER_SECOND</label>
-                        <input type="number" id="bit-price-per-second" name="BIT_PRICE_PER_SECOND" value="1">
-                    </div>
-                    <div class="config-item">
-                        <label for="cell-price-per-second">CELL_PRICE_PER_SECOND</label>
-                        <input type="number" id="cell-price-per-second" name="CELL_PRICE_PER_SECOND" value="500">
-                    </div>
-                    <div class="config-item">
-                        <label for="cell-price-mc">CELL_PRICE_MC</label>
-                        <input type="number" id="cell-price-mc" name="CELL_PRICE_MC" value="1000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="gas-price-mc">GAS_PRICE_MC</label>
-                        <input type="number" id="gas-price-mc" name="GAS_PRICE_MC" value="10000">
-                    </div>
-                    <div class="config-item">
-                        <label for="cell-price">CELL_PRICE</label>
-                        <input type="number" id="cell-price" name="CELL_PRICE" value="100000">
-                    </div>
-                    <div class="config-item">
-                        <label for="gas-price">GAS_PRICE</label>
-                        <input type="number" id="gas-price" name="GAS_PRICE" value="1000">
+                <!-- Elections section - Driver area -->
+                <div class="config-section driver-section">
+                    <h4>🏁 Elections Control</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="min-stake">MIN_STAKE</label>
+                            <input type="number" id="min-stake" name="MIN_STAKE" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-stake">MAX_STAKE</label>
+                            <input type="number" id="max-stake" name="MAX_STAKE" value="1000000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-factor">MAX_FACTOR</label>
+                            <input type="number" id="max-factor" name="MAX_FACTOR" value="10">
+                        </div>
+                        <div class="config-item">
+                            <label for="min-total-stake">MIN_TOTAL_STAKE</label>
+                            <input type="number" id="min-total-stake" name="MIN_TOTAL_STAKE" value="10000">
+                        </div>
+                        <div class="config-item">
+                            <label for="election-start-before">ELECTION_START_BEFORE</label>
+                            <input type="number" id="election-start-before" name="ELECTION_START_BEFORE" value="900">
+                        </div>
+                        <div class="config-item">
+                            <label for="election-end-before">ELECTION_END_BEFORE</label>
+                            <input type="number" id="election-end-before" name="ELECTION_END_BEFORE" value="300">
+                        </div>
+                        <div class="config-item">
+                            <label for="election-stake-frozen">ELECTION_STAKE_FROZEN</label>
+                            <input type="number" id="election-stake-frozen" name="ELECTION_STAKE_FROZEN" value="180">
+                        </div>
+                        <div class="config-item">
+                            <label for="validation-period">VALIDATION_PERIOD</label>
+                            <input type="number" id="validation-period" name="VALIDATION_PERIOD" value="1200">
+                        </div>
+                        <div class="config-item">
+                            <label for="original-validator-set-valid-for">ORIGINAL_VALIDATOR_SET_VALID_FOR</label>
+                            <input type="number" id="original-validator-set-valid-for" name="ORIGINAL_VALIDATOR_SET_VALID_FOR" value="120">
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="config-section">
-                <h4>Faucets</h4>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label for="simple-faucet-initial-balance">SIMPLE_FAUCET_INITIAL_BALANCE</label>
-                        <input type="number" id="simple-faucet-initial-balance" name="SIMPLE_FAUCET_INITIAL_BALANCE" value="1000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="highload-faucet-initial-balance">HIGHLOAD_FAUCET_INITIAL_BALANCE</label>
-                        <input type="number" id="highload-faucet-initial-balance" name="HIGHLOAD_FAUCET_INITIAL_BALANCE" value="1000000">
-                    </div>
-                    <div class="config-item">
-                        <label for="data-faucet-initial-balance">DATA_FAUCET_INITIAL_BALANCE</label>
-                        <input type="number" id="data-faucet-initial-balance" name="DATA_FAUCET_INITIAL_BALANCE" value="1000000">
+                <!-- Storage section - Trunk area -->
+                <div class="config-section trunk-section">
+                    <h4>🧳 Storage Trunk</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="bit-price-per-second-mc">BIT_PRICE_PER_SECOND_MC</label>
+                            <input type="number" id="bit-price-per-second-mc" name="BIT_PRICE_PER_SECOND_MC" value="1000">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price-per-second-mc">CELL_PRICE_PER_SECOND_MC</label>
+                            <input type="number" id="cell-price-per-second-mc" name="CELL_PRICE_PER_SECOND_MC" value="500000">
+                        </div>
+                        <div class="config-item">
+                            <label for="bit-price-per-second">BIT_PRICE_PER_SECOND</label>
+                            <input type="number" id="bit-price-per-second" name="BIT_PRICE_PER_SECOND" value="1">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price-per-second">CELL_PRICE_PER_SECOND</label>
+                            <input type="number" id="cell-price-per-second" name="CELL_PRICE_PER_SECOND" value="500">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price-mc">CELL_PRICE_MC</label>
+                            <input type="number" id="cell-price-mc" name="CELL_PRICE_MC" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="gas-price-mc">GAS_PRICE_MC</label>
+                            <input type="number" id="gas-price-mc" name="GAS_PRICE_MC" value="10000">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price">CELL_PRICE</label>
+                            <input type="number" id="cell-price" name="CELL_PRICE" value="100000">
+                        </div>
+                        <div class="config-item">
+                            <label for="gas-price">GAS_PRICE</label>
+                            <input type="number" id="gas-price" name="GAS_PRICE" value="1000">
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="modal-buttons">
-                <button type="button" id="reset-config-cancel" class="modal-btn secondary">Cancel</button>
-                <button type="submit" id="reset-config-proceed" class="modal-btn primary">Proceed</button>
-            </div>
-        </form>
+                <!-- Faucets section - Fuel area -->
+                <div class="config-section fuel-section">
+                    <h4>⛽ Fuel Faucets</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="simple-faucet-initial-balance">SIMPLE_FAUCET_INITIAL_BALANCE</label>
+                            <input type="number" id="simple-faucet-initial-balance" name="SIMPLE_FAUCET_INITIAL_BALANCE" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="highload-faucet-initial-balance">HIGHLOAD_FAUCET_INITIAL_BALANCE</label>
+                            <input type="number" id="highload-faucet-initial-balance" name="HIGHLOAD_FAUCET_INITIAL_BALANCE" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="data-faucet-initial-balance">DATA_FAUCET_INITIAL_BALANCE</label>
+                            <input type="number" id="data-faucet-initial-balance" name="DATA_FAUCET_INITIAL_BALANCE" value="1000000">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-buttons">
+                    <button type="button" id="reset-config-cancel" class="modal-btn secondary">🚫 Cancel</button>
+                    <button type="submit" id="reset-config-proceed" class="modal-btn primary">🏁 Start Your Engine!</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 

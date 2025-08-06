@@ -849,23 +849,118 @@ body {
     background: linear-gradient(135deg, #c82333, #bd2130);
 }
 
+/* Race Car Modal Styling */
+.race-car-modal {
+    max-width: 1200px;
+    width: 95%;
+    max-height: 95vh;
+    padding: 20px;
+    background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 50%, #ddeeff 100%);
+    border: 3px solid #0e84b8;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.race-car-modal h3 {
+    font-size: 1.8rem;
+    color: #0e84b8;
+    text-align: center;
+    margin-bottom: 20px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.race-car-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.race-car-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    opacity: 0.15;
+    pointer-events: none;
+    background-image: url('race-car.png');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+#reset-config-form {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 20px;
+    padding: 20px;
+}
+
 /* Configuration form styling */
 .config-section {
-    margin-bottom: 30px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.config-section:hover {
+    border-color: rgba(14, 132, 184, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
 }
 
 .config-section h4 {
-    margin: 0 0 15px 0;
+    margin: 0 0 12px 0;
     color: #0e84b8;
-    font-size: 1.1rem;
-    border-bottom: 1px solid rgba(14, 132, 184, 0.2);
+    font-size: 1rem;
+    font-weight: bold;
+    border-bottom: 2px solid rgba(14, 132, 184, 0.3);
     padding-bottom: 5px;
+    text-align: center;
+}
+
+/* Positioning sections around the car */
+.engine-section {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+}
+
+.driver-section {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+}
+
+.trunk-section {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+}
+
+.fuel-section {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
 }
 
 .config-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+.config-grid.compact {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
 }
 
 .config-item {
@@ -874,32 +969,83 @@ body {
 }
 
 .config-item label {
-    font-size: 12px;
+    font-size: 9px;
     font-weight: 600;
-    color: #555;
-    margin-bottom: 5px;
+    color: #666;
+    margin-bottom: 3px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
 }
 
 .config-item input,
 .config-item select {
-    padding: 8px 12px;
+    padding: 4px 6px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    font-size: 14px;
-    transition: border-color 0.3s ease;
+    font-size: 11px;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.9);
 }
 
 .config-item input:focus,
 .config-item select:focus {
     outline: none;
     border-color: #0e84b8;
-    box-shadow: 0 0 0 2px rgba(14, 132, 184, 0.1);
+    box-shadow: 0 0 0 2px rgba(14, 132, 184, 0.2);
+    background: white;
 }
 
 .config-item input[type="number"] {
     text-align: right;
+}
+
+/* Modal buttons styling for race car theme */
+.race-car-modal .modal-buttons {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid rgba(14, 132, 184, 0.2);
+}
+
+.race-car-modal .modal-btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 25px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.race-car-modal .modal-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.race-car-modal .modal-btn.primary {
+    background: linear-gradient(135deg, #0e84b8, #0056b3);
+    color: white;
+}
+
+.race-car-modal .modal-btn.primary:hover {
+    background: linear-gradient(135deg, #0056b3, #004085);
+}
+
+.race-car-modal .modal-btn.secondary {
+    background: linear-gradient(135deg, #666, #888);
+    color: white;
+}
+
+.race-car-modal .modal-btn.secondary:hover {
+    background: linear-gradient(135deg, #888, #aaa);
 }
 
 /* Responsive modal design */
@@ -926,6 +1072,90 @@ body {
     
     .modal-btn {
         width: 100%;
+    }
+    
+    /* Race car modal responsive design */
+    .race-car-modal {
+        width: 98%;
+        max-height: 98vh;
+        padding: 15px;
+        border-width: 2px;
+    }
+    
+    .race-car-modal h3 {
+        font-size: 1.4rem;
+        margin-bottom: 15px;
+    }
+    
+    .race-car-bg {
+        width: 400px;
+        height: 200px;
+        opacity: 0.1;
+    }
+    
+    #reset-config-form {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto auto auto;
+        gap: 15px;
+        padding: 15px;
+    }
+    
+    .engine-section {
+        grid-column: 1;
+        grid-row: 1;
+    }
+    
+    .driver-section {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    
+    .trunk-section {
+        grid-column: 1;
+        grid-row: 3;
+    }
+    
+    .fuel-section {
+        grid-column: 1;
+        grid-row: 4;
+    }
+    
+    .config-section {
+        padding: 12px;
+    }
+    
+    .config-section h4 {
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+    }
+    
+    .config-grid.compact {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    
+    .config-item label {
+        font-size: 8px;
+    }
+    
+    .config-item input,
+    .config-item select {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+    
+    .race-car-modal .modal-buttons {
+        grid-row: 5;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 15px;
+        padding-top: 15px;
+    }
+    
+    .race-car-modal .modal-btn {
+        width: 100%;
+        padding: 15px 20px;
+        font-size: 13px;
     }
 }
 
