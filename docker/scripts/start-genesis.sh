@@ -178,6 +178,18 @@ else
   echo VALIDATION_PERIOD=$VALIDATION_PERIOD
   sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
 
+  ACTUAL_MIN_SPLIT=${ACTUAL_MIN_SPLIT:-0}
+  echo ACTUAL_MIN_SPLIT=$ACTUAL_MIN_SPLIT
+  sed -i "s/ACTUAL_MIN_SPLIT/$ACTUAL_MIN_SPLIT/g" gen-zerostate.fif
+
+  MIN_SPLIT=${MIN_SPLIT:-0}
+  echo MIN_SPLIT=$MIN_SPLIT
+  sed -i "s/MIN_SPLIT/$MIN_SPLIT/g" gen-zerostate.fif
+
+  MAX_SPLIT=${MAX_SPLIT:-4}
+  echo MAX_SPLIT=$MAX_SPLIT
+  sed -i "s/MAX_SPLIT/$MAX_SPLIT/g" gen-zerostate.fif
+
   MASTERCHAIN_ONLY=${MASTERCHAIN_ONLY:-"false"}
   echo MASTERCHAIN_ONLY=$MASTERCHAIN_ONLY
   if [ "$MASTERCHAIN_ONLY" == "false" ]; then
