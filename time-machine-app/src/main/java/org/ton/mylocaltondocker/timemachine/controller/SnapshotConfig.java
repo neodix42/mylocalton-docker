@@ -29,6 +29,7 @@ public class SnapshotConfig {
   static String[] ALL_INDEXER_CONTAINERS = {
     "index-postgres", "run-migrations", "index-event-cache", "index-event-classifier", "index-worker", "index-api"
   };
+
   static String[] ALL_CONTAINERS = { // except file-server and time-machine
           "genesis",
           "blockchain-explorer",
@@ -41,6 +42,28 @@ public class SnapshotConfig {
           "validator-5",
           "faucet",
           "data-generator",
+          "run-migrations",
+          "index-event-cache",
+          "index-event-classifier",
+          "index-api",
+          "index-worker",
+          "index-postgres"
+  };
+
+  static String[] ALL_CONTAINERS_FOR_CLEANUP = {
+          "genesis",
+          "blockchain-explorer",
+          "validator-1",
+          "validator-2",
+          "explorer-restarter",
+          "ton-http-api-v2",
+          "validator-3",
+          "validator-4",
+          "validator-5",
+          "faucet",
+          "data-generator",
+          "file-server",
+//          "time-machine",
           "run-migrations",
           "index-event-cache",
           "index-event-classifier",

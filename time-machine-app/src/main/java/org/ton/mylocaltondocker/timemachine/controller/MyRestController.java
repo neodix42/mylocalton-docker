@@ -3,6 +3,7 @@ package org.ton.mylocaltondocker.timemachine.controller;
 import static java.util.Objects.isNull;
 import static org.ton.mylocaltondocker.timemachine.controller.MltUtils.*;
 import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_CONTAINERS;
+import static org.ton.mylocaltondocker.timemachine.controller.SnapshotConfig.ALL_CONTAINERS_FOR_CLEANUP;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.dockerClient;
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
 
@@ -750,6 +751,39 @@ public class MyRestController {
     }
   }
 
+  @PostMapping("/clean-up")
+  public Map<String, Object> cleanUp() {
+    try {
+      log.info("Starting clean up - stopping all containers and deleting all volumes");
+
+      List<String> containersToStopAndRemove = List.of(ALL_CONTAINERS_FOR_CLEANUP);
+
+      if (!containersToStopAndRemove.isEmpty()) {
+        log.info("Stopping {} running containers: {}", containersToStopAndRemove.size(), containersToStopAndRemove);
+        MltUtils.stopAndRemoveContainerGroup(dockerClient, containersToStopAndRemove);
+      }
+
+        MltUtils.deleteVolumes(dockerClient, "ton-db-");
+        MltUtils.deleteVolumes(dockerClient, "postgres_data");
+        MltUtils.deleteVolumes(dockerClient, "ton_index_workdir");
+        MltUtils.deleteVolumes(dockerClient, "event_cache");
+
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", true);
+      response.put("message", "Clean up completed successfully");
+
+      log.info("Clean up completed successfully.");
+      return response;
+
+    } catch (Exception e) {
+      log.error("Error during clean up", e);
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", false);
+      response.put("message", "Failed to clean up: " + e.getMessage());
+      return response;
+    }
+  }
+
   @PostMapping("/start-over")
   public Map<String, Object> startOver(@RequestBody Map<String, String> request) {
     try {
@@ -765,6 +799,9 @@ public class MyRestController {
       }
 
       deleteVolumes(dockerClient, "ton-db-");
+      deleteVolumes(dockerClient, "postgres_data");
+      deleteVolumes(dockerClient, "ton_index_workdir");
+      deleteVolumes(dockerClient, "event_cache");
 
       deleteSnapshots();
 

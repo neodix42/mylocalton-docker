@@ -80,6 +80,12 @@ class BlockchainGraph {
             this.hideMessage();
         });
         
+        // Clean up functionality
+        document.getElementById('clean-up-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.cleanUp();
+        });
+        
         // Reset functionality
         document.getElementById('start-over-link').addEventListener('click', (e) => {
             e.preventDefault();
@@ -1607,6 +1613,79 @@ class BlockchainGraph {
     hideResetConfiguration() {
         const modal = document.getElementById('reset-config-modal');
         modal.classList.add('hidden');
+    }
+
+    async cleanUp() {
+        // Confirm the action with the user
+        if (!confirm('Are you sure you want to clean up? This will stop and remove all containers and delete all volumes. This action cannot be undone.')) {
+            return;
+        }
+        
+        // Clear any previous error state when starting a new action
+        this.clearErrorState();
+        this.showLoading(true);
+        this.updateStatus("Cleaning up...");
+        
+        try {
+            const response = await fetch('/clean-up', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.showMessage('Clean up completed successfully.', 'success');
+                
+                // Reset the graph to initial state since everything is cleaned up
+                this.initializeRootNode();
+                await this.saveGraph();
+                this.calculateLayout();
+                this.renderGraph();
+
+                this.showSpecialCleanupMessage();
+            } else {
+                this.showMessage(`Error during clean up: ${data.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error during clean up:', error);
+            this.showMessage('Failed to clean up. Please try again.', 'error');
+        }
+        
+        this.showLoading(false);
+        this.updateStatus("Ready");
+    }
+
+    showSpecialCleanupMessage() {
+        // Create a special modal for the cleanup message
+        const modalHtml = `
+            <div id="special-cleanup-modal" class="modal-overlay">
+                <div class="modal-content">
+                    <h3>Clean Up Complete</h3>
+                    <p>I can't delete myself. For a complete clean-up,<br>
+                    stop and remove container <b>time-machine</b><br>
+                    and delete volume <b>mylocalton-docker_shared-data.</b><br>
+                    You can also use command:<br><code>docker-compose -f docker-compose.yaml down -v</code></p>
+                    <div class="modal-buttons">
+                        <button id="special-cleanup-ok" class="modal-btn primary">OK</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add the modal to the body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Show the modal
+        const modal = document.getElementById('special-cleanup-modal');
+        modal.classList.remove('hidden');
+        
+        // Add event listener for OK button
+        document.getElementById('special-cleanup-ok').addEventListener('click', () => {
+            modal.remove(); // Remove the modal from DOM
+        });
     }
 
     async submitResetConfiguration() {

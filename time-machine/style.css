@@ -737,6 +737,13 @@ body {
     padding-bottom: 8px;
 }
 
+/* Danger Zone buttons container */
+.danger-zone-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 /* Modal overlay styling */
 .modal-overlay {
     position: fixed;
