@@ -23,8 +23,6 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 ### Quick start
 
-By default, only one genesis validator and the Time Machine will be started. 
-
 Uncomment sections in ```docker-compose.yaml``` to enable more validators and services.
 
 ```bash
@@ -34,7 +32,7 @@ docker-compose up -d
 
 Now you can navigate to Time Machine by opening http://localhost:8083.
 
-By default, following services will be enabled and started:
+By default, the following services will be available on start:
 
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
@@ -88,7 +86,7 @@ The default parameters for this local TON blockchain are the same as in the Main
 <td>
 This is the face of MyLocalTon Docker. 
 Here you can take the snapshots of your TON blockchain and navigate between them as you like,
-or you can use it simply to stop and start the blockchain, as well as to customize and start from scratch. 
+or you can use it simply to stop and start the blockchain, as well as to customize and start it from scratch. 
 </td>
 </tr>
 <tr>
@@ -228,18 +226,27 @@ last, getstats, config32, config34, config36, elid, participants
 
 ```docker-compose down```
 
-the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the
+The state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the
 last state.
 
-If you want to access TON working directory and/or to keep database state even after rebuilding images,
-adjust the `driver_opts` options in `volumes` section in main yaml file.
+You can also stop and start the blockchain from the Time Machine web GUI.
+
+If you want to access validators' TON working directory (`/var/ton-work/db`) or to keep database state even after rebuilding images,
+adjust the `driver_opts` options in `volumes` section in `docker-compose.yaml` file.
 
 ### Stop and remove all MyLocalTon containers, networks and volumes. 
 All data will be lost.
 
 ```docker-compose -f docker-compose-build.yaml down -v```
 
+You can also clean up MyLocalTon from the Time Machine web GUI. Use `Clean Up` button.
+
+
 ## Pre-installed wallets
+
+To speed up your development process, we created set of predefined wallets.
+
+These wallets will be always available in the blockchain and you can use them in your SDK.
 
 | Wallet Name                                 | Wallet                                                                                                                                                                                                                                            | Mnemonic                                                                                                                                                                   |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|  
@@ -257,7 +264,7 @@ All data will be lost.
 
 ## Features
 
-* A web GUI interface for snapshots' management and blockchain administration
+* A web GUI interface for snapshots' management and blockchain administration;
 * Flexible blockchain startup
   parametrization ([more info](https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters));
 * Validation
@@ -282,32 +289,30 @@ All data will be lost.
 * cross-platform (arm64/amd64)
 * tested on Ubuntu, Windows and MacOS
 
-## Development using TON third party libraries
+## Development using TON third party SDK
 
-### Using W3R2 faucet with help of [ton4j](https://github.com/neodiX42/ton4j)
+### Exaple of using predefined Faucet wallet with a help of [ton4j](https://github.com/neodiX42/ton4j)
 
 <!-- @formatter:off -->
 
 ```java
 Tonlib tonlib =
     Tonlib.builder()
-            .pathToTonlibSharedLib(Utils.getTonlibGithubUrl())
-            .pathToGlobalConfig("http://127.0.0.1:8000/localhost.global.config.json")
-            .ignoreCache(false)
-            .build();
+        .pathToTonlibSharedLib(Utils.getTonlibGithubUrl())
+        .pathToGlobalConfig("http://127.0.0.1:8000/localhost.global.config.json")
+        .ignoreCache(false)
+        .build();
 
 log.info("last {}",tonlib.getLast());
 
 byte[] prvKey = Utils.hexToSignedBytes("a51e8fb6f0fae3834bf430f5012589d319e7b3b3303ceb82c816b762fccf2d05");
 
 // to use mnemonic
-//        byte[] prvKey =
-//        Mnemonic.toKeyPair(
-//        Arrays.asList(
-//        "viable","model", "canvas", "decade", "neck", "soap","turtle", "asthma", "bench",
-//        "crouch", "bicycle", "grief", "history", "envelope", "valid", "intact", "invest",
-//        "like", "offer", "urban", "adjust", "popular", "draft", "coral"))
-//        .getSecretKey();
+// byte[] prvKey = Mnemonic.toKeyPair(
+//    Arrays.asList("viable","model", "canvas", "decade", "neck", "soap","turtle", "asthma", "bench",
+//    "crouch", "bicycle", "grief", "history", "envelope", "valid", "intact", "invest",
+//    "like", "offer", "urban", "adjust", "popular", "draft", "coral"))
+// .getSecretKey();
 TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
 WalletV3R2 contract=WalletV3R2.builder().tonlib(tonlib).wc(-1).keyPair(keyPair).walletId(42).build();
@@ -323,28 +328,28 @@ assertThat(contract.getAddress().toRaw()).isEqualTo("-1:22f53b7d9aba2cef44755f70
 byte[] prvKey = Utils.hexToSignedBytes("e1480435871753a968ef08edabb24f5532dab4cd904dbdc683b8576fb45fa697");
 TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
-HighloadWallet highloadFaucet =
-        HighloadWallet.builder()
-                .tonlib(tonlib)
-                .keyPair(keyPair)
-                .wc(-1)
-                .walletId(42L)
-                .queryId(BigInteger.ZERO)
-                .build();
+HighloadWallet highloadFaucet = 
+  HighloadWallet.builder()
+    .tonlib(tonlib)
+    .keyPair(keyPair)
+    .wc(-1)
+    .walletId(42L)
+    .queryId(BigInteger.ZERO)
+    .build();
 
 List<Destination> destinations = new ArrayList<>(); // fill it up
 
 HighloadConfig config =
-        HighloadConfig.builder()
-                .walletId(42)
-                .queryId(BigInteger.valueOf(Instant.now().getEpochSecond() + 60L << 32))
-                .destinations(
-                        Arrays.asList(
-                                Destination.builder()
-                                        .address("EQAaGHUHfkpWFGs428ETmym4vbvRNxCA1o4sTkwqigKjgf-_")
-                                        .amount(Utils.toNano(0.3))
-                                        .build()))
-                .build();
+  HighloadConfig.builder()
+    .walletId(42)
+    .queryId(BigInteger.valueOf(Instant.now().getEpochSecond() + 60L << 32))
+    .destinations(
+      Arrays.asList(
+        Destination.builder()
+          .address("EQAaGHUHfkpWFGs428ETmym4vbvRNxCA1o4sTkwqigKjgf-_")
+          .amount(Utils.toNano(0.3))
+      .build()))
+  .build();
 
 ExtMessageInfo extMessageInfo = highloadFaucet.send(config);
 ```
