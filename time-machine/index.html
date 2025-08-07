@@ -179,6 +179,42 @@
     </div>
 </div>
 
+<!-- Delete Snapshot Confirmation Modal -->
+<div id="delete-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Delete</h3>
+        <p id="delete-confirmation-message">Are you sure you want to delete this snapshot?</p>
+        <div class="modal-buttons">
+            <button id="delete-confirm-no" class="modal-btn secondary">No</button>
+            <button id="delete-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Stop Blockchain Confirmation Modal -->
+<div id="stop-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Stop Blockchain</h3>
+        <p>Are you sure you want to stop the blockchain? Later you can restore from any snapshot.</p>
+        <div class="modal-buttons">
+            <button id="stop-confirm-no" class="modal-btn secondary">No</button>
+            <button id="stop-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Clean Up Confirmation Modal -->
+<div id="cleanup-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Clean Up</h3>
+        <p>Are you sure you want to clean up? This will stop and remove all containers and delete all volumes. This action cannot be undone.</p>
+        <div class="modal-buttons">
+            <button id="cleanup-confirm-no" class="modal-btn secondary">No</button>
+            <button id="cleanup-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
 <!-- Reset Configuration Modal -->
 <div id="reset-config-modal" class="modal-overlay hidden">
     <div class="modal-content race-car-modal">

@@ -10,6 +10,7 @@ import com.github.dockerjava.okhttp.OkDockerHttpClient;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.ton.mylocaltondocker.timemachine.Main;
 import org.ton.ton4j.tl.liteserver.responses.MasterchainInfo;
@@ -826,6 +827,42 @@ public class MltUtils {
     }
     
     log.info("Snapshot deletion completed. Deleted: {}, Skipped: {}", deletedCount, skippedCount);
+  }
+
+  public static void deleteSharedData() throws Exception {
+    String sharedDataDir = "/usr/share/data/";
+    log.info("Deleting all files from directory: {}", sharedDataDir);
+
+    File directory = new File(sharedDataDir);
+
+    if (!directory.exists()) {
+      return;
+    }
+
+    if (!directory.isDirectory()) {
+      log.error("Path is not a directory: {}", sharedDataDir);
+      return;
+    }
+
+    File[] files = directory.listFiles();
+    if (isNull(files)) {
+      log.warn("Could not list files in directory: {}", sharedDataDir);
+      return;
+    }
+
+    int deletedCount = 0;
+
+    for (File file : files) {
+        try {
+          FileUtils.deleteQuietly(file);
+          log.info("Deleted snapshot configuration: {}", file.getName());
+          deletedCount++;
+        } catch (Exception e) {
+          log.error("Failed to delete file {}: {}", file.getName(), e.getMessage());
+        }
+    }
+
+    log.info("sharedDataDir deletion completed. Deleted: {}", deletedCount);
   }
 
   public static SnapshotConfig loadSnapshotConfiguration(String snapshotNumber) throws Exception {

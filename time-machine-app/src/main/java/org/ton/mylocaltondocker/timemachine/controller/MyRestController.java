@@ -768,6 +768,8 @@ public class MyRestController {
         MltUtils.deleteVolumes(dockerClient, "ton_index_workdir");
         MltUtils.deleteVolumes(dockerClient, "event_cache");
 
+        MltUtils.deleteSharedData();
+
       Map<String, Object> response = new HashMap<>();
       response.put("success", true);
       response.put("message", "Clean up completed successfully");

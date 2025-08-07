@@ -102,6 +102,36 @@ class BlockchainGraph {
             this.showResetConfiguration();
         });
         
+        // Delete confirmation modal
+        document.getElementById('delete-confirm-no').addEventListener('click', () => {
+            this.hideDeleteConfirmation();
+        });
+        
+        document.getElementById('delete-confirm-yes').addEventListener('click', () => {
+            this.hideDeleteConfirmation();
+            this.proceedWithDelete();
+        });
+        
+        // Stop blockchain confirmation modal
+        document.getElementById('stop-confirm-no').addEventListener('click', () => {
+            this.hideStopConfirmation();
+        });
+        
+        document.getElementById('stop-confirm-yes').addEventListener('click', () => {
+            this.hideStopConfirmation();
+            this.proceedWithStop();
+        });
+        
+        // Clean up confirmation modal
+        document.getElementById('cleanup-confirm-no').addEventListener('click', () => {
+            this.hideCleanupConfirmation();
+        });
+        
+        document.getElementById('cleanup-confirm-yes').addEventListener('click', () => {
+            this.hideCleanupConfirmation();
+            this.proceedWithCleanup();
+        });
+        
         // Reset configuration modal
         document.getElementById('reset-config-cancel').addEventListener('click', () => {
             this.hideResetConfiguration();
@@ -983,16 +1013,35 @@ class BlockchainGraph {
             confirmMessage += `\n\nWARNING: This snapshot has ${children.length} child snapshot(s): ${childNames}.\nDeleting this snapshot will also delete all its children. This action cannot be undone.`;
         }
         
-        if (!confirm(confirmMessage)) {
-            return;
-        }
-        
+        // Store the confirmation message and show modal
+        this.pendingDeleteMessage = confirmMessage;
+        this.showDeleteConfirmation();
+        return;
+    }
+
+    showDeleteConfirmation() {
+        const modal = document.getElementById('delete-confirmation-modal');
+        const messageElement = document.getElementById('delete-confirmation-message');
+        messageElement.textContent = this.pendingDeleteMessage;
+        modal.classList.remove('hidden');
+    }
+
+    hideDeleteConfirmation() {
+        const modal = document.getElementById('delete-confirmation-modal');
+        modal.classList.add('hidden');
+    }
+
+    async proceedWithDelete() {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
         this.updateStatus("Deleting snapshot...");
         
         try {
+            // Check if this node has children (siblings)
+            const children = this.nodes.filter(n => n.parentId === this.selectedNode.id);
+            const hasChildren = children.length > 0;
+            
             // Collect all nodes that will be deleted (selected node + all descendants)
             const nodesToDelete = this.collectNodeAndDescendants(this.selectedNode.id);
             
@@ -1388,11 +1437,22 @@ class BlockchainGraph {
     }
 
     async stopBlockchain() {
-        // Confirm the action with the user
-        if (!confirm('Are you sure you want to stop the blockchain? Later you can restore from any snapshot.')) {
-            return;
-        }
-        
+        // Show confirmation modal
+        this.showStopConfirmation();
+        return;
+    }
+
+    showStopConfirmation() {
+        const modal = document.getElementById('stop-confirmation-modal');
+        modal.classList.remove('hidden');
+    }
+
+    hideStopConfirmation() {
+        const modal = document.getElementById('stop-confirmation-modal');
+        modal.classList.add('hidden');
+    }
+
+    async proceedWithStop() {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
@@ -1616,11 +1676,22 @@ class BlockchainGraph {
     }
 
     async cleanUp() {
-        // Confirm the action with the user
-        if (!confirm('Are you sure you want to clean up? This will stop and remove all containers and delete all volumes. This action cannot be undone.')) {
-            return;
-        }
-        
+        // Show confirmation modal
+        this.showCleanupConfirmation();
+        return;
+    }
+
+    showCleanupConfirmation() {
+        const modal = document.getElementById('cleanup-confirmation-modal');
+        modal.classList.remove('hidden');
+    }
+
+    hideCleanupConfirmation() {
+        const modal = document.getElementById('cleanup-confirmation-modal');
+        modal.classList.add('hidden');
+    }
+
+    async proceedWithCleanup() {
         // Clear any previous error state when starting a new action
         this.clearErrorState();
         this.showLoading(true);
