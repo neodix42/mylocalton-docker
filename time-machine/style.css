@@ -399,7 +399,7 @@ body {
 .admin-links {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 5px;
     transition: all 0.3s ease;
 }
 
@@ -517,11 +517,11 @@ body {
 }
 
 .link-item {
-    margin: 8px 0;
+    margin: 4px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 0;
+    padding: 6px 0;
     border-bottom: 1px solid rgba(14, 132, 184, 0.1);
 }
 
@@ -592,7 +592,7 @@ body {
 .stat-item {
     display: flex;
     justify-content: space-between;
-    margin: 10px 0;
+    margin: 6px 0;
     font-size: 14px;
 }
 
@@ -741,7 +741,7 @@ body {
 .danger-zone-links {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 5px;
 }
 
 /* Modal overlay styling */

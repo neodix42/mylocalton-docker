@@ -1737,7 +1737,7 @@ class BlockchainGraph {
                     <h3>Clean Up Complete</h3>
                     <p>I can't delete myself. For a complete clean-up,<br>
                     stop and remove container <b>time-machine</b><br>
-                    and delete volume <b>mylocalton-docker_shared-data.</b><br>
+                    and delete volume <b>*_shared-data.</b><br>
                     You can also use command:<br><code>docker-compose -f docker-compose.yaml down -v</code></p>
                     <div class="modal-buttons">
                         <button id="special-cleanup-ok" class="modal-btn primary">OK</button>

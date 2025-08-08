@@ -466,11 +466,11 @@ public class MltUtils {
           for (DockerContainer dockerContainer : containers) {
             if (dockerContainer.getName().equals(container)) {
               log.info("Creating: {}", container);
-              createContainerWithConfig(
-                  dockerClient, dockerContainer);
+              createContainerWithConfig(dockerClient, dockerContainer);
               Thread.sleep(1000);
 
-              if (container.contains("index-postgres")) { // right after index-worker we have to run run-migrations
+              if (container.contains(
+                  "index-postgres")) { // right after index-worker we have to run run-migrations
                 log.info("Creating: {}", "run-migrations");
                 startRunMigrationsContainer(dockerClient);
                 Thread.sleep(1000);
@@ -593,8 +593,8 @@ public class MltUtils {
       }
 
       String currentVolume = getCurrentVolume(dockerClient, genesisContainerId);
-      if ((currentVolume == null)
-          || currentVolume.equals("mylocalton-docker_ton-db-val0")
+      if ((isNull(currentVolume))
+          || currentVolume.contains("_ton-db-val0")
           || currentVolume.equals("ton-db-val0-snapshot-0-1")) {
         return "0";
       }
@@ -707,13 +707,19 @@ public class MltUtils {
     return String.join(" ", params);
   }
 
-  public static void replaceVolumeInConfig(
-      SnapshotConfig snapshotConfig, String containerName, String oldVolume, String newVolume, boolean updateTonDbVolume) {
+  public static void replaceVolumeBindsInConfig(
+      SnapshotConfig snapshotConfig,
+      String containerName,
+      String oldVolume,
+      String newVolume,
+      boolean updateTonDbVolume) {
     DockerContainer dockerContainer = snapshotConfig.getContainers().get(containerName);
     List<Bind> binds = new ArrayList<>();
     for (Bind bind : dockerContainer.getHostConfig().getBinds()) {
+      log.info("bind {}", bind.getVolume().getPath());
       if (bind.getPath().equals(oldVolume)) {
         Bind bindNew = new Bind(newVolume, bind.getVolume(), bind.getAccessMode());
+        log.info("bindNew {}", bindNew);
         binds.add(bindNew);
       } else {
         binds.add(bind);
@@ -724,6 +730,32 @@ public class MltUtils {
     if (updateTonDbVolume) {
       dockerContainer.setTonDbVolumeName(newVolume);
     }
+  }
+
+  public static void replaceVolumeMountsInConfig(
+      SnapshotConfig snapshotConfig, String containerName, String oldVolume, String newVolume) {
+    DockerContainer dockerContainer = snapshotConfig.getContainers().get(containerName);
+    List<Mount> mounts = new ArrayList<>();
+    if (nonNull(dockerContainer.getHostConfig().getMounts())) {
+      for (Mount mount : dockerContainer.getHostConfig().getMounts()) {
+        log.info("mountSrc {}", mount.getSource());
+        if (mount.getSource().contains(oldVolume)) {
+          Mount mountNew = new Mount();
+          mountNew.withBindOptions(mount.getBindOptions());
+          mountNew.withReadOnly(mount.getReadOnly());
+          mountNew.withType(mount.getType());
+          mountNew.withTmpfsOptions(mount.getTmpfsOptions());
+          mountNew.withTarget(mount.getTarget());
+          mountNew.withSource(mount.getSource().replace(oldVolume, newVolume));
+          mountNew.withVolumeOptions(mount.getVolumeOptions());
+          log.info("mountNew {}", mountNew);
+          mounts.add(mountNew);
+        } else {
+          mounts.add(mount);
+        }
+      }
+    }
+    dockerContainer.getHostConfig().withMounts(mounts);
   }
 
   public static void replaceVolumesInConfig(SnapshotConfig oldConfig, SnapshotConfig newConfig) {
@@ -742,20 +774,27 @@ public class MltUtils {
               if (nonNull(currentVolume)) {
                 log.info(
                     "replaceConfig {}: {} -> {}", containerName, currentVolume, backupVolumeName);
-                MltUtils.replaceVolumeInConfig(
+                MltUtils.replaceVolumeBindsInConfig(
                     newConfig, containerName, currentVolume, backupVolumeName, true);
+                MltUtils.replaceVolumeMountsInConfig(
+                    newConfig, containerName, currentVolume, backupVolumeName);
 
                 if (containerName.equals("index-worker")) {
                   currentVolume = genesisDockerContainer.getTonDbVolumeName();
                   backupVolumeName =
-                          CONTAINER_VOLUME_MAP.get("genesis")
-                                  + "-snapshot-"
-                                  + newConfig.getSnapshotNumber();
+                      CONTAINER_VOLUME_MAP.get("genesis")
+                          + "-snapshot-"
+                          + newConfig.getSnapshotNumber();
 
                   log.info(
-                          "replaceConfig one more time {}: {} -> {}", containerName, currentVolume, backupVolumeName);
-                  MltUtils.replaceVolumeInConfig(
-                          newConfig, containerName, currentVolume, backupVolumeName, false);
+                      "replaceConfig one more time {}: {} -> {}",
+                      containerName,
+                      currentVolume,
+                      backupVolumeName);
+                  MltUtils.replaceVolumeBindsInConfig(
+                      newConfig, containerName, currentVolume, backupVolumeName, false);
+                  MltUtils.replaceVolumeMountsInConfig(
+                          newConfig, containerName, currentVolume, backupVolumeName);
                 }
               }
             });
@@ -790,49 +829,52 @@ public class MltUtils {
   }
 
   /**
-   * Deletes all snapshot configuration files except snapshot "0" from the config-snapshots directory.
-   * Files follow the naming convention: config-snapshot-{snapshotNumber}.json
-   * 
+   * Deletes all snapshot configuration files except snapshot "0" from the config-snapshots
+   * directory. Files follow the naming convention: config-snapshot-{snapshotNumber}.json
+   *
    * @throws Exception if there's an error accessing the directory or deleting files
    */
   public static void deleteSnapshots() throws Exception {
     String snapshotsDir = "/usr/share/data/config-snapshots/";
     log.info("Deleting all snapshots (except '0') from directory: {}", snapshotsDir);
-    
+
     File directory = new File(snapshotsDir);
-    
+
     if (!directory.exists()) {
       log.warn("Snapshots directory does not exist: {}", snapshotsDir);
       return;
     }
-    
+
     if (!directory.isDirectory()) {
       log.error("Path is not a directory: {}", snapshotsDir);
       return;
     }
-    
+
     File[] files = directory.listFiles();
     if (isNull(files)) {
       log.warn("Could not list files in directory: {}", snapshotsDir);
       return;
     }
-    
+
     int deletedCount = 0;
     int skippedCount = 0;
-    
+
     for (File file : files) {
-      if (file.isFile() && file.getName().startsWith("config-snapshot-") && file.getName().endsWith(".json")) {
+      if (file.isFile()
+          && file.getName().startsWith("config-snapshot-")
+          && file.getName().endsWith(".json")) {
         // Extract snapshot number from filename
         String fileName = file.getName();
-        String snapshotNumber = fileName.substring("config-snapshot-".length(), fileName.length() - ".json".length());
-        
+        String snapshotNumber =
+            fileName.substring("config-snapshot-".length(), fileName.length() - ".json".length());
+
         // Skip snapshot "0"
         if ("0".equals(snapshotNumber)) {
           log.info("Skipping snapshot 0: {}", fileName);
           skippedCount++;
           continue;
         }
-        
+
         try {
           deleteSnapshotConfiguration(snapshotNumber);
           log.info("Deleted snapshot configuration: {}", fileName);
@@ -842,7 +884,7 @@ public class MltUtils {
         }
       }
     }
-    
+
     log.info("Snapshot deletion completed. Deleted: {}, Skipped: {}", deletedCount, skippedCount);
   }
 
@@ -870,13 +912,13 @@ public class MltUtils {
     int deletedCount = 0;
 
     for (File file : files) {
-        try {
-          FileUtils.deleteQuietly(file);
-          log.info("Deleted snapshot configuration: {}", file.getName());
-          deletedCount++;
-        } catch (Exception e) {
-          log.error("Failed to delete file {}: {}", file.getName(), e.getMessage());
-        }
+      try {
+        FileUtils.deleteQuietly(file);
+        log.info("Deleted snapshot configuration: {}", file.getName());
+        deletedCount++;
+      } catch (Exception e) {
+        log.error("Failed to delete file {}: {}", file.getName(), e.getMessage());
+      }
     }
 
     log.info("sharedDataDir deletion completed. Deleted: {}", deletedCount);
@@ -975,19 +1017,19 @@ public class MltUtils {
   }
 
   /**
-   * Deletes all containers that contain "ton-db-" in their name.
-   * This method will stop and remove all matching containers.
-   * 
+   * Deletes all containers that contain "ton-db-" in their name. This method will stop and remove
+   * all matching containers.
+   *
    * @param dockerClient the Docker client instance
    */
   public static void deleteContainersByVolume(DockerClient dockerClient, String pattern) {
     try {
       log.info("Searching for containers with pattern in their names");
-      
+
       // Get all containers (including stopped ones)
       List<Container> allContainers = dockerClient.listContainersCmd().withShowAll(true).exec();
       List<String> containersToDelete = new ArrayList<>();
-      
+
       for (Container container : allContainers) {
         if (container.getNames() != null) {
           for (String name : container.getNames()) {
@@ -1001,39 +1043,42 @@ public class MltUtils {
           }
         }
       }
-      
+
       if (containersToDelete.isEmpty()) {
-        log.info("No containers found with {} in their names",pattern);
+        log.info("No containers found with {} in their names", pattern);
         return;
       }
 
-      log.info("Deleting {} containers with {} in their names: {}",
-               containersToDelete.size(), pattern, containersToDelete);
+      log.info(
+          "Deleting {} containers with {} in their names: {}",
+          containersToDelete.size(),
+          pattern,
+          containersToDelete);
 
       // Use existing method to stop and remove containers
       stopAndRemoveContainerGroup(dockerClient, containersToDelete);
-      
-      log.info("Successfully deleted all containers with {} in their names",pattern );
-      
+
+      log.info("Successfully deleted all containers with {} in their names", pattern);
+
     } catch (Exception e) {
       log.error("Error deleting containers with {} in their names: {}", pattern, e.getMessage(), e);
     }
   }
 
   /**
-   * Deletes all volumes that contain pattern in their name.
-   * This method will remove all matching volumes.
-   * 
+   * Deletes all volumes that contain pattern in their name. This method will remove all matching
+   * volumes.
+   *
    * @param dockerClient the Docker client instance
    */
   public static void deleteVolumes(DockerClient dockerClient, String pattern) {
     try {
       log.info("Searching for volumes with {} in their names", pattern);
-      
+
       // Get all volumes
       List<InspectVolumeResponse> volumes = dockerClient.listVolumesCmd().exec().getVolumes();
       List<String> volumesToDelete = new ArrayList<>();
-      
+
       for (InspectVolumeResponse volume : volumes) {
         String volumeName = volume.getName();
         if (volumeName.contains(pattern)) {
@@ -1041,15 +1086,18 @@ public class MltUtils {
           log.info("Found volume to delete: {}", volumeName);
         }
       }
-      
+
       if (volumesToDelete.isEmpty()) {
         log.info("No volumes found with {} in their names", pattern);
         return;
       }
-      
-      log.info("Deleting {} volumes with {} in their names: {}",
-               volumesToDelete.size(), pattern, volumesToDelete);
-      
+
+      log.info(
+          "Deleting {} volumes with {} in their names: {}",
+          volumesToDelete.size(),
+          pattern,
+          volumesToDelete);
+
       // Delete volumes one by one
       for (String volumeName : volumesToDelete) {
         try {
@@ -1059,18 +1107,18 @@ public class MltUtils {
           log.warn("Failed to delete volume {}: {}", volumeName, e.getMessage());
         }
       }
-      
+
       log.info("Finished deleting volumes with {} in their names", pattern);
-      
+
     } catch (Exception e) {
       log.error("Error deleting volumes with {} in their names: {}", pattern, e.getMessage(), e);
     }
   }
 
   /**
-   * Starts the run-migrations Docker container using Docker client.
-   * This container runs database migrations for the TON indexer.
-   * 
+   * Starts the run-migrations Docker container using Docker client. This container runs database
+   * migrations for the TON indexer.
+   *
    * @param dockerClient the Docker client instance
    * @return the container ID of the started container
    */
@@ -1078,9 +1126,9 @@ public class MltUtils {
     final String containerName = "run-migrations";
     final String imageName = "toncenter/ton-indexer-worker:v1.2.0-rc.2";
     final String networkName = "mylocalton-network";
-    
+
     log.info("Starting run-migrations container");
-    
+
     // Check if container already exists and remove it if it does
     try {
       String existingContainerId = getContainerIdByName(dockerClient, containerName);
@@ -1092,49 +1140,47 @@ public class MltUtils {
     } catch (Exception e) {
       log.debug("No existing container to remove: {}", e.getMessage());
     }
-    
+
     // Environment variables from *index-migrate configuration
     String[] environmentVars = {
-        "TON_WORKER_BINARY=ton-index-postgres-migrate",
-        "POSTGRES_DIALECT=postgresql+asyncpg",
-        "POSTGRES_HOST=172.28.1.100",
-        "POSTGRES_PORT=5432",
-        "POSTGRES_DBNAME=ton_index",
-        "POSTGRES_DB=ton_index",
-        "POSTGRES_USER=postgres",
-        "PGUSER=postgres",
-        "POSTGRES_PASSWORD=PostgreSQL1234",
-        "POSTGRES_DBROOT=",
-        "POSTGRES_PUBLISH_PORT=5432"
+      "TON_WORKER_BINARY=ton-index-postgres-migrate",
+      "POSTGRES_DIALECT=postgresql+asyncpg",
+      "POSTGRES_HOST=172.28.1.100",
+      "POSTGRES_PORT=5432",
+      "POSTGRES_DBNAME=ton_index",
+      "POSTGRES_DB=ton_index",
+      "POSTGRES_USER=postgres",
+      "PGUSER=postgres",
+      "POSTGRES_PASSWORD=PostgreSQL1234",
+      "POSTGRES_DBROOT=",
+      "POSTGRES_PUBLISH_PORT=5432"
     };
-    
+
     // Command to run
-    String[] command = {
-        "--pg", "postgresql://postgres:PostgreSQL1234@172.28.1.100:5432/ton_index"
-    };
-    
+    String[] command = {"--pg", "postgresql://postgres:PostgreSQL1234@172.28.1.100:5432/ton_index"};
+
     // Create the container
-    CreateContainerCmd createCmd = dockerClient
-        .createContainerCmd(imageName)
-        .withName(containerName)
-        .withEnv(environmentVars)
-        .withCmd(command)
-        .withHostConfig(
-            newHostConfig()
-                .withRestartPolicy(RestartPolicy.onFailureRestart(0))
-                .withNetworkMode(networkName)
-        );
-    
+    CreateContainerCmd createCmd =
+        dockerClient
+            .createContainerCmd(imageName)
+            .withName(containerName)
+            .withEnv(environmentVars)
+            .withCmd(command)
+            .withHostConfig(
+                newHostConfig()
+                    .withRestartPolicy(RestartPolicy.onFailureRestart(0))
+                    .withNetworkMode(networkName));
+
     CreateContainerResponse container = createCmd.exec();
     String containerId = container.getId();
-    
+
     log.info("Created run-migrations container with ID: {}", containerId);
-    
+
     // Start the container
     dockerClient.startContainerCmd(containerId).exec();
-    
+
     log.info("Started run-migrations container successfully");
-    
+
     return containerId;
   }
 }

@@ -168,16 +168,13 @@ services:
   file-server:
     container_name: file-server
     image: python:bullseye
-    build:
-      context: .
-      dockerfile: ./file-server/Dockerfile
     ports:
       - 8000:8000
     volumes:
       - shared-data:/usr/share/data
+    entrypoint:
+      python3 -m http.server 8000 -d /usr/share/data
     restart: unless-stopped
-    environment:
-      - SERVER_PORT=8000
     healthcheck:
       test: curl -sS http://127.0.0.1:8000|| echo 1
     networks:

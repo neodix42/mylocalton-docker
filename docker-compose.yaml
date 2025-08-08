@@ -156,6 +156,8 @@ services:
       - 8000:8000
     volumes:
       - shared-data:/usr/share/data
+    entrypoint:
+      python3 -m http.server 8000 -d /usr/share/data
     restart: unless-stopped
     environment:
       - SERVER_PORT=8000
