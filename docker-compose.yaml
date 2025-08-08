@@ -350,7 +350,7 @@ services:
 #
 #  event-classifier:
 #    container_name: index-event-classifier
-#    image: toncenter/ton-indexer-classifier:v1.2.0-rc.2
+#    image: toncenter/ton-indexer-classifier:v1.2.0-rc.3
 #    depends_on:
 #      postgres:
 #        condition: service_healthy
@@ -365,7 +365,7 @@ services:
 #
 #  index-api:
 #    container_name: index-api
-#    image: toncenter/ton-indexer-api:v1.2.0-rc.2
+#    image: toncenter/ton-indexer-api:v1.2.0-rc.3
 #    depends_on:
 #      - index-worker
 #    command: -prefork -threads ${TON_INDEXER_WORKERS:-12}
@@ -380,7 +380,7 @@ services:
 #
 #  run-migrations:
 #    container_name: run-migrations
-#    image: toncenter/ton-indexer-worker:v1.2.0-rc.2
+#    image: toncenter/ton-indexer-worker:v1.2.0-rc.3
 #    depends_on:
 #      postgres:
 #        condition: service_healthy
@@ -392,7 +392,7 @@ services:
 #
 #  index-worker:
 #    container_name: index-worker
-#    image: toncenter/ton-indexer-worker:v1.2.0-rc.2
+#    image: toncenter/ton-indexer-worker:v1.2.0-rc.3
 #    depends_on:
 #      postgres:
 #        condition: service_healthy

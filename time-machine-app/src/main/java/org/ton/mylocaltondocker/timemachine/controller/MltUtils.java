@@ -708,7 +708,7 @@ public class MltUtils {
   }
 
   public static void replaceVolumeInConfig(
-      SnapshotConfig snapshotConfig, String containerName, String oldVolume, String newVolume) {
+      SnapshotConfig snapshotConfig, String containerName, String oldVolume, String newVolume, boolean updateTonDbVolume) {
     DockerContainer dockerContainer = snapshotConfig.getContainers().get(containerName);
     List<Bind> binds = new ArrayList<>();
     for (Bind bind : dockerContainer.getHostConfig().getBinds()) {
@@ -721,10 +721,14 @@ public class MltUtils {
     }
     Binds bindsT = new Binds(binds.toArray(new Bind[0]));
     dockerContainer.getHostConfig().withBinds(bindsT);
-    dockerContainer.setTonDbVolumeName(newVolume);
+    if (updateTonDbVolume) {
+      dockerContainer.setTonDbVolumeName(newVolume);
+    }
   }
 
   public static void replaceVolumesInConfig(SnapshotConfig oldConfig, SnapshotConfig newConfig) {
+
+    DockerContainer genesisDockerContainer = oldConfig.getContainers().get("genesis");
     oldConfig
         .getContainers()
         .forEach(
@@ -739,7 +743,20 @@ public class MltUtils {
                 log.info(
                     "replaceConfig {}: {} -> {}", containerName, currentVolume, backupVolumeName);
                 MltUtils.replaceVolumeInConfig(
-                    newConfig, containerName, currentVolume, backupVolumeName);
+                    newConfig, containerName, currentVolume, backupVolumeName, true);
+
+                if (containerName.equals("index-worker")) {
+                  currentVolume = genesisDockerContainer.getTonDbVolumeName();
+                  backupVolumeName =
+                          CONTAINER_VOLUME_MAP.get("genesis")
+                                  + "-snapshot-"
+                                  + newConfig.getSnapshotNumber();
+
+                  log.info(
+                          "replaceConfig one more time {}: {} -> {}", containerName, currentVolume, backupVolumeName);
+                  MltUtils.replaceVolumeInConfig(
+                          newConfig, containerName, currentVolume, backupVolumeName, false);
+                }
               }
             });
   }
