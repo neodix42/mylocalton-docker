@@ -199,7 +199,7 @@ services:
         ipv4_address: 172.28.1.25
 
 
- # ENABLE ADDITIONAL VALIDATORS
+    # ENABLE ADDITIONAL VALIDATORS
 
 #  validator-1:
 #    container_name: validator-1
@@ -211,7 +211,7 @@ services:
 #    environment:
 #      - NAME=validator-1
 #      - GENESIS_IP=172.28.1.10
-##      - VERBOSITY=3
+#      #      - VERBOSITY=3
 #      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    healthcheck:
 #      test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
@@ -223,7 +223,7 @@ services:
 #    networks:
 #      main:
 #        ipv4_address: 172.28.1.11
-
+#
 #  validator-2:
 #    container_name: validator-2
 #    image: mylocaltondocker
@@ -239,7 +239,7 @@ services:
 #    environment:
 #      - NAME=validator-2
 #      - GENESIS_IP=172.28.1.10
-##      - VERBOSITY=3
+#      #      - VERBOSITY=3
 #      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
 #    depends_on:
 #      - genesis
@@ -313,7 +313,7 @@ services:
 #      main:
 #        ipv4_address: 172.28.1.15
 
-## TON HTTP API V2
+  ## TON HTTP API V2
 
   tonhttpapi:
     container_name: ton-http-api-v2
@@ -342,7 +342,7 @@ services:
         condition: service_healthy
     command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8082 pyTON.main:app"
     healthcheck:
-      test: curl -sS http://127.0.0.1:8081${TON_API_ROOT_PATH}/healthcheck || echo 1
+      test: curl -sS http://127.0.0.1:8082${TON_API_ROOT_PATH}/healthcheck || echo 1
       interval: 30s
       timeout: 5s
       retries: 10
@@ -436,7 +436,7 @@ services:
 #      genesis:
 #        condition: service_healthy
 #    healthcheck:
-#      test: ["CMD-SHELL", "pg_isready -d ton_index -U postgres"]
+#      test: [ "CMD-SHELL", "pg_isready -d ton_index -U postgres" ]
 #      interval: 10s
 #      timeout: 5s
 #      retries: 5

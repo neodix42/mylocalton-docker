@@ -10,7 +10,7 @@ To facilitate the development process it also includes services like
 
 Installed Docker Engine or Docker desktop and docker-compose.
 
-We recommend to start with [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+We recommend to start with [Docker Desktop](https://www.docker.com/products/docker-desktop/). It includes docker-compose already.
 
 - docker-compose installation
 
@@ -25,6 +25,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 Uncomment sections in ```docker-compose.yaml``` to enable more validators and services.
 
+[Download](./docker-compose.yaml) and start the main `docker-compose.yaml` file. For Mac/Linux use the command below.
 ```bash
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
 docker-compose up -d
