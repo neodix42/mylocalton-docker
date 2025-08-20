@@ -42,6 +42,7 @@ services:
       - "40003:40003/udp" # dht-server
       - 40002:40002       # validator-console
       - "40001:40001/udp" # validator public port
+      - 8888:8888         # for embedded http-file-server
     volumes:
       - shared-data:/usr/share/data
       - ton-db-val0:/var/ton-work/db # docker persistent storage for ton db
@@ -53,6 +54,8 @@ services:
 #      - VALIDATION_PERIOD=86400 # 24h, default 20min
 #      - MASTERCHAIN_ONLY=true   # default false
 #      - VERBOSITY=3
+#      - EMBEDDED_FILE_HTTP_SERVER=true # enable file-http-server
+#      - EMBEDDED_FILE_HTTP_SERVER_PORT=8888 # default port 8888
       - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last

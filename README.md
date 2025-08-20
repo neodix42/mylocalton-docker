@@ -35,13 +35,14 @@ Now you can navigate to Time Machine by opening http://localhost:8083.
 
 By default, the following services will be available on start:
 
-| Service name        | Link                                                                                     | 
-|---------------------|------------------------------------------------------------------------------------------|
-| Time Machine        | http://127.0.0.1:8083/                                                                   | 
-| TON-HTTP-API V2     | http://127.0.0.1:8082/                                                                   | 
-| Blockchain explorer | http://127.0.0.1:8080/last                                                               |
-| File server         | http://127.0.0.1:8000/                                                                   |
-| Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
+| Service name                    | Link                                                                                    | 
+|---------------------------------|-----------------------------------------------------------------------------------------|
+| Time Machine                    | http://127.0.0.1:8083/                                                                  | 
+| TON-HTTP-API V2                 | http://127.0.0.1:8082/                                                                  | 
+| Blockchain explorer             | http://127.0.0.1:8080/last                                                              |
+| Http File Server                | http://127.0.0.1:8000/                                                                  |
+| Http File server inside genesis | http://127.0.0.1:8888/                                                                  |
+| Lite-server                     | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
 
 
 ### Containers' description and startup parameters
@@ -64,6 +65,7 @@ Edit `docker-compose.yaml` for relevant changes.
 <li><b>MASTERCHAIN_ONLY</b> - set to <b>true</b> if you want to have only masterchain, i.e. without workchains, default <b>false</b>; </li>
 <li><b>DHT_PORT</b> - set port (udp) for dht server, default port <b>40004</b>, optional.</li>
 <li><b>CUSTOM_PARAMETERS</b> - used to specify validator's command line parameters, default - empty string (no parameters),  optional. </li>
+<li><b>ENABLE_FILE_HTTP_SERVER</b> - used to enable file http server inside genesis container on port 8888, default - false,  optional. </li>
 </ul>
 You can also adjust other blockchain settings, like storage or cell creation price, initial blockchain balance and so
 on.

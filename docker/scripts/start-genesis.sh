@@ -382,6 +382,23 @@ else
   sleep 1
 fi
 
+EMBEDDED_FILE_HTTP_SERVER=${EMBEDDED_FILE_HTTP_SERVER:-"false"}
+echo EMBEDDED_FILE_HTTP_SERVER=$EMBEDDED_FILE_HTTP_SERVER
+
+EMBEDDED_FILE_HTTP_SERVER_PORT=${EMBEDDED_FILE_HTTP_SERVER_PORT:-8888}
+echo EMBEDDED_FILE_HTTP_SERVER_PORT=$EMBEDDED_FILE_HTTP_SERVER_PORT
+
+if [ "$EMBEDDED_FILE_HTTP_SERVER" == "true" ]; then
+  # start file http server
+  nohup python3 -m http.server -d /usr/share/data/ $EMBEDDED_FILE_HTTP_SERVER_PORT &
+  echo Simple HTTP server runs on:
+  echo
+  echo http://127.0.0.1:$EMBEDDED_FILE_HTTP_SERVER_PORT/
+  echo http://$INTERNAL_IP:$EMBEDDED_FILE_HTTP_SERVER_PORT/
+  echo
+  echo wget http://$INTERNAL_IP:$EMBEDDED_FILE_HTTP_SERVER_PORT/global.config.json
+fi
+
 cd /var/ton-work/db
 cp global.config.json /usr/share/data/
 cp localhost.global.config.json /usr/share/data/
