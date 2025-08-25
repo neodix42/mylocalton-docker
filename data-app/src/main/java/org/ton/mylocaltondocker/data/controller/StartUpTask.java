@@ -14,6 +14,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.ton.mylocaltondocker.data.Main;
+import org.ton.mylocaltondocker.data.db.DB;
+import org.ton.mylocaltondocker.data.db.WalletEntity;
+import org.ton.mylocaltondocker.data.db.WalletPk;
+import org.ton.mylocaltondocker.data.scenarios.*;
 import org.ton.ton4j.address.Address;
 import org.ton.ton4j.smartcontract.highload.HighloadWallet;
 import org.ton.ton4j.smartcontract.types.Destination;
@@ -21,11 +26,6 @@ import org.ton.ton4j.smartcontract.types.HighloadConfig;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.tonlib.types.*;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.Main;
-import org.ton.mylocaltondocker.data.db.DB;
-import org.ton.mylocaltondocker.data.db.WalletEntity;
-import org.ton.mylocaltondocker.data.db.WalletPk;
-import org.ton.mylocaltondocker.data.scenarios.*;
 
 @Component
 @Slf4j
@@ -52,8 +52,8 @@ public class StartUpTask {
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() {
 
-    while (!Files.exists(Paths.get("/scripts/web/global.config.json"))) {
-      System.out.println("data-app is waiting for /scripts/web/global.config.json");
+    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
+      System.out.println("data-app is waiting for /usr/share/data/global.config.json");
       Utils.sleep(5);
     }
 
@@ -66,8 +66,8 @@ public class StartUpTask {
 
       Main.tonlib =
           Tonlib.builder()
-              .pathToTonlibSharedLib("/scripts/web/libtonlibjson.so")
-              .pathToGlobalConfig("/scripts/web/global.config.json")
+              .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
+              .pathToGlobalConfig("/usr/share/data/global.config.json")
               .ignoreCache(false)
               .receiveRetryTimes(10)
               .build();

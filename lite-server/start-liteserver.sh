@@ -10,18 +10,12 @@ echo "Current INTERNAL_IP $INTERNAL_IP"
 echo "Current GENESIS_IP $GENESIS_IP"
 
 
-if [ ! -f "/var/ton-work/db/global.config.json" ]; then
-  echo "genesis is ready..."
-  sleep 10
-  echo "Getting global.config.json from genesis via http server..."
-  wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/global.config.json
-else
-#  echo "waiting 20 seconds for genesis to be ready..."
-#  sleep 20
-  echo "/var/ton-work/db/global.config.json from genesis already exists"
+if [ ! -f "/usr/share/data/global.config.json" ]; then
+  echo "/var/ton-work/db/global.config.json does not exist"
+  exit 10
 fi
 
-cd /usr/share/ton
+cp /usr/share/data/global.config.json /var/ton-work/db/global.config.json
 
 cd /var/ton-work/db
 
