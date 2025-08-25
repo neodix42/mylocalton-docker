@@ -139,6 +139,18 @@ This is a simple, but native TON blockchain explorer.
 </td>
 </tr>
 <tr>
+<td>lite-server</td>
+<td>
+<ul>
+<li><b>LITE_SERVER_PORT</b> - this port opened to lite-client for connections, default port <b>30004</b>.</li>
+<li><b>CONSOLE_PORT</b> - this port opened to validator-console, default port <b>30002</b>.</li>
+<li><b>PUBLIC_PORT</b> - used by node in this container, default port <b>30001</b>.</li>
+</ul>
+</td>
+<td>
+A non-embedded standalone lite-server.</td>
+</tr>
+<tr>
 <td>validator-N</td>
 <td>
 <ul>

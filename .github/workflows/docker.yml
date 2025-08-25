@@ -100,3 +100,15 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.7
+
+      - name: Build and push lite-server
+        id: docker_build_6
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          file: ./lite-server/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.7

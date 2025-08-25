@@ -7,7 +7,6 @@ export CONSOLE_PORT=${CONSOLE_PORT:-30002}
 LITE_PORT=${LITE_SERVER_PORT:-30004}
 
 echo "Current INTERNAL_IP $INTERNAL_IP"
-echo "Current GENESIS_IP $GENESIS_IP"
 
 
 if [ ! -f "/usr/share/data/global.config.json" ]; then
@@ -81,16 +80,20 @@ if [ ! -f "config.json" ]; then
 #  cp my-ton-global.config.json global.config.json
   rm control.new control.template
 
+  cp global.config.json /usr/share/data/lite-server.global.config.json
+
   OLDNUM=$IPNUM
   if [ "$EXTERNAL_IP" ]; then
     IP=$EXTERNAL_IP; IPNUM=0; for (( i=0 ; i<4 ; ++i )); do ((IPNUM=$IPNUM+${IP%%.*}*$((256**$((3-${i})))))); IP=${IP#*.}; done
     [ $IPNUM -gt $((2**31)) ] && IPNUM=$(($IPNUM - $((2**32))))
     cp global.config.json external.global.config.json
     sed -i "s/$OLDNUM/$IPNUM/g" external.global.config.json
+    cp external.global.config.json /usr/share/data/lite-server-external.global.config.json
   fi
 
   cp global.config.json localhost.global.config.json
   sed -i "s/$OLDNUM/2130706433/g" localhost.global.config.json
+  cp localhost.global.config.json /usr/share/data/lite-server-localhost.global.config.json
 
 fi
 
