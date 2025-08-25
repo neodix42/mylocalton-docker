@@ -1,8 +1,10 @@
 # MyLocalTon Docker
 
-MyLocalTon allows you quickly to set up and launch your own [TON blockchain](https://github.com/ton-blockchain/ton) with up to 6 validators.
+MyLocalTon allows you quickly to set up and launch your own [TON blockchain](https://github.com/ton-blockchain/ton) with
+up to 6 validators.
 To facilitate the development process it also includes services like
-[TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer), Time Machine, Faucet and Random Data Generator.
+[TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
+Time Machine, Faucet and Random Data Generator.
 
 <img alt="MyLocalTon Docker demo" src='./demo.png'>
 
@@ -10,7 +12,8 @@ To facilitate the development process it also includes services like
 
 Installed Docker Engine or Docker desktop and docker-compose.
 
-We recommend to start with [Docker Desktop](https://www.docker.com/products/docker-desktop/). It includes docker-compose already.
+We recommend to start with [Docker Desktop](https://www.docker.com/products/docker-desktop/). It includes docker-compose
+already.
 
 - docker-compose installation
 
@@ -26,6 +29,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 Uncomment sections in ```docker-compose.yaml``` to enable more validators and services.
 
 [Download](./docker-compose.yaml) and start the main `docker-compose.yaml` file. For Mac/Linux use the command below.
+
 ```bash
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
 docker-compose up -d
@@ -35,15 +39,14 @@ Now you can navigate to Time Machine by opening http://localhost:8083.
 
 By default, the following services will be available on start:
 
-| Service name                    | Link                                                                                    | 
-|---------------------------------|-----------------------------------------------------------------------------------------|
-| Time Machine                    | http://127.0.0.1:8083/                                                                  | 
-| TON-HTTP-API V2                 | http://127.0.0.1:8082/                                                                  | 
-| Blockchain explorer             | http://127.0.0.1:8080/last                                                              |
-| Http File Server                | http://127.0.0.1:8000/                                                                  |
-| Http File server inside genesis | http://127.0.0.1:8888/                                                                  |
+| Service name                    | Link                                                                                     | 
+|---------------------------------|------------------------------------------------------------------------------------------|
+| Time Machine                    | http://127.0.0.1:8083/                                                                   | 
+| TON-HTTP-API V2                 | http://127.0.0.1:8082/                                                                   | 
+| Blockchain explorer             | http://127.0.0.1:8080/last                                                               |
+| Http File Server                | http://127.0.0.1:8000/                                                                   |
+| Http File server inside genesis | http://127.0.0.1:8888/                                                                   |
 | Lite-server                     | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
-
 
 ### Containers' description and startup parameters
 
@@ -126,7 +129,9 @@ This services runs various scenarios that generate random load on a blockchain.
 <td>blockchain-explorer</td>
 <td>
 <ul>
-<li><b>SERVER_PORT</b> - used by local TON blockchain-explorer, default port <b>8080</b>, optional</li>
+<li><b>SERVER_PORT</b> - used by local TON blockchain-explorer, default port <b>8080</b>.</li>
+<li><b>FILE_SERVER_IP</b> - used by local TON blockchain-explorer to find File Server and download global config, default IP <b>172.28.1.24</b>.</li>
+<li><b>FILE_SERVER_PORT</b> - used by local TON blockchain-explorer, to specify port of File Server, default port <b>8000</b>.</li>
 </ul>
 </td>
 <td>
@@ -234,16 +239,17 @@ last state.
 
 You can also stop and start the blockchain from the Time Machine web GUI.
 
-If you want to access validators' TON working directory (`/var/ton-work/db`) or to keep database state even after rebuilding images,
+If you want to access validators' TON working directory (`/var/ton-work/db`) or to keep database state even after
+rebuilding images,
 adjust the `driver_opts` options in `volumes` section in `docker-compose.yaml` file.
 
-### Stop and remove all MyLocalTon containers, networks and volumes. 
+### Stop and remove all MyLocalTon containers, networks and volumes.
+
 All data will be lost.
 
 ```docker-compose -f docker-compose-build.yaml down -v```
 
 You can also clean up MyLocalTon from the Time Machine web GUI. Use `Clean Up` button.
-
 
 ## Pre-installed wallets
 

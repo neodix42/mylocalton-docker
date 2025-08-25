@@ -1,4 +1,7 @@
 #!/bin/bash
 
-wget -O /usr/src/global.config.json http://$GENESIS_IP:8000/global.config.json
-blockchain-explorer -C /usr/src/global.config.json -H $SERVER_PORT_VAR
+echo wget -O /usr/src/global.config.json http://$FILE_SERVER_IP:$FILE_SERVER_PORT/global.config.json
+wget -O /usr/src/global.config.json http://$FILE_SERVER_IP:$FILE_SERVER_PORT/global.config.json
+
+echo blockchain-explorer -C /usr/src/global.config.json -H $SERVER_PORT
+blockchain-explorer -C /usr/src/global.config.json -H $SERVER_PORT
