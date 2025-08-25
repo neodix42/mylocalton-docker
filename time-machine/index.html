@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>TON Time Machine</title>
+    <link href="style.css" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+<div class="background-animation">
+    <!-- Animated lines -->
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+    <div class="line"></div>
+</div>
+
+<div class="header">
+    <h1>MyLocalTon Time Machine</h1>
+    <div class="status-bar">
+        <span id="status-text">Loading blockchain state...</span>
+        <div class="loading-spinner" id="loading-spinner"></div>
+    </div>
+</div>
+
+<div class="graph-container">
+    <svg id="graph-svg"></svg>
+</div>
+
+<div class="blockchain-status-panel">
+    <div class="blockchain-status" id="blockchain-status">
+        <h3>Blockchain Status</h3>
+        <div class="stat-item">
+            <span class="stat-label">Current sync:</span>
+            <span class="stat-value" id="current-sync">Loading...</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Current Seqno:</span>
+            <span class="stat-value" id="current-seqno">Loading...</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Running nodes:</span>
+            <span class="stat-value" id="running-nodes">Loading...</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Current Snapshot:</span>
+            <span class="stat-value" id="current-snapshot-name">Loading...</span>
+        </div>
+    </div>
+</div>
+
+<div class="node-legend-panel">
+    <div class="node-legend" id="node-legend">
+        <h3>Node Legend</h3>
+        <div class="legend-item">
+            <div class="legend-icon root-icon"></div>
+            <span class="legend-text">Very first instance of the blockchain</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-icon snapshot-icon"></div>
+            <span class="legend-text">Unmodifiable blockchain snapshot. If you restore this snapshot a new instance will be created and this snapshot won't be modified</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-icon instance-icon"></div>
+            <span class="legend-text">Modifiable blockchain snapshot. If you restore this snapshot it will be updated in real-time</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-icon active-icon"></div>
+            <span class="legend-text">Currently running snapshot</span>
+        </div>
+    </div>
+</div>
+
+<div class="info-panel">
+    <!-- Administration panel with action links -->
+    <div class="administration-panel" id="administration-panel">
+        <h3>Administration</h3>
+        <div id="admin-links" class="admin-links hidden">
+            <a href="#" id="take-snapshot-link" class="admin-link primary">
+                Take Snapshot
+            </a>
+            <a href="#" id="restore-snapshot-link" class="admin-link secondary">
+                Restore Snapshot
+            </a>
+            <a href="#" id="delete-snapshot-link" class="admin-link danger">
+                Delete Snapshot
+            </a>
+            <a href="#" id="start-blockchain-link" class="admin-link success">
+                Start Blockchain
+            </a>
+            <a href="#" id="stop-blockchain-link" class="admin-link warning">
+                Stop Blockchain
+            </a>
+        </div>
+        <div id="admin-placeholder" class="admin-placeholder">
+            <p>Select a snapshot to view administration options</p>
+        </div>
+    </div>
+    
+    <div class="node-info" id="node-info">
+        <h3>Snapshot Information</h3>
+        <div id="node-details">
+            <p>Select a snapshot to view details</p>
+        </div>
+    </div>
+    
+    <div class="quick-links" id="quick-links">
+        <h3>Quick Links</h3>
+        <div class="link-item">
+            <a href="http://localhost:8080/last" target="_blank" class="quick-link">
+                <span class="link-text">Blockchain Explorer</span>
+            </a>
+            <span class="link-status" id="status-8080">checking...</span>
+        </div>
+        <div class="link-item">
+            <a href="http://localhost:8082" target="_blank" class="quick-link">
+                <span class="link-text">TON Center V2</span>
+            </a>
+            <span class="link-status" id="status-8082">checking...</span>
+        </div>
+        <div class="link-item">
+            <a href="http://localhost:8081" target="_blank" class="quick-link">
+                <span class="link-text">TON Center V3</span>
+            </a>
+            <span class="link-status" id="status-8081">checking...</span>
+        </div>
+        <div class="link-item">
+            <a href="http://localhost:88" target="_blank" class="quick-link">
+                <span class="link-text">Faucet</span>
+            </a>
+            <span class="link-status" id="status-88">checking...</span>
+        </div>
+        <div class="link-item">
+            <a href="http://localhost:99" target="_blank" class="quick-link">
+                <span class="link-text">Data Generator</span>
+            </a>
+            <span class="link-status" id="status-99">checking...</span>
+        </div>
+        <div class="link-item">
+            <a href="http://localhost:8000" target="_blank" class="quick-link">
+                <span class="link-text">File Server</span>
+            </a>
+            <span class="link-status" id="status-8000">checking...</span>
+        </div>
+    </div>
+    
+    <div class="reset-section" id="reset-section">
+        <h3>Danger Zone</h3>
+        <div class="danger-zone-links">
+            <a href="#" id="start-over-link" class="admin-link danger">
+                Start over
+            </a>
+            <a href="#" id="clean-up-link" class="admin-link danger">
+                Clean up
+            </a>
+        </div>
+    </div>
+</div>
+
+<div id="message-overlay" class="message-overlay hidden">
+    <div class="message-content">
+        <div class="message-text" id="message-text"></div>
+        <button class="message-close" id="message-close">×</button>
+    </div>
+</div>
+
+<!-- Reset Confirmation Modal -->
+<div id="reset-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Reset</h3>
+        <p>The current blockchain and all its snapshots will be deleted. On the next screen you will be able to configure settings for your new TON blockchain. Do you want to proceed?</p>
+        <div class="modal-buttons">
+            <button id="reset-confirm-no" class="modal-btn secondary">No</button>
+            <button id="reset-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Snapshot Confirmation Modal -->
+<div id="delete-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Delete</h3>
+        <p id="delete-confirmation-message">Are you sure you want to delete this snapshot?</p>
+        <div class="modal-buttons">
+            <button id="delete-confirm-no" class="modal-btn secondary">No</button>
+            <button id="delete-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Stop Blockchain Confirmation Modal -->
+<div id="stop-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Stop Blockchain</h3>
+        <p>Are you sure you want to stop the blockchain? Later you can restore from any snapshot.</p>
+        <div class="modal-buttons">
+            <button id="stop-confirm-no" class="modal-btn secondary">No</button>
+            <button id="stop-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Clean Up Confirmation Modal -->
+<div id="cleanup-confirmation-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>Confirm Clean Up</h3>
+        <p>Are you sure you want to clean up? This will stop and remove all containers and delete all volumes. This action cannot be undone.</p>
+        <div class="modal-buttons">
+            <button id="cleanup-confirm-no" class="modal-btn secondary">No</button>
+            <button id="cleanup-confirm-yes" class="modal-btn danger">Yes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Configuration Modal -->
+<div id="reset-config-modal" class="modal-overlay hidden">
+    <div class="modal-content race-car-modal">
+        <h3>Configure new TON Blockchain</h3>
+        <div class="race-car-container">
+            <!-- Race Car Background Image -->
+            <div class="race-car-bg"></div>
+            
+            <form id="reset-config-form">
+                <!-- Blockchain section - Engine area -->
+                <div class="config-section engine-section">
+                    <h4>🔧 Blockchain Engine</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="global-id">GLOBAL_ID</label>
+                            <input type="number" id="global-id" name="GLOBAL_ID" value="-217">
+                        </div>
+                        <div class="config-item">
+                            <label for="blockchain-initial-balance">BLOCKCHAIN_INITIAL_BALANCE</label>
+                            <input type="number" id="blockchain-initial-balance" name="BLOCKCHAIN_INITIAL_BALANCE" value="5000000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-0-initial-balance">VALIDATOR_0_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-0-initial-balance" name="VALIDATOR_0_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-1-initial-balance">VALIDATOR_1_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-1-initial-balance" name="VALIDATOR_1_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-2-initial-balance">VALIDATOR_2_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-2-initial-balance" name="VALIDATOR_2_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-3-initial-balance">VALIDATOR_3_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-3-initial-balance" name="VALIDATOR_3_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-4-initial-balance">VALIDATOR_4_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-4-initial-balance" name="VALIDATOR_4_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="validator-5-initial-balance">VALIDATOR_5_INITIAL_BALANCE</label>
+                            <input type="number" id="validator-5-initial-balance" name="VALIDATOR_5_INITIAL_BALANCE" value="500000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-validators">MAX_VALIDATORS</label>
+                            <input type="number" id="max-validators" name="MAX_VALIDATORS" value="1000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-main-validators">MAX_MAIN_VALIDATORS</label>
+                            <input type="number" id="max-main-validators" name="MAX_MAIN_VALIDATORS" value="100">
+                        </div>
+                        <div class="config-item">
+                            <label for="min-validators">MIN_VALIDATORS</label>
+                            <input type="number" id="min-validators" name="MIN_VALIDATORS" value="1">
+                        </div>
+                        <div class="config-item">
+                            <label for="version-capabilities">VERSION_CAPABILITIES</label>
+                            <input type="number" id="version-capabilities" name="VERSION_CAPABILITIES" value="11">
+                        </div>
+                        <div class="config-item">
+                            <label for="actual-min-split">ACTUAL_MIN_SPLIT</label>
+                            <input type="number" id="actual-min-split" name="ACTUAL_MIN_SPLIT" value="0">
+                        </div>
+                        <div class="config-item">
+                            <label for="min-split">MIN_SPLIT</label>
+                            <input type="number" id="min-split" name="MIN_SPLIT" value="0">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-split">MAX_SPLIT</label>
+                            <input type="number" id="max-split" name="MAX_SPLIT" value="4">
+                        </div>
+                        <div class="config-item">
+                            <label for="masterchain-only">MASTERCHAIN_ONLY</label>
+                            <select id="masterchain-only" name="MASTERCHAIN_ONLY">
+                                <option value="false">false</option>
+                                <option value="true">true</option>
+                            </select>
+                        </div>
+                        <div class="config-item">
+                            <label for="next-block-generation-delay">NEXT_BLOCK_GENERATION_DELAY</label>
+                            <input type="number" id="next-block-generation-delay" name="NEXT_BLOCK_GENERATION_DELAY" value="2">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Elections section - Driver area -->
+                <div class="config-section driver-section">
+                    <h4>🏁 Elections Control</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="min-stake">MIN_STAKE</label>
+                            <input type="number" id="min-stake" name="MIN_STAKE" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-stake">MAX_STAKE</label>
+                            <input type="number" id="max-stake" name="MAX_STAKE" value="1000000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="max-factor">MAX_FACTOR</label>
+                            <input type="number" id="max-factor" name="MAX_FACTOR" value="10">
+                        </div>
+                        <div class="config-item">
+                            <label for="min-total-stake">MIN_TOTAL_STAKE</label>
+                            <input type="number" id="min-total-stake" name="MIN_TOTAL_STAKE" value="10000">
+                        </div>
+                        <div class="config-item">
+                            <label for="election-start-before">ELECTION_START_BEFORE</label>
+                            <input type="number" id="election-start-before" name="ELECTION_START_BEFORE" value="900">
+                        </div>
+                        <div class="config-item">
+                            <label for="election-end-before">ELECTION_END_BEFORE</label>
+                            <input type="number" id="election-end-before" name="ELECTION_END_BEFORE" value="300">
+                        </div>
+                        <div class="config-item">
+                            <label for="election-stake-frozen">ELECTION_STAKE_FROZEN</label>
+                            <input type="number" id="election-stake-frozen" name="ELECTION_STAKE_FROZEN" value="180">
+                        </div>
+                        <div class="config-item">
+                            <label for="validation-period">VALIDATION_PERIOD</label>
+                            <input type="number" id="validation-period" name="VALIDATION_PERIOD" value="1200">
+                        </div>
+                        <div class="config-item">
+                            <label for="original-validator-set-valid-for">ORIGINAL_VALIDATOR_SET_VALID_FOR</label>
+                            <input type="number" id="original-validator-set-valid-for" name="ORIGINAL_VALIDATOR_SET_VALID_FOR" value="120">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Storage section - Trunk area -->
+                <div class="config-section trunk-section">
+                    <h4>🧳 Storage Trunk</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="bit-price-per-second-mc">BIT_PRICE_PER_SECOND_MC</label>
+                            <input type="number" id="bit-price-per-second-mc" name="BIT_PRICE_PER_SECOND_MC" value="1000">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price-per-second-mc">CELL_PRICE_PER_SECOND_MC</label>
+                            <input type="number" id="cell-price-per-second-mc" name="CELL_PRICE_PER_SECOND_MC" value="500000">
+                        </div>
+                        <div class="config-item">
+                            <label for="bit-price-per-second">BIT_PRICE_PER_SECOND</label>
+                            <input type="number" id="bit-price-per-second" name="BIT_PRICE_PER_SECOND" value="1">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price-per-second">CELL_PRICE_PER_SECOND</label>
+                            <input type="number" id="cell-price-per-second" name="CELL_PRICE_PER_SECOND" value="500">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price-mc">CELL_PRICE_MC</label>
+                            <input type="number" id="cell-price-mc" name="CELL_PRICE_MC" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="gas-price-mc">GAS_PRICE_MC</label>
+                            <input type="number" id="gas-price-mc" name="GAS_PRICE_MC" value="10000">
+                        </div>
+                        <div class="config-item">
+                            <label for="cell-price">CELL_PRICE</label>
+                            <input type="number" id="cell-price" name="CELL_PRICE" value="100000">
+                        </div>
+                        <div class="config-item">
+                            <label for="gas-price">GAS_PRICE</label>
+                            <input type="number" id="gas-price" name="GAS_PRICE" value="1000">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Faucets section - Fuel area -->
+                <div class="config-section fuel-section">
+                    <h4>⛽ Fuel Faucets</h4>
+                    <div class="config-grid compact">
+                        <div class="config-item">
+                            <label for="simple-faucet-initial-balance">SIMPLE_FAUCET_INITIAL_BALANCE</label>
+                            <input type="number" id="simple-faucet-initial-balance" name="SIMPLE_FAUCET_INITIAL_BALANCE" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="highload-faucet-initial-balance">HIGHLOAD_FAUCET_INITIAL_BALANCE</label>
+                            <input type="number" id="highload-faucet-initial-balance" name="HIGHLOAD_FAUCET_INITIAL_BALANCE" value="1000000">
+                        </div>
+                        <div class="config-item">
+                            <label for="data-faucet-initial-balance">DATA_FAUCET_INITIAL_BALANCE</label>
+                            <input type="number" id="data-faucet-initial-balance" name="DATA_FAUCET_INITIAL_BALANCE" value="1000000">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-buttons">
+                    <button type="button" id="reset-config-cancel" class="modal-btn secondary">🚫 Cancel</button>
+                    <button type="submit" id="reset-config-proceed" class="modal-btn primary">🏁 Start Your Engine!</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

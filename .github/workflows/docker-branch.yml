@@ -23,10 +23,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Setup Java 19
+      - name: Setup Java 21
         uses: actions/setup-java@v2
         with:
-          java-version: '19'
+          java-version: '21'
           distribution: 'adopt'
 
       - name: Login to GitHub Container Registry
@@ -40,8 +40,8 @@ jobs:
         run: |
           mvn clean compile package -DskipTests
 
-      - name: Get tag-1 as branch name
-        id: tag1
+      - name: Get tag as branch name
+        id: tag
         run: |
           echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
@@ -54,12 +54,7 @@ jobs:
           context: ./
           file: ./Dockerfile
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag1.outputs.TAG }}
-
-      - name: Get tag-2 as branch name
-        id: tag2
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}
 
       - name: Build and push faucet
         id: docker_build_2
@@ -69,49 +64,34 @@ jobs:
           push: true
           context: ./
           file: ./faucet/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:${{ steps.tag2.outputs.TAG }}
-
-      - name: Get tag-4 as branch name
-        id: tag4
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:${{ steps.tag.outputs.TAG }}
 
       - name: Build and push data
-        id: docker_build_4
-        uses: docker/build-push-action@v6
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          context: ./
-          file: ./data/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:${{ steps.tag4.outputs.TAG }}
-
-      - name: Get tag-3 as branch name
-        id: tag3
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
-
-      - name: Build and push blockchain-explorer
         id: docker_build_3
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
+          file: ./data/Dockerfile
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:${{ steps.tag.outputs.TAG }}
+
+      - name: Build and push blockchain-explorer
+        id: docker_build_4
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
           file: ./explorer/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:${{ steps.tag3.outputs.TAG }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:${{ steps.tag.outputs.TAG }}
 
-      - name: Get tag-5 as branch name
-        id: tag5
-        run: |
-          echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
-
-      - name: Build and push lite-server
+      - name: Build and push time-machine
         id: docker_build_5
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
-          file: ./lite-server/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-liteserver:${{ steps.tag3.outputs.TAG }}
+          file: ./time-machine/Dockerfile
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:${{ steps.tag.outputs.TAG }}

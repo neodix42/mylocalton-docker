@@ -170,13 +170,25 @@ else
   echo VALIDATOR_5_INITIAL_BALANCE=$VALIDATOR_5_INITIAL_BALANCE
   sed -i "s/VALIDATOR_5_INITIAL_BALANCE/$VALIDATOR_5_INITIAL_BALANCE/g" gen-zerostate.fif
 
-  VERSION_CAPABILITIES=${VERSION_CAPABILITIES:-7}
+  VERSION_CAPABILITIES=${VERSION_CAPABILITIES:-11}
   echo VERSION_CAPABILITIES=$VERSION_CAPABILITIES
   sed -i "s/VERSION_CAPABILITIES/$VERSION_CAPABILITIES/g" gen-zerostate.fif
 
   VALIDATION_PERIOD=${VALIDATION_PERIOD:-1200}
   echo VALIDATION_PERIOD=$VALIDATION_PERIOD
   sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
+
+  ACTUAL_MIN_SPLIT=${ACTUAL_MIN_SPLIT:-0}
+  echo ACTUAL_MIN_SPLIT=$ACTUAL_MIN_SPLIT
+  sed -i "s/ACTUAL_MIN_SPLIT/$ACTUAL_MIN_SPLIT/g" gen-zerostate.fif
+
+  MIN_SPLIT=${MIN_SPLIT:-0}
+  echo MIN_SPLIT=$MIN_SPLIT
+  sed -i "s/MIN_SPLIT/$MIN_SPLIT/g" gen-zerostate.fif
+
+  MAX_SPLIT=${MAX_SPLIT:-4}
+  echo MAX_SPLIT=$MAX_SPLIT
+  sed -i "s/MAX_SPLIT/$MAX_SPLIT/g" gen-zerostate.fif
 
   MASTERCHAIN_ONLY=${MASTERCHAIN_ONLY:-"false"}
   echo MASTERCHAIN_ONLY=$MASTERCHAIN_ONLY
@@ -233,9 +245,9 @@ else
     /usr/share/data
   chmod 744 /usr/share/data/*
 
-  echo "Make available for reap and participate"
-  cp validator.pk validator.addr /usr/share/ton
-  chmod 744 /usr/share/ton/*
+#  echo "Make available for reap and participate"
+#  cp validator.pk validator.addr /usr/share/ton
+#  chmod 744 /usr/share/ton/*
 
 
   cd /var/ton-work/db
@@ -372,29 +384,33 @@ else
   sleep 1
 fi
 
+EMBEDDED_FILE_HTTP_SERVER=${EMBEDDED_FILE_HTTP_SERVER:-"false"}
+echo EMBEDDED_FILE_HTTP_SERVER=$EMBEDDED_FILE_HTTP_SERVER
+
+EMBEDDED_FILE_HTTP_SERVER_PORT=${EMBEDDED_FILE_HTTP_SERVER_PORT:-8888}
+echo EMBEDDED_FILE_HTTP_SERVER_PORT=$EMBEDDED_FILE_HTTP_SERVER_PORT
+
+if [ "$EMBEDDED_FILE_HTTP_SERVER" == "true" ]; then
+  # start file http server
+  nohup python3 -m http.server -d /usr/share/data/ $EMBEDDED_FILE_HTTP_SERVER_PORT &
+  echo Simple HTTP server runs on:
+  echo
+  echo http://127.0.0.1:$EMBEDDED_FILE_HTTP_SERVER_PORT/
+  echo http://$INTERNAL_IP:$EMBEDDED_FILE_HTTP_SERVER_PORT/
+  echo
+  echo wget http://$INTERNAL_IP:$EMBEDDED_FILE_HTTP_SERVER_PORT/global.config.json
+fi
+
 cd /var/ton-work/db
 cp global.config.json /usr/share/data/
 cp localhost.global.config.json /usr/share/data/
+cp config.json /usr/share/data/
 
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$INTERNAL_IP:$DHT_PORT"&
 echo DHT server started at $INTERNAL_IP:$DHT_PORT
 echo
 echo Lite server started at $INTERNAL_IP:$LITE_PORT
 echo
-
-ENABLE_FILE_HTTP_SERVER=${ENABLE_FILE_HTTP_SERVER:-"true"}
-echo ENABLE_FILE_HTTP_SERVER=$ENABLE_FILE_HTTP_SERVER
-
-if [ "$ENABLE_FILE_HTTP_SERVER" == "true" ]; then
-  # start file http server
-  nohup python3 -m http.server&
-  echo Simple HTTP server runs on:
-  echo
-  echo http://127.0.0.1:8000/
-  echo http://$INTERNAL_IP:8000/
-  echo
-  echo wget http://$INTERNAL_IP:8000/global.config.json
-fi
 
 if [ ! "$VERBOSITY" ]; then
   VERBOSITY=1
@@ -408,6 +424,6 @@ fi
 
 echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
 echo validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --daemonize --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
 
 

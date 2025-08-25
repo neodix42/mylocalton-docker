@@ -1,6 +1,9 @@
 #!/bin/bash
 
 echo starting cron
+
+printenv > /etc/container_env
+
 service cron start &
 
 GENESIS=${GENESIS:-"false"}
