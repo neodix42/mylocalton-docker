@@ -37,7 +37,7 @@ docker-compose up -d
 
 Now you can navigate to Time Machine by opening http://localhost:8083.
 
-By default, the following services will be available on start:
+By default, the following services will be available on start (optional services are starred):
 
 | Service name                    | Link                                                                                     | 
 |---------------------------------|------------------------------------------------------------------------------------------|
@@ -47,10 +47,28 @@ By default, the following services will be available on start:
 | Http File Server                | http://127.0.0.1:8000/                                                                   |
 | Http File server inside genesis | http://127.0.0.1:8888/                                                                   |
 | Lite-server                     | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
+| (*) Faucet                      | http://127.0.0.1:88                                                                      |
+| (*) Data generation             | http://127.0.0.1:99/                                                                     |
+| (*) Indexer API v3              | http://127.0.0.1:8081/                                                                   |
+
+### Deploying optional services
+
+To deploy optional services, you may use Compose profiles
+```
+docker compose --profile indexer --profile data --profile faucet up -d
+```
+or change `COMPOSE_PROFILES` variable in `.env` file.
+
+Available profiles:
+ - `faucet`: deploys faucet service to get coins to some special address
+ - `data`: generates some activity with TON, Jettons and NFTs
+ - `validators-<N>`: launches N validators in addition to genesis node, for example `validators-2` enables 2 additional validators.
+ - `indexer`: deploys TON Center API v3
+ - `indexer-minimal`: deploys API v3 without a trace classifier
 
 ### Containers' description and startup parameters
 
-Edit `docker-compose.yaml` for relevant changes.
+Adjust parameters in `.env` file or edit `docker-compose.yaml` for relevant changes.
 
 <table>
 <tbody>

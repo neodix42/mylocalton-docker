@@ -1,5 +1,10 @@
+/data-app/target/
+/faucet-app/target/
+/time-machine-app/target/
+/target/
 /local-build
 /private
 /state
 Dockerfile.local
 .idea
+.vscode
