@@ -1,77 +1,36 @@
 #!/bin/bash
 # next to this script you should have ton-private-testnet.config.json.template, example.config.json, control.template and gen-zerostate.fif
 
-get_preferred_ip() {
-  for ip in $(hostname -I); do
-    if [[ $ip == 172.28.* ]]; then
-      echo "$ip"
-      return
-    fi
-  done
-  # Fallback to the first IP if no 172.28.* IP found
-  echo "$(hostname -I | awk '{print $1}')"
-}
-
-INTERNAL_IP=$(get_preferred_ip)
+INTERNAL_IP=$(hostname -I | tr -d " ")
 export PUBLIC_PORT=${PUBLIC_PORT:-40001}
 export CONSOLE_PORT=${CONSOLE_PORT:-40002}
 LITE_PORT=${LITE_PORT:-40004}
 
 echo "Current INTERNAL_IP $INTERNAL_IP"
-echo "Current GENESIS_IP $GENESIS_IP"
-echo "Current EXTERNAL_IP $EXTERNAL_IP"
 
-if [ "$EXTERNAL_IP" ]; then
-  INTERNAL_IP=$EXTERNAL_IP
-fi
-
-echo "Current INTERNAL_IP $INTERNAL_IP"
-echo "Current GENESIS_IP $GENESIS_IP"
-echo "Current EXTERNAL_IP $EXTERNAL_IP"
 
 if [ ! -f "/var/ton-work/db/global.config.json" ]; then
   echo "waiting 90 seconds for genesis to be ready very first time..."
   sleep 90
-  if [ "$EXTERNAL_IP" ]; then
-    echo "Getting external.global.config.json from genesis $GENESIS_IP via http server..."
-    wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/external.global.config.json
-    test $? -eq 0 || { echo "Can't download http://$GENESIS_IP:8000/external.global.config.json "; exit 14; }
-  elif [ "$GENESIS_IP" ]; then
-    echo "Getting global.config.json from genesis $GENESIS_IP via http server..."
-    wget -O /var/ton-work/db/global.config.json http://$GENESIS_IP:8000/global.config.json
-    test $? -eq 0 || { echo "Can't download http://$GENESIS_IP:8000/global.config.json "; exit 14; }
-  else
-    echo "Neither EXTERNAL_IP nor GENESIS_IP specified."
-    exit 11
-  fi
+  echo "Getting global.config.json from genesis via shared volume..."
+  cp /usr/share/data/global.config.json /var/ton-work/db
 else
 #  echo "waiting 20 seconds for genesis to be ready..."
 #  sleep 20
   echo "/var/ton-work/db/global.config.json from genesis already exists"
 fi
 
-cd /usr/share/ton
+echo "NAME=$NAME"
 
-if [ ! -f "validator.pk" ]; then
-  echo "copying validator.pk from genesis /usr/share/data to $NAME..."
-  if [ "$NAME" = "validator-1" ]; then
-    wget -O validator.pk http://$GENESIS_IP:8000/validator-1.pk
-    wget -O validator.addr http://$GENESIS_IP:8000/validator-1.addr
-  elif [ "$NAME" = "validator-2" ]; then
-    wget -O validator.pk http://$GENESIS_IP:8000/validator-2.pk
-    wget -O validator.addr http://$GENESIS_IP:8000/validator-2.addr
-  elif [ "$NAME" = "validator-3" ]; then
-    wget -O validator.pk http://$GENESIS_IP:8000/validator-3.pk
-    wget -O validator.addr http://$GENESIS_IP:8000/validator-3.addr
-  elif [ "$NAME" = "validator-4" ]; then
-    wget -O validator.pk http://$GENESIS_IP:8000/validator-4.pk
-    wget -O validator.addr http://$GENESIS_IP:8000/validator-4.addr
-  elif [ "$NAME" = "validator-5" ]; then
-    wget -O validator.pk http://$GENESIS_IP:8000/validator-5.pk
-    wget -O validator.addr http://$GENESIS_IP:8000/validator-5.addr
-  fi
+if [ "$NAME" = "genesis" ]; then
+    NAME="validator"
+fi
+
+if [ ! -f "/usr/share/ton/smartcont/$NAME.pk" ]; then
+  echo "/usr/share/ton/smartcont/$NAME.pk is missing!"
+  exit 12
 else
-  echo "validator.pk already received/copied."
+  echo "/usr/share/ton/smartcont/$NAME.pk exists!"
 fi
 
 cd /var/ton-work/db
@@ -102,7 +61,6 @@ if [ ! -f "config.json" ]; then
   sed -e "s~\"control\"\ \:\ \[~$(printf "%q" $(cat control.new))~g" config.json > config.json.new
   mv config.json.new config.json
 
-
   # install lite-server
   #
   read -r LITESERVER_ID1 LITESERVER_ID2 <<< $(generate-random-id -m keys -n liteserver)
@@ -115,10 +73,10 @@ if [ ! -f "config.json" ]; then
 
 fi
 
-echo "NODE IP           $INTERNAL_IP"
-echo "NODE_PORT         $PUBLIC_PORT"
-echo "VALIDATOR_CONSOLE $CONSOLE_PORT"
-echo "LITESERVER_PORT   $LITE_PORT"
+echo NODE IP           $INTERNAL_IP
+echo NODE_PORT         $PUBLIC_PORT
+echo VALIDATOR_CONSOLE $CONSOLE_PORT
+echo LITESERVER_PORT   $LITE_PORT
 echo
 
 if [ ! "$VERBOSITY" ]; then

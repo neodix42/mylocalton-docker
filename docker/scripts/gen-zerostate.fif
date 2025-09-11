@@ -22,7 +22,7 @@ Bhashu dup =: basestate0_fhash
 hashu dup =: basestate0_rhash
 ."root hash=" dup 64x. space 256 u>B dup B>base64url type cr
 "basestate0.rhash" B>file
-basestate0_rhash basestate0_fhash now 0 1 32 0 add-std-workchain
+basestate0_rhash basestate0_fhash now ACTUAL_MIN_SPLIT MIN_SPLIT MAX_SPLIT 0 add-std-workchain
 MASTERCHAIN_ONLY
 
 // SmartContract #1 (Simple wallet)
@@ -323,7 +323,7 @@ now dup orig_vset_valid_for + 0 config.validators!
  * SmartContract #5 (Configuration smart contract)
  *
  */
-"auto/config-code.fif" include   // code in separate source file
+"auto/CONFIG_CODE_FIF" include   // code in separate source file
 <b configdict ref,  // initial configuration
    0 32 u,          // seqno
    "config-master.pk" load-generate-keypair drop

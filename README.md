@@ -1,41 +1,54 @@
-# MyLocalTon Docker image
+# MyLocalTon Docker
 
-Allows quickly to set up own [TON blockchain](https://github.com/ton-blockchain/ton) with up to 6 validators,
-running [TON-HTTP-API](https://github.com/toncenter/ton-http-api) and lite-server.
+MyLocalTon allows you quickly to set up and launch your own [TON blockchain](https://github.com/ton-blockchain/ton) with
+up to 6 validators.
+To facilitate the development process it also includes services like
+[TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
+Time Machine, Faucet and Random Data Generator.
+
+<img alt="MyLocalTon Docker demo" src='./demo.png'>
 
 ## Prerequisites
 
 Installed Docker Engine or Docker desktop and docker-compose.
 
-- For Ubuntu:
-    - quick Docker installation
-
-``` bash
-curl -fsSL https://get.docker.com -o /tmp/get-docker.sh && sh /tmp/get-docker.sh
-```
+We recommend to start with [Docker Desktop](https://www.docker.com/products/docker-desktop/). It includes docker-compose
+already.
 
 - docker-compose installation
 
 ``` bash
-curl -L "https://github.com/docker/compose/releases/download/v2.6.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-chmod +x /usr/local/bin/docker-compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.6.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
 ```
-
-For MacOS and Windows: install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ## Usage
 
 ### Quick start
 
-By default, only one genesis validator will be started. Uncomment sections in ```docker-compose.yaml``` for more
-validators and services.
+Uncomment sections in ```docker-compose.yaml``` to enable more validators and services.
+
+[Download](./docker-compose.yaml) and start the main `docker-compose.yaml` file. For Mac/Linux use the command below.
 
 ```bash
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
 docker-compose up -d
 ```
 
-### Containers' startup parameters
+Now you can navigate to Time Machine by opening http://localhost:8083.
+
+By default, the following services will be available on start:
+
+| Service name                    | Link                                                                                     | 
+|---------------------------------|------------------------------------------------------------------------------------------|
+| Time Machine                    | http://127.0.0.1:8083/                                                                   | 
+| TON-HTTP-API V2                 | http://127.0.0.1:8082/                                                                   | 
+| Blockchain explorer             | http://127.0.0.1:8080/last                                                               |
+| Http File Server                | http://127.0.0.1:8000/                                                                   |
+| Http File server inside genesis | http://127.0.0.1:8888/                                                                   |
+| Lite-server                     | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
+
+### Containers' description and startup parameters
 
 Edit `docker-compose.yaml` for relevant changes.
 
@@ -44,6 +57,7 @@ Edit `docker-compose.yaml` for relevant changes.
 <tr>
 <th>Container</th>
 <th>Parameters</th>
+<th>Description</th>
 </tr>
 <tr>
 <td>genesis</td>
@@ -52,15 +66,33 @@ Edit `docker-compose.yaml` for relevant changes.
 <li><b>NEXT_BLOCK_GENERATION_DELAY</b> - used to set blocks generation rate per second. Default value 2 (seconds), that means 1  block in 2 seconds. Can also be set to less than a second, e.g. 0.5; </li>
 <li><b>VALIDATION_PERIOD</b> - set validation period in seconds, default <b>1200 (20 min)</b>; </li>
 <li><b>MASTERCHAIN_ONLY</b> - set to <b>true</b> if you want to have only masterchain, i.e. without workchains, default <b>false</b>; </li>
-<li><b>HIDE_PRIVATE_KEYS</b> - set to <b>true</b> if you don't want to have predefined private keys for validators and faucets, and don't want to expose them via http-server;</li>
 <li><b>DHT_PORT</b> - set port (udp) for dht server, default port <b>40004</b>, optional.</li>
 <li><b>CUSTOM_PARAMETERS</b> - used to specify validator's command line parameters, default - empty string (no parameters),  optional. </li>
+<li><b>ENABLE_FILE_HTTP_SERVER</b> - used to enable file http server inside genesis container on port 8888, default - false,  optional. </li>
 </ul>
 You can also adjust other blockchain settings, like storage or cell creation price, initial blockchain balance and so
 on.
 
 The whole list of supported parameters can be
 found <a href="https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters">here</a>.
+</td>
+<td>
+This is the very first and default validator of initial TON blockchain. 
+It creates the so-called zero state with specified parameters.
+The default parameters for this local TON blockchain are the same as in the Mainnet.
+</td>
+</tr>
+<tr>
+<td>time-machine</td>
+<td>
+<ul>
+<li><b>SERVER_PORT</b> - used by time machine service, default port <b>8083</b>, optional;</li>
+</ul>
+</td>
+<td>
+This is the face of MyLocalTon Docker. 
+Here you can take the snapshots of your TON blockchain and navigate between them as you like,
+or you can use it simply to stop and start the blockchain, as well as to customize and start it from scratch. 
 </td>
 </tr>
 <tr>
@@ -75,25 +107,48 @@ found <a href="https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-
 <li><b>SERVER_PORT</b> - used by local http-server that runs faucet service, default port <b>88</b>, optional.</li>
 </ul>
 </td>
+<td>
+This services allows users to get test toncoins. 
+</td>
 </tr>
 <tr>
 <td>data</td>
 <td>
 <ul>
-<li><b>SERVER_PORT</b> - used by local http-server that runs data service, default port <b>99</b>, optional;</li>
+<li><b>SERVER_PORT</b> - used by data generation service, default port <b>99</b>, optional;</li>
 <li><b>PERIOD</b> - period in minutes on how often to run all scenarios.</li>
 </ul>
 More details
-  on <a href="https://github.com/neodix42/mylocalton-docker/wiki/Data-(traffic-generation)-container)">wiki</a>
+  on <a href="https://github.com/neodix42/mylocalton-docker/wiki/Data-(traffic-generation)-container)">wiki</a>.
+</td>
+<td>
+This services runs various scenarios that generate random load on a blockchain.
 </td>
 </tr>
 <tr>
 <td>blockchain-explorer</td>
 <td>
 <ul>
-<li><b>SERVER_PORT</b> - used by local TON blockchain-explorer, default port <b>8080</b>, optional</li>
+<li><b>SERVER_PORT</b> - used by local TON blockchain-explorer, default port <b>8080</b>.</li>
+<li><b>FILE_SERVER_IP</b> - used by local TON blockchain-explorer to find File Server and download global config, default IP <b>172.28.1.24</b>.</li>
+<li><b>FILE_SERVER_PORT</b> - used by local TON blockchain-explorer, to specify port of File Server, default port <b>8000</b>.</li>
 </ul>
 </td>
+<td>
+This is a simple, but native TON blockchain explorer.
+</td>
+</tr>
+<tr>
+<td>lite-server</td>
+<td>
+<ul>
+<li><b>LITE_SERVER_PORT</b> - this port opened to lite-client for connections, default port <b>30004</b>.</li>
+<li><b>CONSOLE_PORT</b> - this port opened to validator-console, default port <b>30002</b>.</li>
+<li><b>PUBLIC_PORT</b> - used by node in this container, default port <b>30001</b>.</li>
+</ul>
+</td>
+<td>
+A non-embedded standalone lite-server.</td>
 </tr>
 <tr>
 <td>validator-N</td>
@@ -106,29 +161,42 @@ More details
 <li><b>LITE_PORT</b> - set port for lite-server, default port <b>40004</b>, optional.</li>
 </ul>
 </td>
+<td>
+These set of containers used to add more validators to the blockchain.
+Uncomment sections in the docker-compose.yaml to enable some of them.
+The maximum number of validators that can be added is 5.
+</td>
 </tr>
 <tr>
 <td>ton-http-api v2</td>
 <td>
-By default TON HTTP API runs on port <b>8081.</b>
+By default TON HTTP API runs on port <b>8082.</b>
 <ul>
 <li><b>TON_API_GET_METHODS_ENABLED</b> - default value 1;</li>
 <li><b>TON_API_JSON_RPC_ENABLED</b> - default value 1.</li>
 </ul>
 </td>
+<td>
+This is a <a href="https://github.com/toncenter/ton-http-api">TonCenter TON HTTP API</a> service provided by the TON Core team.
+In the Mainnet it is accessible via <a href="https://toncenter.com/api/v2/">https://toncenter.com/api/v2/</a>
+</td>
 </tr>
 <tr>
 <td>ton-http-api v3, index-worker, index-postgres, index-api, event-classifier</td>
 <td>
-By default TON indexer V3 runs on port <b>8082</b>.
+By default TON indexer V3 runs on port <b>8081</b>.
 
 These containers share below environment variables:
 <ul>
 <li><b>POSTGRES_PORT</b> - default value <b>5432</b>;</li>
-<li><b>POSTGRES_USER</b> - default value <b>1</b>;</li>
-<li><b>POSTGRES_PASSWORD</b> - default value <b>1</b>.</li>
+<li><b>POSTGRES_USER</b> - default value <b>postgres</b>;</li>
+<li><b>POSTGRES_PASSWORD</b> - default value <b>PostgreSQL1234</b>.</li>
 </ul>
 See the whole list inside <b>docker-compose.yaml</b> file.
+</td>
+<td>
+This is a <a href="https://github.com/toncenter/ton-indexer">TonCenter TON Indexer V3</a> service provided by the TON Core team.
+In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.html">https://toncenter.com/api/v3/index.html</a>
 </td>
 </tr>
 </tbody>
@@ -136,22 +204,25 @@ See the whole list inside <b>docker-compose.yaml</b> file.
 
 ### Build from sources
 
-Clone this repo, build Java projects and execute:
-
-`docker-compose -f docker-compose-build.yaml up -d`
+```shell
+git clone https://github.com/neodix42/mylocalton-docker.git
+cd mylocalton-docker
+mvn clean install
+docker-compose -f docker-compose-build.yaml up -d
+```
 
 ### Access services
 
-| Service name         | Link                                                                                     | 
-|----------------------|------------------------------------------------------------------------------------------|
-| TON-HTTP-API V2      | http://127.0.0.1:8081/                                                                   | 
-| TON-HTTP-API V3      | http://127.0.0.1:8082/                                                                   |
-| Blockchain explorer  | http://127.0.0.1:8080/last                                                               |
-| Faucet               | http://127.0.0.1:88                                                                      |
-| Traffic generation   | http://127.0.0.1:99/                                                                     |
-| Simple HTTP server   | http://127.0.0.1:8000/                                                                   |                                                              |
-| Lite-server          | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
-| Lite-server separate | `lite-client -a <node-ip>:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -c last` |
+| Service name        | Link                                                                                     | 
+|---------------------|------------------------------------------------------------------------------------------|
+| Time Machine        | http://127.0.0.1:8083/                                                                   | 
+| TON-HTTP-API V2     | http://127.0.0.1:8082/                                                                   | 
+| TON-HTTP-API V3     | http://127.0.0.1:8081/                                                                   |
+| Blockchain explorer | http://127.0.0.1:8080/last                                                               |
+| Faucet              | http://127.0.0.1:88                                                                      |
+| Traffic generation  | http://127.0.0.1:99/                                                                     |
+| HTTP file server    | http://127.0.0.1:8000/                                                                   |
+| Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
 
 Global network configuration file available at:
 
@@ -175,17 +246,28 @@ last, getstats, config32, config34, config36, elid, participants
 
 ```docker-compose down```
 
-the state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the
+The state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the
 last state.
 
-If you want to access TON working directory and/or to keep database state even after rebuilding images, uncomment and
-adjust the volume section for `ton-db` in main yaml file.
+You can also stop and start the blockchain from the Time Machine web GUI.
 
-### Reset network and remove all data:
+If you want to access validators' TON working directory (`/var/ton-work/db`) or to keep database state even after
+rebuilding images,
+adjust the `driver_opts` options in `volumes` section in `docker-compose.yaml` file.
 
-```docker-compose down -v --rmi all```
+### Stop and remove all MyLocalTon containers, networks and volumes.
+
+All data will be lost.
+
+```docker-compose -f docker-compose-build.yaml down -v```
+
+You can also clean up MyLocalTon from the Time Machine web GUI. Use `Clean Up` button.
 
 ## Pre-installed wallets
+
+To speed up your development process, we created set of predefined wallets.
+
+These wallets will be always available in the blockchain and you can use them in your SDK.
 
 | Wallet Name                                 | Wallet                                                                                                                                                                                                                                            | Mnemonic                                                                                                                                                                   |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|  
@@ -203,6 +285,7 @@ adjust the volume section for `ton-db` in main yaml file.
 
 ## Features
 
+* A web GUI interface for snapshots' management and blockchain administration;
 * Flexible blockchain startup
   parametrization ([more info](https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters));
 * Validation
@@ -216,8 +299,6 @@ adjust the volume section for `ton-db` in main yaml file.
     * predefined validators' wallet addresses (`V3R2`, subWalletId = `42`)
 * Predefined lite-server
     * `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last`
-* Predefined lite-server (standalone, used when containers deployed on a different servers)
-    * `lite-client -a <node-ip>:30004 -b Wha42OjSNvDaHOjhZhUZu0zW/+wu/+PaltND/a0FbuI= -c last`
 * Faucet web server with reCaptcha V2 functionality
     * uncomment section in `docker-compose.yaml` to enable;
     * specify RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET reCaptcha parameters;
@@ -229,32 +310,30 @@ adjust the volume section for `ton-db` in main yaml file.
 * cross-platform (arm64/amd64)
 * tested on Ubuntu, Windows and MacOS
 
-## Development using TON third party libraries
+## Development using TON third party SDK
 
-### Using W3R2 faucet with help of ton4j - https://github.com/neodiX42/ton4j
+### Exaple of using predefined Faucet wallet with a help of [ton4j](https://github.com/neodiX42/ton4j)
 
 <!-- @formatter:off -->
 
 ```java
 Tonlib tonlib =
     Tonlib.builder()
-            .pathToTonlibSharedLib(Utils.getTonlibGithubUrl())
-            .pathToGlobalConfig("http://127.0.0.1:8000/localhost.global.config.json")
-            .ignoreCache(false)
-            .build();
+        .pathToTonlibSharedLib(Utils.getTonlibGithubUrl())
+        .pathToGlobalConfig("http://127.0.0.1:8000/localhost.global.config.json")
+        .ignoreCache(false)
+        .build();
 
 log.info("last {}",tonlib.getLast());
 
 byte[] prvKey = Utils.hexToSignedBytes("a51e8fb6f0fae3834bf430f5012589d319e7b3b3303ceb82c816b762fccf2d05");
 
 // to use mnemonic
-//        byte[] prvKey =
-//        Mnemonic.toKeyPair(
-//        Arrays.asList(
-//        "viable","model", "canvas", "decade", "neck", "soap","turtle", "asthma", "bench",
-//        "crouch", "bicycle", "grief", "history", "envelope", "valid", "intact", "invest",
-//        "like", "offer", "urban", "adjust", "popular", "draft", "coral"))
-//        .getSecretKey();
+// byte[] prvKey = Mnemonic.toKeyPair(
+//    Arrays.asList("viable","model", "canvas", "decade", "neck", "soap","turtle", "asthma", "bench",
+//    "crouch", "bicycle", "grief", "history", "envelope", "valid", "intact", "invest",
+//    "like", "offer", "urban", "adjust", "popular", "draft", "coral"))
+// .getSecretKey();
 TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
 WalletV3R2 contract=WalletV3R2.builder().tonlib(tonlib).wc(-1).keyPair(keyPair).walletId(42).build();
@@ -263,41 +342,40 @@ assertThat(contract.getAddress().toRaw()).isEqualTo("-1:22f53b7d9aba2cef44755f70
 ```
 <!-- @formatter:on -->
 
-### Using Highload Wallet V2 faucet with help of ton4j
+### Using Highload Wallet V2 faucet with help of [ton4j](https://github.com/neodiX42/ton4j)
 
 <!-- @formatter:off -->
 ```java
 byte[] prvKey = Utils.hexToSignedBytes("e1480435871753a968ef08edabb24f5532dab4cd904dbdc683b8576fb45fa697");
 TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
-HighloadWallet highloadFaucet =
-        HighloadWallet.builder()
-                .tonlib(tonlib)
-                .keyPair(keyPair)
-                .wc(-1)
-                .walletId(42L)
-                .queryId(BigInteger.ZERO)
-                .build();
+HighloadWallet highloadFaucet = 
+  HighloadWallet.builder()
+    .tonlib(tonlib)
+    .keyPair(keyPair)
+    .wc(-1)
+    .walletId(42L)
+    .queryId(BigInteger.ZERO)
+    .build();
 
 List<Destination> destinations = new ArrayList<>(); // fill it up
 
 HighloadConfig config =
-        HighloadConfig.builder()
-                .walletId(42)
-                .queryId(BigInteger.valueOf(Instant.now().getEpochSecond() + 60L << 32))
-                .destinations(
-                        Arrays.asList(
-                                Destination.builder()
-                                        .address("EQAaGHUHfkpWFGs428ETmym4vbvRNxCA1o4sTkwqigKjgf-_")
-                                        .amount(Utils.toNano(0.3))
-                                        .build()))
-                .build();
+  HighloadConfig.builder()
+    .walletId(42)
+    .queryId(BigInteger.valueOf(Instant.now().getEpochSecond() + 60L << 32))
+    .destinations(
+      Arrays.asList(
+        Destination.builder()
+          .address("EQAaGHUHfkpWFGs428ETmym4vbvRNxCA1o4sTkwqigKjgf-_")
+          .amount(Utils.toNano(0.3))
+      .build()))
+  .build();
 
 ExtMessageInfo extMessageInfo = highloadFaucet.send(config);
 ```
 <!-- @formatter:on -->
-**Important!** MyLocalTon-Docker lite-server runs inside genesis container in its own network on IP `172.28.1.1` (
-integer `-1407450879`),
+**Important!** MyLocalTon-Docker lite-server runs inside genesis container in its own network on IP `172.28.1.10`,
 if you want to access it from local host you have to refer to `127.0.0.1` IP address.
 
 Go inside `global.config.json` and in `liteservers` section replace this IP `-1407450879` to this one `2130706433` or

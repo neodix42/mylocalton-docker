@@ -9,7 +9,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class CustomWebConfig implements WebMvcConfigurer {
 
   private static final String CUSTOM_STATIC_DIR = "file:/scripts/web/";
-//  private static final String CUSTOM_STATIC_DIR = "file:./docker/scripts/web/";
+
+  //  private static final String CUSTOM_STATIC_DIR = "file:./docker/scripts/web/";
 
   @Override
   public void addResourceHandlers(ResourceHandlerRegistry registry) {

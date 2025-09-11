@@ -17,16 +17,16 @@ import org.apache.commons.io.FileUtils;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import org.ton.java.smartcontract.highload.HighloadWallet;
-import org.ton.java.smartcontract.types.Destination;
-import org.ton.java.smartcontract.types.HighloadConfig;
-import org.ton.java.tonlib.Tonlib;
-import org.ton.java.tonlib.types.ExtMessageInfo;
-import org.ton.java.utils.Utils;
 import org.ton.mylocaltondocker.faucet.Main;
 import org.ton.mylocaltondocker.faucet.db.DB;
 import org.ton.mylocaltondocker.faucet.db.WalletEntity;
 import org.ton.mylocaltondocker.faucet.db.WalletPk;
+import org.ton.ton4j.smartcontract.highload.HighloadWallet;
+import org.ton.ton4j.smartcontract.types.Destination;
+import org.ton.ton4j.smartcontract.types.HighloadConfig;
+import org.ton.ton4j.tonlib.Tonlib;
+import org.ton.ton4j.tonlib.types.ExtMessageInfo;
+import org.ton.ton4j.utils.Utils;
 
 @Component
 @Slf4j
@@ -39,8 +39,8 @@ public class StartUpTask {
 
     System.out.println("Initializing tonlib");
 
-    while (!Files.exists(Paths.get("/scripts/web/global.config.json"))) {
-      System.out.println("faucet-app is waiting for /scripts/web/global.config.json");
+    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
+      System.out.println("faucet-app is waiting for /usr/share/data/global.config.json");
       Utils.sleep(5);
     }
 
@@ -59,15 +59,15 @@ public class StartUpTask {
 
       Main.tonlib =
           Tonlib.builder()
-              .pathToTonlibSharedLib("/scripts/web/libtonlibjson.so")
-              .pathToGlobalConfig("/scripts/web/global.config.json")
+              .pathToTonlibSharedLib("/usr/share/data/libtonlibjson.so")
+              .pathToGlobalConfig("/usr/share/data/global.config.json")
               .ignoreCache(false)
               .receiveRetryTimes(10)
               .build();
 
       log.info(Main.tonlib.getLast().toString());
 
-      prvKey = FileUtils.readFileToByteArray(new File("/scripts/web/faucet-highload.pk"));
+      prvKey = FileUtils.readFileToByteArray(new File("/usr/share/data/faucet-highload.pk"));
       log.info(Utils.bytesToHex(prvKey));
       TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
 
@@ -108,7 +108,7 @@ public class StartUpTask {
 
               List<WalletEntity> walletRequests = DB.getWalletsToSend();
               log.info("triggered send to {} wallets", walletRequests.size());
-              if (walletRequests.size() == 0) {
+              if (walletRequests.isEmpty()) {
                 log.info("queue is empty, nothing to do, was sent {}", DB.getWalletsSent().size());
                 return;
               }

@@ -1,21 +1,16 @@
 #!/bin/bash
+echo "---------------------------------------- REAP REWARDS ---------------------------------------"
+INTERNAL_IP=$(hostname -I | tr -d " ")
 
-get_preferred_ip() {
-  for ip in $(hostname -I); do
-    if [[ $ip == 172.28.* ]]; then
-      echo "$ip"
-      return
-    fi
-  done
-  # Fallback to the first IP if no 172.28.* IP found
-  echo "$(hostname -I | awk '{print $1}')"
-}
-
-INTERNAL_IP=$(get_preferred_ip)
+if [ "$NAME" = "genesis" ]; then
+    NAME="validator"
+fi
 
 echo $(date)
-if [ -f "/usr/share/ton/validator.pk" ] && [ -f "/var/ton-work/db/global.config.json" ]; then
-  WALLET_ADDR=-1:$(head -c 32 /usr/share/data/validator.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
+echo "NAME = $NAME"
+echo "Looking for /usr/share/ton/smartcont/$NAME.pk"
+if [ -f "/usr/share/ton/smartcont/$NAME.pk" ] && [ -f "/var/ton-work/db/global.config.json" ]; then
+  WALLET_ADDR=-1:$(head -c 32 /usr/share/data/$NAME.addr | od -A n -t x1 | tr -d ' \n' | awk '{print toupper($0)}')
   echo "running reap.sh with wallet $WALLET_ADDR on $INTERNAL_IP"
 else
   echo "reap.sh: Not ready yet. Exit."
@@ -30,8 +25,8 @@ export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont/
 CONTRACTS_PATH="/usr/share/ton/smartcont/"
 WALLET_FIF=$CONTRACTS_PATH"wallet-v3.fif"
 SUBWALLET_ID=42
-WALLETKEYS_DIR="/usr/share/ton/"
-VALIDATOR_WALLET_FILEBASE="validator"
+WALLETKEYS_DIR="/usr/share/ton/smartcont/"
+VALIDATOR_WALLET_FILEBASE=$NAME
 
 ELECTOR_ADDRESS=$(${LITECLIENT} -C ${LITECLIENT_CONFIG} -v 0 -c "getconfig 1" |grep x{|sed -e 's/{/\ /g' -e 's/}//g'|awk {'print $2'})
 

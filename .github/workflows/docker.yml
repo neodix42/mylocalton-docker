@@ -23,10 +23,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Setup Java 19
+      - name: Setup Java 21
         uses: actions/setup-java@v2
         with:
-          java-version: '19'
+          java-version: '21'
           distribution: 'adopt'
 
       - name: Login to GitHub Container Registry
@@ -47,8 +47,11 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
+          no-cache: true
           file: ./Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.8
 
       - name: Build and push faucet
         id: docker_build_2
@@ -58,34 +61,54 @@ jobs:
           push: true
           context: ./
           file: ./faucet/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.8
 
       - name: Build and push data
-        id: docker_build_4
-        uses: docker/build-push-action@v6
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          context: ./
-          file: ./data/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:latest
-
-      - name: Build and push blockchain-explorer
         id: docker_build_3
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
-          file: ./explorer/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:latest
+          file: ./data/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.8
 
-      - name: Build and push lite-server
+      - name: Build and push blockchain-explorer
         id: docker_build_4
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
           push: true
           context: ./
+          file: ./explorer/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.8
+
+      - name: Build and push time-machine
+        id: docker_build_5
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          file: ./time-machine/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.8
+
+      - name: Build and push lite-server
+        id: docker_build_6
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
           file: ./lite-server/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-liteserver:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.8

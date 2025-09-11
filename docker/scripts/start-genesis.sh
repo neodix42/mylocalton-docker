@@ -1,26 +1,14 @@
 #!/bin/bash
 
-get_preferred_ip() {
-  for ip in $(hostname -I); do
-    if [[ $ip == 172.28.* ]]; then
-      echo "$ip"
-      return
-    fi
-  done
-  # Fallback to the first IP if no 172.28.* IP found
-  echo "$(hostname -I | awk '{print $1}')"
-}
-
-INTERNAL_IP=$(get_preferred_ip)
+INTERNAL_IP=$(hostname -I | tr -d " ")
 PUBLIC_PORT=${PUBLIC_PORT:-40001}
 CONSOLE_PORT=${CONSOLE_PORT:-40002}
 DHT_PORT=${DHT_PORT:-40003}
 LITE_PORT=${LITE_PORT:-40004}
 
-echo "Current INTERNAL_IP $INTERNAL_IP"
-echo "Custom EXTERNAL_IP $EXTERNAL_IP"
+echo Current INTERNAL_IP $INTERNAL_IP
+echo Custom EXTERNAL_IP $EXTERNAL_IP
 
-ORIGINAL_INTERNAL_IP=$INTERNAL_IP
 if [ "$EXTERNAL_IP" ]; then
   INTERNAL_IP=$EXTERNAL_IP
 fi
@@ -61,6 +49,15 @@ else
   fi
   # ---------------------------------------------------------
   # start setup genesis
+  if [ "$CUSTOM_CONFIG_SMC_URL" ]; then
+    echo "Installing new configuration smart-contract..."
+    wget -O /usr/share/ton/smartcont/auto/new-custom-config.fif $CUSTOM_CONFIG_SMC_URL
+    CONFIG_CODE_FIF="new-custom-config.fif"
+  fi
+
+  CONFIG_CODE_FIF=${CONFIG_CODE_FIF:-"config-code.fif"}
+  echo CONFIG_CODE_FIF=$CONFIG_CODE_FIF
+  sed -i "s/CONFIG_CODE_FIF/$CONFIG_CODE_FIF/g" gen-zerostate.fif
 
   GLOBAL_ID=${GLOBAL_ID:--217}
   echo GLOBAL_ID=$GLOBAL_ID
@@ -182,13 +179,25 @@ else
   echo VALIDATOR_5_INITIAL_BALANCE=$VALIDATOR_5_INITIAL_BALANCE
   sed -i "s/VALIDATOR_5_INITIAL_BALANCE/$VALIDATOR_5_INITIAL_BALANCE/g" gen-zerostate.fif
 
-  VERSION_CAPABILITIES=${VERSION_CAPABILITIES:-7}
+  VERSION_CAPABILITIES=${VERSION_CAPABILITIES:-11}
   echo VERSION_CAPABILITIES=$VERSION_CAPABILITIES
   sed -i "s/VERSION_CAPABILITIES/$VERSION_CAPABILITIES/g" gen-zerostate.fif
 
   VALIDATION_PERIOD=${VALIDATION_PERIOD:-1200}
   echo VALIDATION_PERIOD=$VALIDATION_PERIOD
   sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
+
+  ACTUAL_MIN_SPLIT=${ACTUAL_MIN_SPLIT:-0}
+  echo ACTUAL_MIN_SPLIT=$ACTUAL_MIN_SPLIT
+  sed -i "s/ACTUAL_MIN_SPLIT/$ACTUAL_MIN_SPLIT/g" gen-zerostate.fif
+
+  MIN_SPLIT=${MIN_SPLIT:-0}
+  echo MIN_SPLIT=$MIN_SPLIT
+  sed -i "s/MIN_SPLIT/$MIN_SPLIT/g" gen-zerostate.fif
+
+  MAX_SPLIT=${MAX_SPLIT:-4}
+  echo MAX_SPLIT=$MAX_SPLIT
+  sed -i "s/MAX_SPLIT/$MAX_SPLIT/g" gen-zerostate.fif
 
   MASTERCHAIN_ONLY=${MASTERCHAIN_ONLY:-"false"}
   echo MASTERCHAIN_ONLY=$MASTERCHAIN_ONLY
@@ -245,9 +254,9 @@ else
     /usr/share/data
   chmod 744 /usr/share/data/*
 
-  echo "Make available for reap and participate"
-  cp validator.pk validator.addr /usr/share/ton
-  chmod 744 /usr/share/ton/*
+#  echo "Make available for reap and participate"
+#  cp validator.pk validator.addr /usr/share/ton
+#  chmod 744 /usr/share/ton/*
 
 
   cd /var/ton-work/db
@@ -319,29 +328,29 @@ else
   mv config.json.new config.json
 
   # start the full node for some time to add validation keys
-  (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$ORIGINAL_INTERNAL_IP:$PUBLIC_PORT")&
+  (validator-engine -C /var/ton-work/db/my-ton-global.config.json --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT")&
   PRELIMINARY_VALIDATOR_RUN=$!
   sleep 4;
 
-  echo "Adding keys to validator-engine-console..."
+  echo Adding keys to validator-engine-console...
 
-  read -r t1 t2 t3 NEW_NODE_KEY <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
-  read -r t1 t2 t3 NEW_VAL_ADNL <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
+  read -r t1 t2 t3 NEW_NODE_KEY <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
+  read -r t1 t2 t3 NEW_VAL_ADNL <<< $(echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "newkey"|tail -n 1)
 
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addpermkey $VAL_ID_HEX 0 $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addtempkey $VAL_ID_HEX $VAL_ID_HEX $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_VAL_ADNL 0" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $VAL_ID_HEX 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addpermkey $VAL_ID_HEX 0 $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addtempkey $VAL_ID_HEX $VAL_ID_HEX $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_VAL_ADNL 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $VAL_ID_HEX 0" 2>&1
 
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addvalidatoraddr $VAL_ID_HEX $NEW_VAL_ADNL $(($(date +"%s")+31414590))" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_NODE_KEY 0" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "changefullnodeaddr $NEW_NODE_KEY" 2>&1
-  echo | validator-engine-console -k client -p server.pub -v 0 -a "$ORIGINAL_INTERNAL_IP:$CONSOLE_PORT" -rc "importf keyring/$VAL_ID_HEX" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addvalidatoraddr $VAL_ID_HEX $NEW_VAL_ADNL $(($(date +"%s")+31414590))" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "addadnl $NEW_NODE_KEY 0" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a  "$INTERNAL_IP:$CONSOLE_PORT" -rc "changefullnodeaddr $NEW_NODE_KEY" 2>&1
+  echo | validator-engine-console -k client -p server.pub -v 0 -a "$INTERNAL_IP:$CONSOLE_PORT" -rc "importf keyring/$VAL_ID_HEX" 2>&1
   kill $PRELIMINARY_VALIDATOR_RUN;
 
   rm -rf /var/ton-work/log*
 
-  echo "Genesis node initialized"
+  echo Genesis node initilized
   echo
   # current dir /var/ton-work/db
   # install lite-server using predefined lite-server keys
@@ -384,31 +393,33 @@ else
   sleep 1
 fi
 
+EMBEDDED_FILE_HTTP_SERVER=${EMBEDDED_FILE_HTTP_SERVER:-"false"}
+echo EMBEDDED_FILE_HTTP_SERVER=$EMBEDDED_FILE_HTTP_SERVER
+
+EMBEDDED_FILE_HTTP_SERVER_PORT=${EMBEDDED_FILE_HTTP_SERVER_PORT:-8888}
+echo EMBEDDED_FILE_HTTP_SERVER_PORT=$EMBEDDED_FILE_HTTP_SERVER_PORT
+
+if [ "$EMBEDDED_FILE_HTTP_SERVER" == "true" ]; then
+  # start file http server
+  nohup python3 -m http.server -d /usr/share/data/ $EMBEDDED_FILE_HTTP_SERVER_PORT &
+  echo Simple HTTP server runs on:
+  echo
+  echo http://127.0.0.1:$EMBEDDED_FILE_HTTP_SERVER_PORT/
+  echo http://$INTERNAL_IP:$EMBEDDED_FILE_HTTP_SERVER_PORT/
+  echo
+  echo wget http://$INTERNAL_IP:$EMBEDDED_FILE_HTTP_SERVER_PORT/global.config.json
+fi
+
 cd /var/ton-work/db
 cp global.config.json /usr/share/data/
 cp localhost.global.config.json /usr/share/data/
+cp config.json /usr/share/data/
 
 nohup dht-server -C /var/ton-work/db/global.config.json -D /var/ton-work/db/dht-server -I "$INTERNAL_IP:$DHT_PORT"&
 echo DHT server started at $INTERNAL_IP:$DHT_PORT
 echo
 echo Lite server started at $INTERNAL_IP:$LITE_PORT
 echo
-
-ENABLE_FILE_HTTP_SERVER=${ENABLE_FILE_HTTP_SERVER:-"true"}
-echo ENABLE_FILE_HTTP_SERVER=$ENABLE_FILE_HTTP_SERVER
-
-if [ "$ENABLE_FILE_HTTP_SERVER" == "true" ]; then
-  # start file http server
-  nohup python3 -m http.server&
-  echo Simple HTTP server runs on:
-  echo
-  echo http://127.0.0.1:8000/
-  echo http://$INTERNAL_IP:8000/
-  echo
-  echo wget http://$INTERNAL_IP:8000/global.config.json
-fi
-
-echo "lite-client -a $INTERNAL_IP:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last"
 
 if [ ! "$VERBOSITY" ]; then
   VERBOSITY=1
@@ -422,6 +433,6 @@ fi
 
 echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
 echo validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --daemonize --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
 
 
