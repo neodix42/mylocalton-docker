@@ -323,7 +323,7 @@ now dup orig_vset_valid_for + 0 config.validators!
  * SmartContract #5 (Configuration smart contract)
  *
  */
-"auto/config-code.fif" include   // code in separate source file
+"auto/CONFIG_CODE_FIF" include   // code in separate source file
 <b configdict ref,  // initial configuration
    0 32 u,          // seqno
    "config-master.pk" load-generate-keypair drop

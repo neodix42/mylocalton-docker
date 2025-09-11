@@ -49,6 +49,15 @@ else
   fi
   # ---------------------------------------------------------
   # start setup genesis
+  if [ "$CUSTOM_CONFIG_SMC_URL" ]; then
+    echo "Installing new configuration smart-contract..."
+    wget -O /usr/share/ton/smartcont/auto/new-custom-config.fif $CUSTOM_CONFIG_SMC_URL
+    CONFIG_CODE_FIF="new-custom-config.fif"
+  fi
+
+  CONFIG_CODE_FIF=${CONFIG_CODE_FIF:-"config-code.fif"}
+  echo CONFIG_CODE_FIF=$CONFIG_CODE_FIF
+  sed -i "s/CONFIG_CODE_FIF/$CONFIG_CODE_FIF/g" gen-zerostate.fif
 
   GLOBAL_ID=${GLOBAL_ID:--217}
   echo GLOBAL_ID=$GLOBAL_ID
