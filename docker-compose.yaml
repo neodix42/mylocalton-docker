@@ -33,7 +33,7 @@ services:
       - VERBOSITY=${GENESIS_VERBOSITY:-3}
       - EMBEDDED_FILE_HTTP_SERVER # enable file-http-server
       - EMBEDDED_FILE_HTTP_SERVER_PORT # default port 8888
-      - CUSTOM_PARAMETERS
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL}
