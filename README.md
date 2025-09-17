@@ -32,6 +32,7 @@ Uncomment sections in ```docker-compose.yaml``` to enable more validators and se
 
 ```bash
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
+wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/.env
 docker-compose up -d
 ```
 
@@ -54,17 +55,21 @@ By default, the following services will be available on start (optional services
 ### Deploying optional services
 
 To deploy optional services, you may use Compose profiles
+
 ```
 docker compose --profile indexer --profile data --profile faucet up -d
 ```
+
 or change `COMPOSE_PROFILES` variable in `.env` file.
 
 Available profiles:
- - `faucet`: deploys faucet service to get coins to some special address
- - `data`: generates some activity with TON, Jettons and NFTs
- - `validators-<N>`: launches N validators in addition to genesis node, for example `validators-2` enables 2 additional validators.
- - `indexer`: deploys TON Center API v3
- - `indexer-minimal`: deploys API v3 without a trace classifier
+
+- `faucet`: deploys faucet service to get coins to some special address
+- `data`: generates some activity with TON, Jettons and NFTs
+- `validators-<N>`: launches N validators in addition to genesis node, for example `validators-2` enables 2 additional
+  validators.
+- `indexer`: deploys TON Center API v3
+- `indexer-minimal`: deploys API v3 without a trace classifier
 
 ### Containers' description and startup parameters
 
@@ -226,7 +231,11 @@ In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.
 git clone https://github.com/neodix42/mylocalton-docker.git
 cd mylocalton-docker
 mvn clean install
-docker-compose -f docker-compose-build.yaml up -d
+docker compose build
+docker compose up
+or
+docker-compose build
+docker-compose up
 ```
 
 ### Access services
@@ -277,7 +286,7 @@ adjust the `driver_opts` options in `volumes` section in `docker-compose.yaml` f
 
 All data will be lost.
 
-```docker-compose -f docker-compose-build.yaml down -v```
+```docker-compose -f docker-compose.yaml down -v```
 
 You can also clean up MyLocalTon from the Time Machine web GUI. Use `Clean Up` button.
 
