@@ -38,19 +38,18 @@ docker-compose up -d
 
 Now you can navigate to Time Machine by opening http://localhost:8083.
 
-By default, the following services will be available on start (optional services are starred):
+By default, the following services will be available on start:
 
-| Service name                    | Link                                                                                     | 
-|---------------------------------|------------------------------------------------------------------------------------------|
-| Time Machine                    | http://127.0.0.1:8083/                                                                   | 
-| TON-HTTP-API V2                 | http://127.0.0.1:8082/                                                                   | 
-| Blockchain explorer             | http://127.0.0.1:8080/last                                                               |
-| Http File Server                | http://127.0.0.1:8000/                                                                   |
-| Http File server inside genesis | http://127.0.0.1:8888/                                                                   |
-| Lite-server                     | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
-| (*) Faucet                      | http://127.0.0.1:88                                                                      |
-| (*) Data generation             | http://127.0.0.1:99/                                                                     |
-| (*) Indexer API v3              | http://127.0.0.1:8081/                                                                   |
+| Service name        | Link                                                                                     | 
+|---------------------|------------------------------------------------------------------------------------------|
+| Time Machine        | http://127.0.0.1:8083/                                                                   | 
+| TON-HTTP-API V2     | http://127.0.0.1:8082/                                                                   | 
+| Blockchain explorer | http://127.0.0.1:8080/last                                                               |
+| Http File Server    | http://127.0.0.1:8000/                                                                   |
+| Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
+| Faucet              | http://127.0.0.1:88                                                                      |
+| Data generation     | http://127.0.0.1:99/                                                                     |
+| Indexer API v3      | http://127.0.0.1:8081/                                                                   |
 
 ### Deploying optional services
 
@@ -64,6 +63,9 @@ or change `COMPOSE_PROFILES` variable in `.env` file.
 
 Available profiles:
 
+- `blockchain-explorer`: enables default native TON blockchain explorer
+- `lite-server`: deploys external TON lite-server, by default one runs as embedded inside genesis container
+- `time-machine`: deploys Time Machine service
 - `faucet`: deploys faucet service to get coins to some special address
 - `data`: generates some activity with TON, Jettons and NFTs
 - `validators-<N>`: launches N validators in addition to genesis node, for example `validators-2` enables 2 additional

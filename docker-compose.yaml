@@ -51,6 +51,7 @@ services:
   # MyLocalTon optional services
   blockchain-explorer:
     container_name: blockchain-explorer
+    profiles: [blockchain-explorer]
     image: ghcr.io/neodix42/mylocalton-docker-explorer:latest
     build:
       context: .
@@ -76,33 +77,33 @@ services:
       main:
         ipv4_address: 172.28.1.20
 
-  #  lite-server:
-  #    container_name: lite-server
-  #    profiles: [lite-server]
-  #    image: ghcr.io/neodix42/mylocalton-lite-server:latest
-  #    build:
-  #      context: .
-  #      dockerfile: ./lite-server/Dockerfile
-  #    restart: unless-stopped
-  #    environment:
-  #      - LITE_SERVER_PORT=30004
-  #      - CONSOLE_PORT=30002
-  #      - PUBLIC_PORT=30001
-  #    ports:
-  #      - 30004:30004
-  #    healthcheck:
-  #      test: /usr/local/bin/lite-client -a 127.0.0.1:30004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-  #      interval: 15s
-  #      timeout: 10s
-  #      retries: 3
-  #    volumes:
-  #      - shared-data:/usr/share/data
-  #    depends_on:
-  #      genesis:
-  #        condition: service_healthy
-  #    networks:
-  #      main:
-  #        ipv4_address: 172.28.1.30
+  lite-server:
+    container_name: lite-server
+    profiles: [lite-server]
+    image: ghcr.io/neodix42/mylocalton-lite-server:latest
+    build:
+      context: .
+      dockerfile: ./lite-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      - LITE_SERVER_PORT=30004
+      - CONSOLE_PORT=30002
+      - PUBLIC_PORT=30001
+    ports:
+      - 30004:30004
+    healthcheck:
+      test: /usr/local/bin/lite-client -a 127.0.0.1:30004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - shared-data:/usr/share/data
+    depends_on:
+      genesis:
+        condition: service_healthy
+    networks:
+      main:
+        ipv4_address: 172.28.1.30
 
   faucet:
     container_name: faucet
@@ -159,6 +160,7 @@ services:
 
   time-machine:
     container_name: time-machine
+    profiles: [time-machine]
     image: ghcr.io/neodix42/mylocalton-docker-time-machine:latest
     build:
       context: .
@@ -200,6 +202,7 @@ services:
 
   restarter:
     container_name: explorer-restarter
+    profiles: [blockchain-explorer]
     image: docker:cli
     restart: unless-stopped
     volumes:
