@@ -33,6 +33,12 @@ Uncomment sections in ```docker-compose.yaml``` to enable more validators and se
 ```bash
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/.env
+```
+
+Modify .env file as per your requirements. By default, MyLocalTon uses TON image with the `latest` tag.
+You can change it by setting TON_BRANCH in .env file. For example to `testnet`.
+
+```bash
 docker-compose up -d
 ```
 

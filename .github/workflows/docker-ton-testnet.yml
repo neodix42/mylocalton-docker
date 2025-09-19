@@ -1,4 +1,4 @@
-name: MyLocalTon Docker
+name: MyLocalTon Docker (TON testnet)
 
 on:
   workflow_dispatch:
@@ -49,9 +49,11 @@ jobs:
           context: ./
           no-cache: true
           file: ./Dockerfile
+          build-args: |
+            TON_BRANCH=testnet
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.9
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.91-testnet
 
       - name: Build and push faucet
         id: docker_build_2
@@ -61,9 +63,11 @@ jobs:
           push: true
           context: ./
           file: ./faucet/Dockerfile
+          build-args: |
+            TON_BRANCH=testnet
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.9
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.91-testnet
 
       - name: Build and push data
         id: docker_build_3
@@ -73,9 +77,11 @@ jobs:
           push: true
           context: ./
           file: ./data/Dockerfile
+          build-args: |
+            TON_BRANCH=testnet
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.9
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.91-testnet
 
       - name: Build and push blockchain-explorer
         id: docker_build_4
@@ -85,9 +91,11 @@ jobs:
           push: true
           context: ./
           file: ./explorer/Dockerfile
+          build-args: |
+            TON_BRANCH=testnet
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.9
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.91-testnet
 
       - name: Build and push time-machine
         id: docker_build_5
@@ -97,9 +105,11 @@ jobs:
           push: true
           context: ./
           file: ./time-machine/Dockerfile
+          build-args: |
+            TON_BRANCH=testnet
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.9
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.91-testnet
 
       - name: Build and push lite-server
         id: docker_build_6
@@ -109,6 +119,8 @@ jobs:
           push: true
           context: ./
           file: ./lite-server/Dockerfile
+          build-args: |
+            TON_BRANCH=testnet
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.9
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.91-testnet

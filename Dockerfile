@@ -1,4 +1,6 @@
-FROM ghcr.io/ton-blockchain/ton:latest
+ARG TON_BRANCH=latest
+FROM ghcr.io/ton-blockchain/ton:${TON_BRANCH}
+
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt -y update && apt install --no-install-recommends -y python3 cron bc
 
