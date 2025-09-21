@@ -1,5 +1,6 @@
 ARG TON_BRANCH=latest
-FROM ghcr.io/ton-blockchain/ton:${TON_BRANCH}
+ARG TON_IMAGE=ghcr.io/ton-blockchain/ton
+FROM ${TON_IMAGE}:${TON_BRANCH}
 
 RUN mkdir -p /scripts
 COPY --chmod=744 explorer/start.sh /scripts

@@ -1,5 +1,6 @@
 ARG TON_BRANCH=latest
-FROM ghcr.io/ton-blockchain/ton:${TON_BRANCH}
+ARG TON_IMAGE=ghcr.io/ton-blockchain/ton
+FROM ${TON_IMAGE}:${TON_BRANCH}
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt -y update && apt install --no-install-recommends -y openjdk-21-jdk-headless
