@@ -8,6 +8,7 @@ if [[ $# -eq 1 ]]; then
     if [[ -d "$target_dir" ]]; then
         echo "Using existing path: $target_dir"
         cd "$target_dir"
+        branch=$(git branch --show-current)
     else
         echo "Error: directory '$target_dir' does not exist."
         exit 1
@@ -38,14 +39,12 @@ else
     exit 1
 fi
 
-echo
+echo $(pwd)
 echo "Building Docker image custom-ton:$branch"
 echo
 docker build -t ton-custom:$branch .
 
 cd ..
-
-cp ../.env .
 
 echo
 echo "Compiling Java projects [Faucet, Data Generator, Time Machine]"
@@ -53,13 +52,15 @@ echo
 mvn clean install
 
 #build MyLocalTon
-#docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker:$branch -f Dockerfile .
-#docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-data:$branch -f data/Dockerfile .
-#docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-explorer:$branch -f explorer/Dockerfile .
-#docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-faucet:$branch -f faucet/Dockerfile .
-#docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-time-machine:$branch -f time-machine/Dockerfile .
-#docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-lite-server:$branch -f lite-server/Dockerfile .
 
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-data:$branch -f data/Dockerfile .
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-explorer:$branch -f explorer/Dockerfile .
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-faucet:$branch -f faucet/Dockerfile .
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-time-machine:$branch -f time-machine/Dockerfile .
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-lite-server:$branch -f lite-server/Dockerfile .
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker:$branch -f Dockerfile .
+
+sed -i -E "s|^TON_BRANCH=.*$|TON_BRANCH=$branch|" .env
 sed -i -E "s|^TON_IMAGE=.*$|TON_IMAGE=custom-ton|" .env
 sed -i -E "s|^MLT_IMAGE=.*$|MLT_IMAGE=mylocalton-custom-docker|" .env
 sed -i -E "s|^MLT_DATA_IMAGE=.*$|MLT_DATA_IMAGE=mylocalton-custom-docker-data|" .env
@@ -68,7 +69,6 @@ sed -i -E "s|^MLT_EXPLORER_IMAGE=.*$|MLT_EXPLORER_IMAGE=mylocalton-custom-docker
 sed -i -E "s|^MLT_LITE_SERVER_IMAGE=.*$|MLT_LITE_SERVER_IMAGE=mylocalton-custom-docker-lite-server|" .env
 sed -i -E "s|^MLT_TIME_MACHINE_IMAGE=.*$|MLT_TIME_MACHINE_IMAGE=mylocalton-custom-docker-time-machine|" .env
 
-docker compose build
-#docker compose up
+docker compose up
 
 
