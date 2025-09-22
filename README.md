@@ -10,36 +10,29 @@ Time Machine, Faucet and Random Data Generator.
 
 ## Prerequisites
 
-Installed Docker Engine or Docker desktop and docker-compose.
-
-We recommend to start with [Docker Desktop](https://www.docker.com/products/docker-desktop/). It includes docker-compose
-already.
-
-- docker-compose installation
-
-``` bash
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.6.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-```
+Installed [Docker Engine](https://docs.docker.com/engine/install/)
+or [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ## Usage
 
 ### Quick start
 
-Uncomment sections in ```docker-compose.yaml``` to enable more validators and services.
-
-[Download](./docker-compose.yaml) and start the main `docker-compose.yaml` file. For Mac/Linux use the command below.
+[Download](./docker-compose.yaml) and start the main `docker-compose.yaml` file.
 
 ```bash
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/docker-compose.yaml
 wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/main/.env
 ```
 
-Modify .env file as per your requirements. By default, MyLocalTon uses TON image with the `latest` tag.
+Modify `.env` file as per your requirements (see below
+and [wiki](https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters)).
+By default, MyLocalTon uses official [TON](https://github.com/ton-blockchain/ton) image with the `latest` tag (based on
+`master` branch).
+
 You can change it by setting TON_BRANCH in .env file. For example to `testnet`.
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Now you can navigate to Time Machine by opening http://localhost:8083.
@@ -233,19 +226,6 @@ In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.
 </tbody>
 </table>
 
-### Build from sources
-
-```shell
-git clone https://github.com/neodix42/mylocalton-docker.git
-cd mylocalton-docker
-mvn clean install
-docker compose build
-docker compose up
-or
-docker-compose build
-docker-compose up
-```
-
 ### Access services
 
 | Service name        | Link                                                                                     | 
@@ -263,6 +243,16 @@ Global network configuration file available at:
 
 http://127.0.0.1:8000/global.config.json
 
+### Build from sources
+
+```shell
+git clone https://github.com/neodix42/mylocalton-docker.git
+cd mylocalton-docker
+mvn clean install
+docker compose build
+docker compose up
+```
+
 ### Go inside the container
 
 ```
@@ -279,7 +269,7 @@ last, getstats, config32, config34, config36, elid, participants
 
 ### Stop all containers
 
-```docker-compose down```
+```docker compose down```
 
 The state will be persisted, and the next time when you start the containers up the blockchain will be resumed from the
 last state.
@@ -294,15 +284,32 @@ adjust the `driver_opts` options in `volumes` section in `docker-compose.yaml` f
 
 All data will be lost.
 
-```docker-compose -f docker-compose.yaml down -v```
+```docker compose -f docker-compose.yaml down -v```
 
 You can also clean up MyLocalTon from the Time Machine web GUI. Use `Clean Up` button.
+
+## Custom MyLocalTon
+
+As it was mentioned above MyLocalTon uses TON image with the `latest` tag,
+which is based on the official repository https://github.com/ton-blockchain/ton/ `master` branch.
+You can change it by setting TON_BRANCH in .env file, for example to `testnet`.
+
+You can also now build MyLocalTon Docker image based on any fork of TON repository.
+Here is the short instruction:
+
+```
+git clone https://github.com/neodix42/mylocalton-docker.git
+cd mylocalton-docker
+./custom-MyLocalTon.sh <branch> <forked-ton-repo>
+e.g. 
+./custom-MyLocalTon.sh gh-arm-fix https://github.com/neodix42/ton.git
+```
 
 ## Pre-installed wallets
 
 To speed up your development process, we created set of predefined wallets.
 
-These wallets will be always available in the blockchain and you can use them in your SDK.
+These wallets will be always available in the blockchain, and you can use them in your SDK.
 
 | Wallet Name                                 | Wallet                                                                                                                                                                                                                                            | Mnemonic                                                                                                                                                                   |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|  

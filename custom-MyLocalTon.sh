@@ -51,7 +51,9 @@ echo "Compiling Java projects [Faucet, Data Generator, Time Machine]"
 echo
 mvn clean install
 
-#build MyLocalTon
+echo
+echo "Build MyLocalTon Docker based on custom TON image"
+echo
 
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-data:$branch -f data/Dockerfile .
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-explorer:$branch -f explorer/Dockerfile .
