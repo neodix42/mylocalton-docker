@@ -105,5 +105,5 @@ jobs:
           push: true
           context: ./
           file: ./lite-server/Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:${{ steps.tag.outputs.TAG }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:${{ steps.tag.outputs.TAG }}
 

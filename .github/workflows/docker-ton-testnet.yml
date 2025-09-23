@@ -53,7 +53,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.92-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.93-testnet
 
       - name: Build and push faucet
         id: docker_build_2
@@ -67,7 +67,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.92-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.93-testnet
 
       - name: Build and push data
         id: docker_build_3
@@ -81,7 +81,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.92-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.93-testnet
 
       - name: Build and push blockchain-explorer
         id: docker_build_4
@@ -95,7 +95,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.92-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.93-testnet
 
       - name: Build and push time-machine
         id: docker_build_5
@@ -109,7 +109,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.92-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.93-testnet
 
       - name: Build and push lite-server
         id: docker_build_6
@@ -123,4 +123,4 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.92-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.93-testnet
