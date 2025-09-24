@@ -421,11 +421,8 @@ echo
 echo Lite server started at $INTERNAL_IP:$LITE_PORT
 echo
 
-if [ ! "$VERBOSITY" ]; then
-  VERBOSITY=1
-else
-  VERBOSITY=$VERBOSITY
-fi
+VERBOSITY=${VERBOSITY:-1}
+echo VERBOSITY=$VERBOSITY
 
 if [ $initialized -eq 0 ]; then
   /scripts/post-genesis.sh &

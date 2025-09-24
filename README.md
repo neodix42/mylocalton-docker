@@ -92,7 +92,6 @@ Adjust parameters in `.env` file or edit `docker-compose.yaml` for relevant chan
 <li><b>MASTERCHAIN_ONLY</b> - set to <b>true</b> if you want to have only masterchain, i.e. without workchains, default <b>false</b>; </li>
 <li><b>DHT_PORT</b> - set port (udp) for dht server, default port <b>40004</b>, optional.</li>
 <li><b>CUSTOM_PARAMETERS</b> - used to specify validator's command line parameters, default - empty string (no parameters),  optional. </li>
-<li><b>ENABLE_FILE_HTTP_SERVER</b> - used to enable file http server inside genesis container on port 8888, default - false,  optional. </li>
 </ul>
 You can also adjust other blockchain settings, like storage or cell creation price, initial blockchain balance and so
 on.

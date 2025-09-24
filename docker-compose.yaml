@@ -38,6 +38,39 @@ services:
       - EMBEDDED_FILE_HTTP_SERVER_PORT # default port 8888
       - CUSTOM_PARAMETERS
       - CUSTOM_CONFIG_SMC_URL
+      - VERSION_CAPABILITIES
+      - GLOBAL_ID # read about this and other parameters here https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters
+      - MAX_VALIDATORS
+      - MAX_MAIN_VALIDATORS
+      - MIN_VALIDATORS
+      - MIN_STAKE
+      - MAX_STAKE
+      - MAX_FACTOR
+      - MIN_TOTAL_STAKE
+      - ELECTION_START_BEFORE
+      - ELECTION_END_BEFORE
+      - ELECTION_STAKE_FROZEN
+      - ORIGINAL_VALIDATOR_SET_VALID_FOR
+      - ACTUAL_MIN_SPLIT
+      - MIN_SPLIT
+      - MAX_SPLIT
+      - CELL_PRICE
+      - CELL_PRICE_MC
+      - GAS_PRICE
+      - GAS_PRICE_MC
+      - SIMPLE_FAUCET_INITIAL_BALANCE
+      - HIGHLOAD_FAUCET_INITIAL_BALANCE
+      - DATA_FAUCET_INITIAL_BALANCE
+      - VALIDATOR_0_INITIAL_BALANCE
+      - VALIDATOR_1_INITIAL_BALANCE
+      - VALIDATOR_2_INITIAL_BALANCE
+      - VALIDATOR_3_INITIAL_BALANCE
+      - VALIDATOR_4_INITIAL_BALANCE
+      - VALIDATOR_5_INITIAL_BALANCE
+      - BIT_PRICE_PER_SECOND
+      - CELL_PRICE_PER_SECOND
+      - BIT_PRICE_PER_SECOND_MC
+      - CELL_PRICE_PER_SECOND_MC
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL}
