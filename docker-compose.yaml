@@ -413,7 +413,7 @@ services:
   ## TON HTTP API V2
   tonhttpapi:
     container_name: ton-http-api-v2
-    image: toncenter/ton-http-api:v2.0.59
+    image: toncenter/ton-http-api:v2.0.60
     ports:
       - 8082:8082
     volumes:
@@ -423,7 +423,7 @@ services:
       - TON_API_GET_METHODS_ENABLED=1
       - TON_API_JSON_RPC_ENABLED=1
       - TON_API_TONLIB_KEYSTORE=/tmp/keystore/
-      - TON_API_TONLIB_CDLL_PATH=
+      - TON_API_TONLIB_CDLL_PATH=/usr/share/data/libtonlibjson.so
       - TON_API_LOGS_JSONIFY
       - TON_API_LOGS_LEVEL
       - TON_API_ROOT_PATH

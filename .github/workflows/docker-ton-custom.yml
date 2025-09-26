@@ -55,7 +55,7 @@ jobs:
             TON_BRANCH=${{ inputs.branch }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.branch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.93-${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.94-${{ inputs.branch }}
 
       - name: Build and push faucet
         id: docker_build_2
@@ -69,7 +69,7 @@ jobs:
             TON_BRANCH=${{ inputs.branch }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:${{ inputs.branch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.93-${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.94-${{ inputs.branch }}
 
       - name: Build and push data
         id: docker_build_3
@@ -83,7 +83,7 @@ jobs:
             TON_BRANCH=${{ inputs.branch }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:${{ inputs.branch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.93-${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.94-${{ inputs.branch }}
 
       - name: Build and push blockchain-explorer
         id: docker_build_4
@@ -97,7 +97,7 @@ jobs:
             TON_BRANCH=${{ inputs.branch }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:${{ inputs.branch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.93-${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.94-${{ inputs.branch }}
 
       - name: Build and push time-machine
         id: docker_build_5
@@ -111,7 +111,7 @@ jobs:
             TON_BRANCH=${{ inputs.branch }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:${{ inputs.branch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.93-${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.94-${{ inputs.branch }}
 
       - name: Build and push lite-server
         id: docker_build_6
@@ -125,4 +125,4 @@ jobs:
             TON_BRANCH=${{ inputs.branch }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:${{ inputs.branch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.93-${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.94-${{ inputs.branch }}
