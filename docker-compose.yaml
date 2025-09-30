@@ -71,6 +71,8 @@ services:
       - CELL_PRICE_PER_SECOND
       - BIT_PRICE_PER_SECOND_MC
       - CELL_PRICE_PER_SECOND_MC
+      - CRITICAL_PARAM_MIN_WINS
+      - CRITICAL_PARAM_MAX_LOSSES
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL}

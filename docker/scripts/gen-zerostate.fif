@@ -305,7 +305,7 @@ smc1_addr config.minter_smc!
 // [ min_tot_rounds max_tot_rounds min_wins max_losses min_store_sec max_store_sec bit_pps cell_pps ]
 // first for ordinary proposals, then for critical proposals
 _( 2 3 2 2 1000000 10000000 1 500 )
-_( 4 7 4 2 5000000 20000000 2 1000 )
+_( 4 7 CRITICAL_PARAM_MIN_WINS CRITICAL_PARAM_MAX_LOSSES 5000000 20000000 2 1000 )
 config.param_proposals_setup!
 
 // deposit bit_pps cell_pps
