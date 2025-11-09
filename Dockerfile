@@ -3,7 +3,7 @@ ARG TON_IMAGE=ghcr.io/ton-blockchain/ton
 FROM ${TON_IMAGE}:${TON_BRANCH}
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt -y update && apt install --no-install-recommends -y python3 cron bc
+RUN apt -y update && apt install --no-install-recommends -y python3 cron bc xxd
 
 RUN mkdir -p /scripts/web  \
     /usr/share/data \
@@ -11,6 +11,8 @@ RUN mkdir -p /scripts/web  \
 
 COPY --chmod=744 docker/scripts/start-genesis.sh /scripts
 COPY --chmod=744 docker/scripts/post-genesis.sh /scripts
+COPY --chmod=744 docker/scripts/retranslator.fc /scripts
+COPY --chmod=744 docker/scripts/create-msg.fif.template /scripts
 COPY --chmod=744 docker/scripts/start-validator.sh /scripts
 COPY --chmod=744 docker/scripts/start-node.sh /scripts
 COPY --chmod=744 docker/scripts/cron.sh /scripts

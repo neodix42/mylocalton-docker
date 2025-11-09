@@ -1,0 +1,42 @@
+#!/usr/bin/fift -s
+
+"TonUtil.fif" include
+"Asm.fif" include
+
+"retranslator.fif" include =: contract_code
+
+"wallet-retranslator.pk" load-generate-keypair 
+=: privkey
+=: pubkey
+<b 0 16 u, 0 32 u, pubkey B, 0 32 u, contract_code ref, b> =: contract_storage
+
+<b b{00110} s, contract_code ref, contract_storage ref, b>
+dup =: state_init
+
+dup hashu 0 swap 2constant contract_address
+
+."new retranslator wallet address = " contract_address .addr cr
+
+."Non-bounceable address (for init): " contract_address 7 .Addr cr
+."Bounceable address (for later access): " contract_address 6 .Addr cr
+contract_address "wallet-retranslator.addr" save-address-verbose
+
+<b 
+  0 32 u, now 3600 + 32 u, 0 32 u, // subwallet until seqno
+  255 8 u,    // mode = retranslate
+  SPAM_CHAINS 8 u,     // chains
+  SPAM_HOPS 16 u, // hops
+  SPAM_SPLIT_HOPS 8 u,     // split hops
+  4000000 Gram* Gram, // first message size
+  65535 16 u, // preference
+  now 60 SPAM_DURATION_MINUTES * + 32 u, // stop_at
+b> =: init_message
+
+
+init_message ."signing message: " <s csr. cr
+init_message hashu privkey ed25519_sign_uint =: signature
+<b b{1000100} s, contract_address addr, b{000010} s, state_init <s s, b{1} s, <b signature B, init_message <s s, b> ref, b>
+dup ."External message for initialization is " <s csr. cr
+2 boc+>B dup Bx. cr
+"query-retranslator.boc" tuck B>file
+."(Saved retranslator contract query to file " type .")" cr

@@ -73,6 +73,21 @@ services:
       - CELL_PRICE_PER_SECOND_MC
       - CRITICAL_PARAM_MIN_WINS
       - CRITICAL_PARAM_MAX_LOSSES
+      - PROTO_VERSION
+      - VALIDATORS_MASTERCHAIN_NUM
+      - VALIDATORS_PER_SHARD
+      - BLOCK_LIMIT_MULTIPLIER
+      - BLOCK_SIZE_UNDERLOAD_KB
+      - BLOCK_SIZE_SOFT_KB
+      - BLOCK_SIZE_HARD_KB
+      - BLOCK_GAS_LIMIT_UNDERLOAD
+      - BLOCK_GAS_LIMIT_SOFT
+      - BLOCK_GAS_LIMIT_HARD
+      - SPAM_RUN
+      - SPAM_CHAINS
+      - SPAM_HOPS
+      - SPAM_SPLIT_HOPS
+      - SPAM_DURATION_MINUTES
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL}
@@ -415,7 +430,8 @@ services:
   ## TON HTTP API V2
   tonhttpapi:
     container_name: ton-http-api-v2
-    image: toncenter/ton-http-api:v2.0.60
+    profiles: [ton-http-api-v2]
+    image: toncenter/ton-http-api:v2.0.62
     ports:
       - 8082:8082
     volumes:
@@ -486,7 +502,7 @@ services:
   index-api:
     container_name: index-api
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-api:v1.2.1
+    image: toncenter/ton-indexer-api:v1.2.3
     depends_on:
       - index-worker
     command: -prefork -threads ${TON_INDEXER_WORKERS:-2}
@@ -504,7 +520,7 @@ services:
   run-migrations:
     container_name: run-migrations
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-worker:v1.2.1
+    image: toncenter/ton-indexer-worker:v1.2.3
     depends_on:
       postgres:
         condition: service_healthy
@@ -519,7 +535,7 @@ services:
   index-worker:
     container_name: index-worker
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-worker:v1.2.1
+    image: toncenter/ton-indexer-worker:v1.2.3
     depends_on:
       postgres:
         condition: service_healthy

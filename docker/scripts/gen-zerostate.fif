@@ -12,8 +12,8 @@ GLOBAL_ID setglobalid   // negative value means a test instance of the blockchai
 
 0 mkemptyShardState
 
-cr ."initial basechain state is:" cr dup <s csr. cr
-dup dup 31 boc+>B dup Bx. cr
+// cr ."initial basechain state is:" cr dup <s csr. cr
+dup 31 boc+>B
 dup "basestate0.boc" tuck B>file
 ."(Initial basechain state saved to file " type .")" cr
 Bhashu dup =: basestate0_fhash
@@ -258,7 +258,7 @@ Masterchain swap
  *
  */
 // version capabilities
-VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or config.version!
+VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or config.version!
 // max-validators max-main-validators min-validators
 MAX_VALIDATORS MAX_MAIN_VALIDATORS MIN_VALIDATORS config.validator_num!
 // min-stake max-stake min-total-stake max-factor
@@ -283,12 +283,12 @@ GAS_PRICE_MC sg* 1 *M 10 *M 10000 10 *M GR$0.1 GR$1.0 1000 10000000 config.mc_ga
 1000000 1000 sg* CELL_PRICE sg* 3/2 sg*/ 1/3 sg*/ 1/3 sg*/ config.fwd_prices!
 10000000 10000 sg* CELL_PRICE_MC sg* 3/2 sg*/ 1/3 sg*/ 1/3 sg*/ config.mc_fwd_prices!
 // mc-cc-lifetime sh-cc-lifetime sh-val-lifetime sh-val-num mc-shuffle
-250 250 5500 7 true config.catchain_params!
+250 250 5500 VALIDATORS_PER_SHARD true config.catchain_params!
 // round-candidates next-cand-delay-ms consensus-timeout-ms fast-attempts attempt-duration cc-max-deps max-block-size max-collated-size new-cc-ids
-3 NEXT_BLOCK_GENERATION_DELAY 64000 3 8 4 2 *Mi 2 *Mi true config.consensus_params!
+<b x{d9} s, 1 8 u, 3 8 u, NEXT_BLOCK_GENERATION_DELAY 32 u, 16000 32 u, 3 32 u, 8 32 u, 4 32 u, 10 *Mi 32 u, 10 *Mi 32 u, PROTO_VERSION 16 u, 10000 32 u, b> 29 config!
 
-128 *Ki 512 *Ki 1 *Mi triple  // [ underload soft hard ] : block bytes limit
-100000 500000 1000000 triple  // gas limits
+BLOCK_SIZE_UNDERLOAD_KB BLOCK_LIMIT_MULTIPLIER * *Ki  BLOCK_SIZE_SOFT_KB BLOCK_LIMIT_MULTIPLIER * *Ki BLOCK_SIZE_HARD_KB BLOCK_LIMIT_MULTIPLIER * *Ki triple  // [ underload soft hard ] : block bytes limit
+BLOCK_GAS_LIMIT_UNDERLOAD BLOCK_LIMIT_MULTIPLIER * BLOCK_GAS_LIMIT_SOFT BLOCK_LIMIT_MULTIPLIER * BLOCK_GAS_LIMIT_HARD BLOCK_LIMIT_MULTIPLIER * triple  // gas limits
 1000 5000 10000 triple        // lt limits
 triple dup untriple config.mc_block_limits!
 untriple config.block_limits!
@@ -313,10 +313,8 @@ GR$100 1 500 config.complaint_prices!
 
 "validator-keys.pub" file>B
 { dup Blen } { 32 B| swap dup ."Validator public key = " Bx. cr 17 add-validator } while drop
-// newkeypair nip dup ."Validator #1 public key = " Bx. cr // 17 add-validator
-// newkeypair nip dup ."Validator #2 public key = " Bx. cr // 239 add-validator
 ORIGINAL_VALIDATOR_SET_VALID_FOR =: orig_vset_valid_for  // original validator set valid 2 min
-now dup orig_vset_valid_for + 0 config.validators!
+now dup orig_vset_valid_for + VALIDATORS_MASTERCHAIN_NUM config.validators!
 
 /*
  *
@@ -346,8 +344,8 @@ Masterchain swap
  */
 
 create_state
-cr cr ."new state is:" cr dup <s csr. cr
-dup 31 boc+>B dup Bx. cr
+// cr cr ."new state is:" cr dup <s csr. cr
+dup 31 boc+>B
 dup "zerostate.boc" tuck B>file
 ."(Initial masterchain state saved to file " type .")" cr
 Bhashu dup =: zerostate_fhash
