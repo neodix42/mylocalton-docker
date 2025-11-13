@@ -256,6 +256,13 @@ docker compose up
 
 ```
 docker exec -it genesis bash
+
+# connect to validator console
+validator-engine-console -a 127.0.0.1:40002 -k  /var/ton-work/db/client -p /var/ton-work/db/server.pub
+
+# connect to lite-server
+lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub
+
 docker exec -it validator-1 bash
 docker exec -it validator-2 bash
 docker exec -it validator-3 bash
