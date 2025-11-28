@@ -42,7 +42,7 @@ By default, the following services will be available on start:
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
 | Time Machine        | http://127.0.0.1:8083/                                                                   | 
-| TON-HTTP-API V2     | http://127.0.0.1:8082/                                                                   | 
+| TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2/                                                            | 
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
 | Http File Server    | http://127.0.0.1:8000/                                                                   |
 | Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
@@ -195,8 +195,10 @@ The maximum number of validators that can be added is 5.
 <td>
 By default TON HTTP API runs on port <b>8082.</b>
 <ul>
-<li><b>TON_API_GET_METHODS_ENABLED</b> - default value 1;</li>
-<li><b>TON_API_JSON_RPC_ENABLED</b> - default value 1.</li>
+<li><b>THACPP_LOG_LEVEL</b> - level, one of trace, debug, info, warning, error, critical (default: warning)</li>
+<li><b>THACPP_LOG_FORMAT</b> - format of logs, one of tskv, ltsv, json (default: json)</li>
+<li><b>THACPP_MAIN_WORKER_THREADS</b> - number of http service workers</li>
+<li><b>THACPP_TONLIB_THREADS</b> - number of tonlib workers</li>
 </ul>
 </td>
 <td>
