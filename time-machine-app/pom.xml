@@ -29,11 +29,11 @@
             <version>3.5.3</version>
         </dependency>
         <dependency>
-            <groupId>io.github.neodix42</groupId>
+            <groupId>org.ton.ton4j</groupId>
             <artifactId>smartcontract</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.github.neodix42</groupId>
+            <groupId>org.ton.ton4j</groupId>
             <artifactId>adnl</artifactId>
         </dependency>
         <dependency>

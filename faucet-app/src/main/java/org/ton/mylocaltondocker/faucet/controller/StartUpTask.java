@@ -21,11 +21,11 @@ import org.ton.mylocaltondocker.faucet.Main;
 import org.ton.mylocaltondocker.faucet.db.DB;
 import org.ton.mylocaltondocker.faucet.db.WalletEntity;
 import org.ton.mylocaltondocker.faucet.db.WalletPk;
+import org.ton.ton4j.smartcontract.SendResponse;
 import org.ton.ton4j.smartcontract.highload.HighloadWallet;
 import org.ton.ton4j.smartcontract.types.Destination;
 import org.ton.ton4j.smartcontract.types.HighloadConfig;
 import org.ton.ton4j.tonlib.Tonlib;
-import org.ton.ton4j.tonlib.types.ExtMessageInfo;
 import org.ton.ton4j.utils.Utils;
 
 @Component
@@ -151,9 +151,9 @@ public class StartUpTask {
                       .destinations(destinations250)
                       .build();
 
-              ExtMessageInfo extMessageInfo = highloadFaucet.send(config);
+              SendResponse extMessageInfo = highloadFaucet.send(config);
               log.info("contract send result {}", extMessageInfo);
-              if (nonNull(extMessageInfo.getHash())) {
+              if (nonNull(extMessageInfo.getMessage())) {
                 for (Destination destination : destinations250) {
                   DB.updateWalletStatus(
                       WalletPk.builder().walletAddress(destination.getAddress()).build(), "sent");

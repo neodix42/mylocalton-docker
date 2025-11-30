@@ -1,19 +1,18 @@
 package org.ton.mylocaltondocker.timemachine.controller;
 
+import static java.util.Objects.nonNull;
+
+import com.github.dockerjava.api.DockerClient;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.github.dockerjava.api.DockerClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import org.ton.java.adnl.AdnlLiteClient;
 import org.ton.mylocaltondocker.timemachine.Main;
-
-import static java.util.Objects.nonNull;
+import org.ton.ton4j.adnl.AdnlLiteClient;
 
 @Component
 @Slf4j
@@ -29,51 +28,6 @@ public class StartUpTask {
   private static final long MIN_REINIT_INTERVAL = 5000; // 5 seconds
 
   public static DockerClient dockerClient;
-
-
-  @EventListener(ApplicationReadyEvent.class)
-  public void onApplicationReady() throws Exception {
-
-    System.out.println("Initializing tonlib");
-
-    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
-      System.out.println("time-machine-app is waiting for /usr/share/data/global.config.json");
-      Thread.sleep(5000);
-    }
-
-    log.info("SERVER_PORT {}", System.getenv("SERVER_PORT"));
-
-    try {
-
-      Main.adnlLiteClient =
-          AdnlLiteClient.builder()
-              .configPath("/usr/share/data/global.config.json")
-              .queryTimeout(10)
-              .build();
-
-//      log.info(Main.adnlLiteClient.getMasterchainInfo().getLast().toString());
-
-    } catch (Exception e) {
-      log.error("can't get seqno " + e.getMessage());
-    }
-
-    log.info("adnlLiteClient initialized");
-
-    dockerClient = MltUtils.createDockerClient();
-    log.info("dockerClient initialized");
-
-    if (!MltUtils.isConfigExist(0)) {
-      SnapshotConfig snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
-      snapshotConfig.setSnapshotNumber("0");
-      snapshotConfig.setTimestamp(System.currentTimeMillis());
-      MltUtils.storeSnapshotConfiguration(snapshotConfig);
-    }
-
-    log.info("genesis node initialized");
-
-    log.info("time-machine-app ready");
-  }
-
 
   /**
    * Simple thread-safe method to reinitialize AdnlLiteClient. Tries once, if it fails - exits and
@@ -136,5 +90,48 @@ public class StartUpTask {
       // Always release the lock
       isCreatingClient.set(false);
     }
+  }
+
+  @EventListener(ApplicationReadyEvent.class)
+  public void onApplicationReady() throws Exception {
+
+    System.out.println("Initializing tonlib");
+
+    while (!Files.exists(Paths.get("/usr/share/data/global.config.json"))) {
+      System.out.println("time-machine-app is waiting for /usr/share/data/global.config.json");
+      Thread.sleep(5000);
+    }
+
+    log.info("SERVER_PORT {}", System.getenv("SERVER_PORT"));
+
+    try {
+
+      Main.adnlLiteClient =
+          AdnlLiteClient.builder()
+              .configPath("/usr/share/data/global.config.json")
+              .queryTimeout(10)
+              .build();
+
+//      log.info(Main.adnlLiteClient.getMasterchainInfo().getLast().toString());
+
+    } catch (Exception e) {
+      log.error("can't get seqno " + e.getMessage());
+    }
+
+    log.info("adnlLiteClient initialized");
+
+    dockerClient = MltUtils.createDockerClient();
+    log.info("dockerClient initialized");
+
+    if (!MltUtils.isConfigExist(0)) {
+      SnapshotConfig snapshotConfig = MltUtils.getCurrentSnapshotConfig(dockerClient);
+      snapshotConfig.setSnapshotNumber("0");
+      snapshotConfig.setTimestamp(System.currentTimeMillis());
+      MltUtils.storeSnapshotConfiguration(snapshotConfig);
+    }
+
+    log.info("genesis node initialized");
+
+    log.info("time-machine-app ready");
   }
 }

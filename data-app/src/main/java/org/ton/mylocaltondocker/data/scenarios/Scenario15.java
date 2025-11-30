@@ -3,6 +3,7 @@ package org.ton.mylocaltondocker.data.scenarios;
 import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.utils.MyUtils;
 import org.ton.ton4j.address.Address;
 import org.ton.ton4j.smartcontract.token.ft.JettonMinter;
 import org.ton.ton4j.smartcontract.token.ft.JettonWallet;
@@ -12,7 +13,6 @@ import org.ton.ton4j.smartcontract.utils.MsgUtils;
 import org.ton.ton4j.smartcontract.wallet.v3.WalletV3R2;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.utils.MyUtils;
 
 /**
  * deploy jetton minter, mint jettons, edit minter's jetton content, change minter admin, transfer
@@ -43,7 +43,6 @@ public class Scenario15 implements Scenario {
             .content(
                 NftUtils.createOffChainUriCell(
                     "https://raw.githubusercontent.com/neodix42/ton4j/main/1-media/neo-jetton.json"))
-            .jettonWalletCodeHex(WalletCodes.jettonWallet.getValue())
             .build();
 
     log.info("jetton minter address {}", minter.getAddress());

@@ -3,6 +3,7 @@ package org.ton.mylocaltondocker.data.scenarios;
 import com.iwebpp.crypto.TweetNaclFast;
 import java.math.BigInteger;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.utils.MyUtils;
 import org.ton.ton4j.address.Address;
 import org.ton.ton4j.cell.Cell;
 import org.ton.ton4j.cell.CellBuilder;
@@ -14,7 +15,6 @@ import org.ton.ton4j.smartcontract.types.*;
 import org.ton.ton4j.smartcontract.wallet.v3.WalletV3R2;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.utils.MyUtils;
 
 /**
  * deploy nft collection, deploy 2 nfts on it, deploy nft marketplace, deploy nft1 sale-contract,
@@ -154,7 +154,7 @@ public class Scenario16 implements Scenario {
     Utils.sleep(30, "deploying NFT sale smart-contract for nft item #1");
 
     // get nft item 1 data
-    log.info("nftSale data for nft item #1 {}", nftSale1.getData(tonlib));
+    log.info("nftSale data for nft item #1 {}", nftSale1.getData());
 
     // deploy nft sale for item 2 -----------------------------------------------------------
     NftSale nftSale2 =
@@ -188,7 +188,7 @@ public class Scenario16 implements Scenario {
     Utils.sleep(30, "deploying NFT sale smart-contract for nft item #2");
 
     // get nft item 2 data
-    log.info("nftSale data for nft item #2 {}", nftSale2.getData(tonlib));
+    log.info("nftSale data for nft item #2 {}", nftSale2.getData());
 
     // sends from adminWallet to nftItem request for static data, response comes to adminWallet
     // https://github.com/ton-blockchain/token-contract/blob/main/nft/nft-item.fc#L131
@@ -263,18 +263,18 @@ public class Scenario16 implements Scenario {
   }
 
   private long getNftCollectionInfo(NftCollection nftCollection) {
-    CollectionData data = nftCollection.getCollectionData(tonlib);
+    CollectionData data = nftCollection.getCollectionData();
     log.info("nft collection info {}", data);
     log.info("nft collection item count {}", data.getNextItemIndex());
     log.info("nft collection owner {}", data.getOwnerAddress());
 
-    nftItem1Address = nftCollection.getNftItemAddressByIndex(tonlib, BigInteger.ZERO);
-    nftItem2Address = nftCollection.getNftItemAddressByIndex(tonlib, BigInteger.ONE);
+    nftItem1Address = nftCollection.getNftItemAddressByIndex(BigInteger.ZERO);
+    nftItem2Address = nftCollection.getNftItemAddressByIndex(BigInteger.ONE);
 
     log.info("address at index 1 = {}", nftItem1Address);
     log.info("address at index 2 = {}", nftItem2Address);
 
-    Royalty royalty = nftCollection.getRoyaltyParams(tonlib);
+    Royalty royalty = nftCollection.getRoyaltyParams();
     log.info("nft collection royalty address {}", royalty.getRoyaltyAddress());
 
     return data.getNextItemIndex();
