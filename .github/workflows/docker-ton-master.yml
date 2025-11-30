@@ -51,7 +51,7 @@ jobs:
           file: ./Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.96
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3.97
 
       - name: Build and push faucet
         id: docker_build_2
@@ -63,7 +63,7 @@ jobs:
           file: ./faucet/Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.96
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v3.97
 
       - name: Build and push data
         id: docker_build_3
@@ -75,7 +75,7 @@ jobs:
           file: ./data/Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.96
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v3.97
 
       - name: Build and push blockchain-explorer
         id: docker_build_4
@@ -87,7 +87,7 @@ jobs:
           file: ./explorer/Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.96
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v3.97
 
       - name: Build and push time-machine
         id: docker_build_5
@@ -99,7 +99,7 @@ jobs:
           file: ./time-machine/Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.96
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v3.97
 
       - name: Build and push lite-server
         id: docker_build_6
@@ -111,4 +111,4 @@ jobs:
           file: ./lite-server/Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.96
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v3.97

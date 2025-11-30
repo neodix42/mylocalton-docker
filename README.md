@@ -232,7 +232,7 @@ In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
 | Time Machine        | http://127.0.0.1:8083/                                                                   | 
-| TON-HTTP-API V2     | http://127.0.0.1:8082/                                                                   | 
+| TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2                                                             | 
 | TON-HTTP-API V3     | http://127.0.0.1:8081/                                                                   |
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
 | Faucet              | http://127.0.0.1:88                                                                      |

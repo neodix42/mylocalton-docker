@@ -8,17 +8,15 @@ import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.docker
 import static org.ton.mylocaltondocker.timemachine.controller.StartUpTask.reinitializeAdnlLiteClient;
 
 import com.github.dockerjava.api.exception.NotFoundException;
-
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import java.io.File;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
@@ -29,6 +27,19 @@ import org.ton.ton4j.tl.liteserver.responses.MasterchainInfo;
 @Slf4j
 public class MyRestController {
 
+  // Store current snapshot status for status endpoint
+  private volatile String currentSnapshotStatus = "Ready";
+  private volatile boolean isSnapshotInProgress = false;
+
+  public static long getVolumeSize(String volumeName) {
+    File volumeDir = new File(volumeName);
+    if (!volumeDir.exists() || !volumeDir.isDirectory()) {
+      System.err.println("Volume path does not exist or is not a directory: " + volumeName);
+      return 0L;
+    }
+    return FileUtils.sizeOfDirectory(volumeDir);
+  }
+  
   @GetMapping("/seqno-volume")
   public Map<String, Object> getSeqno() {
     try {
@@ -103,11 +114,11 @@ public class MyRestController {
   public Map<String, Object> checkLinksHealth() {
     Map<String, Object> response = new HashMap<>();
     Map<String, String> linkStatuses = new HashMap<>();
-    
+
     // Define the links to check with their Docker network IP addresses
     Map<String, String> linksToCheck = new HashMap<>();
     linksToCheck.put("8080", "http://172.28.1.20:8080/last"); // blockchain-explorer
-    linksToCheck.put("8082", "http://172.28.1.105:8082"); // ton-http-api (TON Center V2)
+    linksToCheck.put("8082", "http://172.28.1.105:8082/api/v2"); // ton-http-api (TON Center V2)
     linksToCheck.put("8081", "http://172.28.1.102:8081"); // index-api (TON Center V3)
     linksToCheck.put("88", "http://172.28.1.21:88"); // faucet
     linksToCheck.put("99", "http://172.28.1.22:99"); // data-generator
@@ -119,12 +130,12 @@ public class MyRestController {
       String status = checkSingleLinkHealth(url);
       linkStatuses.put(port, status);
     }
-    
+
     response.put("success", true);
     response.put("linkStatuses", linkStatuses);
     return response;
   }
-  
+
   private String checkSingleLinkHealth(String urlString) {
     try {
       URL url = new URL(urlString);
@@ -132,13 +143,13 @@ public class MyRestController {
       connection.setRequestMethod("GET");
       connection.setConnectTimeout(2000); // 2 second timeout
       connection.setReadTimeout(2000); // 2 second timeout
-      
+
       connection.getResponseCode();
       connection.disconnect();
-      
+
       // Consider any response (even errors like 404, 500) as "online" since the service is responding
       return "online";
-      
+
     } catch (Exception e) {
       return "down";
     }
@@ -228,10 +239,6 @@ public class MyRestController {
       return response;
     }
   }
-
-  // Store current snapshot status for status endpoint
-  private volatile String currentSnapshotStatus = "Ready";
-  private volatile boolean isSnapshotInProgress = false;
 
   @GetMapping("/snapshot-status")
   public Map<String, Object> getSnapshotStatus() {
@@ -504,15 +511,6 @@ public class MyRestController {
       response.put("message", "Failed to restore snapshots: " + e.getMessage());
       return response;
     }
-  }
-
-  public static long getVolumeSize(String volumeName) {
-    File volumeDir = new File(volumeName);
-    if (!volumeDir.exists() || !volumeDir.isDirectory()) {
-      System.err.println("Volume path does not exist or is not a directory: " + volumeName);
-      return 0L;
-    }
-    return FileUtils.sizeOfDirectory(volumeDir);
   }
 
   @PostMapping("/delete-snapshot")

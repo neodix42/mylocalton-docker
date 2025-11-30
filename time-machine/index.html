@@ -78,89 +78,89 @@
     <!-- Administration panel with action links -->
     <div class="administration-panel" id="administration-panel">
         <h3>Administration</h3>
-        <div id="admin-links" class="admin-links hidden">
-            <a href="#" id="take-snapshot-link" class="admin-link primary">
+        <div class="admin-links hidden" id="admin-links">
+            <a class="admin-link primary" href="#" id="take-snapshot-link">
                 Take Snapshot
             </a>
-            <a href="#" id="restore-snapshot-link" class="admin-link secondary">
+            <a class="admin-link secondary" href="#" id="restore-snapshot-link">
                 Restore Snapshot
             </a>
-            <a href="#" id="delete-snapshot-link" class="admin-link danger">
+            <a class="admin-link danger" href="#" id="delete-snapshot-link">
                 Delete Snapshot
             </a>
-            <a href="#" id="start-blockchain-link" class="admin-link success">
+            <a class="admin-link success" href="#" id="start-blockchain-link">
                 Start Blockchain
             </a>
-            <a href="#" id="stop-blockchain-link" class="admin-link warning">
+            <a class="admin-link warning" href="#" id="stop-blockchain-link">
                 Stop Blockchain
             </a>
         </div>
-        <div id="admin-placeholder" class="admin-placeholder">
+        <div class="admin-placeholder" id="admin-placeholder">
             <p>Select a snapshot to view administration options</p>
         </div>
     </div>
-    
+
     <div class="node-info" id="node-info">
         <h3>Snapshot Information</h3>
         <div id="node-details">
             <p>Select a snapshot to view details</p>
         </div>
     </div>
-    
+
     <div class="quick-links" id="quick-links">
         <h3>Quick Links</h3>
         <div class="link-item">
-            <a href="http://localhost:8080/last" target="_blank" class="quick-link">
+            <a class="quick-link" href="http://localhost:8080/last" target="_blank">
                 <span class="link-text">Blockchain Explorer</span>
             </a>
             <span class="link-status" id="status-8080">checking...</span>
         </div>
         <div class="link-item">
-            <a href="http://localhost:8082" target="_blank" class="quick-link">
+            <a class="quick-link" href="http://localhost:8082/api/v2" target="_blank">
                 <span class="link-text">TON Center V2</span>
             </a>
             <span class="link-status" id="status-8082">checking...</span>
         </div>
         <div class="link-item">
-            <a href="http://localhost:8081" target="_blank" class="quick-link">
+            <a class="quick-link" href="http://localhost:8081" target="_blank">
                 <span class="link-text">TON Center V3</span>
             </a>
             <span class="link-status" id="status-8081">checking...</span>
         </div>
         <div class="link-item">
-            <a href="http://localhost:88" target="_blank" class="quick-link">
+            <a class="quick-link" href="http://localhost:88" target="_blank">
                 <span class="link-text">Faucet</span>
             </a>
             <span class="link-status" id="status-88">checking...</span>
         </div>
         <div class="link-item">
-            <a href="http://localhost:99" target="_blank" class="quick-link">
+            <a class="quick-link" href="http://localhost:99" target="_blank">
                 <span class="link-text">Data Generator</span>
             </a>
             <span class="link-status" id="status-99">checking...</span>
         </div>
         <div class="link-item">
-            <a href="http://localhost:8000" target="_blank" class="quick-link">
+            <a class="quick-link" href="http://localhost:8000" target="_blank">
                 <span class="link-text">File Server</span>
             </a>
             <span class="link-status" id="status-8000">checking...</span>
         </div>
     </div>
-    
+
     <div class="reset-section" id="reset-section">
         <h3>Danger Zone</h3>
         <div class="danger-zone-links">
-            <a href="#" id="start-over-link" class="admin-link danger">
+            <a class="admin-link danger" href="#" id="start-over-link">
                 Start over
             </a>
-            <a href="#" id="clean-up-link" class="admin-link danger">
+            <a class="admin-link danger" href="#" id="clean-up-link">
                 Clean up
             </a>
         </div>
     </div>
 </div>
 
-<div id="message-overlay" class="message-overlay hidden">
+<div class="message-overlay hidden" id="message-overlay">
     <div class="message-content">
         <div class="message-text" id="message-text"></div>
         <button class="message-close" id="message-close">×</button>
@@ -168,61 +168,63 @@
 </div>
 
 <!-- Reset Confirmation Modal -->
-<div id="reset-confirmation-modal" class="modal-overlay hidden">
+<div class="modal-overlay hidden" id="reset-confirmation-modal">
     <div class="modal-content">
         <h3>Confirm Reset</h3>
-        <p>The current blockchain and all its snapshots will be deleted. On the next screen you will be able to configure settings for your new TON blockchain. Do you want to proceed?</p>
+        <p>The current blockchain and all its snapshots will be deleted. On the next screen you will be able to
+            configure settings for your new TON blockchain. Do you want to proceed?</p>
         <div class="modal-buttons">
-            <button id="reset-confirm-no" class="modal-btn secondary">No</button>
-            <button id="reset-confirm-yes" class="modal-btn danger">Yes</button>
+            <button class="modal-btn secondary" id="reset-confirm-no">No</button>
+            <button class="modal-btn danger" id="reset-confirm-yes">Yes</button>
         </div>
     </div>
 </div>
 
 <!-- Delete Snapshot Confirmation Modal -->
-<div id="delete-confirmation-modal" class="modal-overlay hidden">
+<div class="modal-overlay hidden" id="delete-confirmation-modal">
     <div class="modal-content">
         <h3>Confirm Delete</h3>
         <p id="delete-confirmation-message">Are you sure you want to delete this snapshot?</p>
         <div class="modal-buttons">
-            <button id="delete-confirm-no" class="modal-btn secondary">No</button>
-            <button id="delete-confirm-yes" class="modal-btn danger">Yes</button>
+            <button class="modal-btn secondary" id="delete-confirm-no">No</button>
+            <button class="modal-btn danger" id="delete-confirm-yes">Yes</button>
         </div>
     </div>
 </div>
 
 <!-- Stop Blockchain Confirmation Modal -->
-<div id="stop-confirmation-modal" class="modal-overlay hidden">
+<div class="modal-overlay hidden" id="stop-confirmation-modal">
     <div class="modal-content">
         <h3>Confirm Stop Blockchain</h3>
         <p>Are you sure you want to stop the blockchain? Later you can restore from any snapshot.</p>
         <div class="modal-buttons">
-            <button id="stop-confirm-no" class="modal-btn secondary">No</button>
-            <button id="stop-confirm-yes" class="modal-btn danger">Yes</button>
+            <button class="modal-btn secondary" id="stop-confirm-no">No</button>
+            <button class="modal-btn danger" id="stop-confirm-yes">Yes</button>
         </div>
     </div>
 </div>
 
 <!-- Clean Up Confirmation Modal -->
-<div id="cleanup-confirmation-modal" class="modal-overlay hidden">
+<div class="modal-overlay hidden" id="cleanup-confirmation-modal">
     <div class="modal-content">
         <h3>Confirm Clean Up</h3>
-        <p>Are you sure you want to clean up? This will stop and remove all containers and delete all volumes. This action cannot be undone.</p>
+        <p>Are you sure you want to clean up? This will stop and remove all containers and delete all volumes. This
+            action cannot be undone.</p>
         <div class="modal-buttons">
-            <button id="cleanup-confirm-no" class="modal-btn secondary">No</button>
-            <button id="cleanup-confirm-yes" class="modal-btn danger">Yes</button>
+            <button class="modal-btn secondary" id="cleanup-confirm-no">No</button>
+            <button class="modal-btn danger" id="cleanup-confirm-yes">Yes</button>
         </div>
     </div>
 </div>
 
 <!-- Reset Configuration Modal -->
-<div id="reset-config-modal" class="modal-overlay hidden">
+<div class="modal-overlay hidden" id="reset-config-modal">
     <div class="modal-content race-car-modal">
         <h3>Configure new TON Blockchain</h3>
         <div class="race-car-container">
             <!-- Race Car Background Image -->
             <div class="race-car-bg"></div>
-            
+
             <form id="reset-config-form">
                 <!-- Blockchain section - Engine area -->
                 <div class="config-section engine-section">
@@ -230,63 +232,70 @@
                     <div class="config-grid compact">
                         <div class="config-item">
                             <label for="global-id">GLOBAL_ID</label>
-                            <input type="number" id="global-id" name="GLOBAL_ID" value="-217">
+                            <input id="global-id" name="GLOBAL_ID" type="number" value="-217">
                         </div>
                         <div class="config-item">
                             <label for="blockchain-initial-balance">BLOCKCHAIN_INITIAL_BALANCE</label>
-                            <input type="number" id="blockchain-initial-balance" name="BLOCKCHAIN_INITIAL_BALANCE" value="5000000000">
+                            <input id="blockchain-initial-balance" name="BLOCKCHAIN_INITIAL_BALANCE" type="number"
+                                   value="5000000000">
                         </div>
                         <div class="config-item">
                             <label for="validator-0-initial-balance">VALIDATOR_0_INITIAL_BALANCE</label>
-                            <input type="number" id="validator-0-initial-balance" name="VALIDATOR_0_INITIAL_BALANCE" value="500000000">
+                            <input id="validator-0-initial-balance" name="VALIDATOR_0_INITIAL_BALANCE" type="number"
+                                   value="500000000">
                         </div>
                         <div class="config-item">
                             <label for="validator-1-initial-balance">VALIDATOR_1_INITIAL_BALANCE</label>
-                            <input type="number" id="validator-1-initial-balance" name="VALIDATOR_1_INITIAL_BALANCE" value="500000000">
+                            <input id="validator-1-initial-balance" name="VALIDATOR_1_INITIAL_BALANCE" type="number"
+                                   value="500000000">
                         </div>
                         <div class="config-item">
                             <label for="validator-2-initial-balance">VALIDATOR_2_INITIAL_BALANCE</label>
-                            <input type="number" id="validator-2-initial-balance" name="VALIDATOR_2_INITIAL_BALANCE" value="500000000">
+                            <input id="validator-2-initial-balance" name="VALIDATOR_2_INITIAL_BALANCE" type="number"
+                                   value="500000000">
                         </div>
                         <div class="config-item">
                             <label for="validator-3-initial-balance">VALIDATOR_3_INITIAL_BALANCE</label>
-                            <input type="number" id="validator-3-initial-balance" name="VALIDATOR_3_INITIAL_BALANCE" value="500000000">
+                            <input id="validator-3-initial-balance" name="VALIDATOR_3_INITIAL_BALANCE" type="number"
+                                   value="500000000">
                         </div>
                         <div class="config-item">
                             <label for="validator-4-initial-balance">VALIDATOR_4_INITIAL_BALANCE</label>
-                            <input type="number" id="validator-4-initial-balance" name="VALIDATOR_4_INITIAL_BALANCE" value="500000000">
+                            <input id="validator-4-initial-balance" name="VALIDATOR_4_INITIAL_BALANCE" type="number"
+                                   value="500000000">
                         </div>
                         <div class="config-item">
                             <label for="validator-5-initial-balance">VALIDATOR_5_INITIAL_BALANCE</label>
-                            <input type="number" id="validator-5-initial-balance" name="VALIDATOR_5_INITIAL_BALANCE" value="500000000">
+                            <input id="validator-5-initial-balance" name="VALIDATOR_5_INITIAL_BALANCE" type="number"
+                                   value="500000000">
                         </div>
                         <div class="config-item">
                             <label for="max-validators">MAX_VALIDATORS</label>
-                            <input type="number" id="max-validators" name="MAX_VALIDATORS" value="1000">
+                            <input id="max-validators" name="MAX_VALIDATORS" type="number" value="1000">
                         </div>
                         <div class="config-item">
                             <label for="max-main-validators">MAX_MAIN_VALIDATORS</label>
-                            <input type="number" id="max-main-validators" name="MAX_MAIN_VALIDATORS" value="100">
+                            <input id="max-main-validators" name="MAX_MAIN_VALIDATORS" type="number" value="100">
                         </div>
                         <div class="config-item">
                             <label for="min-validators">MIN_VALIDATORS</label>
-                            <input type="number" id="min-validators" name="MIN_VALIDATORS" value="1">
+                            <input id="min-validators" name="MIN_VALIDATORS" type="number" value="1">
                         </div>
                         <div class="config-item">
                             <label for="version-capabilities">VERSION_CAPABILITIES</label>
-                            <input type="number" id="version-capabilities" name="VERSION_CAPABILITIES" value="11">
+                            <input id="version-capabilities" name="VERSION_CAPABILITIES" type="number" value="11">
                         </div>
                         <div class="config-item">
                             <label for="actual-min-split">ACTUAL_MIN_SPLIT</label>
-                            <input type="number" id="actual-min-split" name="ACTUAL_MIN_SPLIT" value="0">
+                            <input id="actual-min-split" name="ACTUAL_MIN_SPLIT" type="number" value="0">
                         </div>
                         <div class="config-item">
                             <label for="min-split">MIN_SPLIT</label>
-                            <input type="number" id="min-split" name="MIN_SPLIT" value="0">
+                            <input id="min-split" name="MIN_SPLIT" type="number" value="0">
                         </div>
                         <div class="config-item">
                             <label for="max-split">MAX_SPLIT</label>
-                            <input type="number" id="max-split" name="MAX_SPLIT" value="4">
+                            <input id="max-split" name="MAX_SPLIT" type="number" value="4">
                         </div>
                         <div class="config-item">
                             <label for="masterchain-only">MASTERCHAIN_ONLY</label>
@@ -297,7 +306,8 @@
                         </div>
                         <div class="config-item">
                             <label for="next-block-generation-delay">NEXT_BLOCK_GENERATION_DELAY</label>
-                            <input type="number" id="next-block-generation-delay" name="NEXT_BLOCK_GENERATION_DELAY" value="2">
+                            <input id="next-block-generation-delay" name="NEXT_BLOCK_GENERATION_DELAY" type="number"
+                                   value="2">
                         </div>
                     </div>
                 </div>
@@ -308,39 +318,40 @@
                     <div class="config-grid compact">
                         <div class="config-item">
                             <label for="min-stake">MIN_STAKE</label>
-                            <input type="number" id="min-stake" name="MIN_STAKE" value="1000000">
+                            <input id="min-stake" name="MIN_STAKE" type="number" value="1000000">
                         </div>
                         <div class="config-item">
                             <label for="max-stake">MAX_STAKE</label>
-                            <input type="number" id="max-stake" name="MAX_STAKE" value="1000000000">
+                            <input id="max-stake" name="MAX_STAKE" type="number" value="1000000000">
                         </div>
                         <div class="config-item">
                             <label for="max-factor">MAX_FACTOR</label>
-                            <input type="number" id="max-factor" name="MAX_FACTOR" value="10">
+                            <input id="max-factor" name="MAX_FACTOR" type="number" value="10">
                         </div>
                         <div class="config-item">
                             <label for="min-total-stake">MIN_TOTAL_STAKE</label>
-                            <input type="number" id="min-total-stake" name="MIN_TOTAL_STAKE" value="10000">
+                            <input id="min-total-stake" name="MIN_TOTAL_STAKE" type="number" value="10000">
                         </div>
                         <div class="config-item">
                             <label for="election-start-before">ELECTION_START_BEFORE</label>
-                            <input type="number" id="election-start-before" name="ELECTION_START_BEFORE" value="900">
+                            <input id="election-start-before" name="ELECTION_START_BEFORE" type="number" value="900">
                         </div>
                         <div class="config-item">
                             <label for="election-end-before">ELECTION_END_BEFORE</label>
-                            <input type="number" id="election-end-before" name="ELECTION_END_BEFORE" value="300">
+                            <input id="election-end-before" name="ELECTION_END_BEFORE" type="number" value="300">
                         </div>
                         <div class="config-item">
                             <label for="election-stake-frozen">ELECTION_STAKE_FROZEN</label>
-                            <input type="number" id="election-stake-frozen" name="ELECTION_STAKE_FROZEN" value="180">
+                            <input id="election-stake-frozen" name="ELECTION_STAKE_FROZEN" type="number" value="180">
                         </div>
                         <div class="config-item">
                             <label for="validation-period">VALIDATION_PERIOD</label>
-                            <input type="number" id="validation-period" name="VALIDATION_PERIOD" value="1200">
+                            <input id="validation-period" name="VALIDATION_PERIOD" type="number" value="1200">
                         </div>
                         <div class="config-item">
                             <label for="original-validator-set-valid-for">ORIGINAL_VALIDATOR_SET_VALID_FOR</label>
-                            <input type="number" id="original-validator-set-valid-for" name="ORIGINAL_VALIDATOR_SET_VALID_FOR" value="120">
+                            <input id="original-validator-set-valid-for" name="ORIGINAL_VALIDATOR_SET_VALID_FOR"
+                                   type="number" value="120">
                         </div>
                     </div>
                 </div>
@@ -351,35 +362,37 @@
                     <div class="config-grid compact">
                         <div class="config-item">
                             <label for="bit-price-per-second-mc">BIT_PRICE_PER_SECOND_MC</label>
-                            <input type="number" id="bit-price-per-second-mc" name="BIT_PRICE_PER_SECOND_MC" value="1000">
+                            <input id="bit-price-per-second-mc" name="BIT_PRICE_PER_SECOND_MC" type="number"
+                                   value="1000">
                         </div>
                         <div class="config-item">
                             <label for="cell-price-per-second-mc">CELL_PRICE_PER_SECOND_MC</label>
-                            <input type="number" id="cell-price-per-second-mc" name="CELL_PRICE_PER_SECOND_MC" value="500000">
+                            <input id="cell-price-per-second-mc" name="CELL_PRICE_PER_SECOND_MC" type="number"
+                                   value="500000">
                         </div>
                         <div class="config-item">
                             <label for="bit-price-per-second">BIT_PRICE_PER_SECOND</label>
-                            <input type="number" id="bit-price-per-second" name="BIT_PRICE_PER_SECOND" value="1">
+                            <input id="bit-price-per-second" name="BIT_PRICE_PER_SECOND" type="number" value="1">
                         </div>
                         <div class="config-item">
                             <label for="cell-price-per-second">CELL_PRICE_PER_SECOND</label>
-                            <input type="number" id="cell-price-per-second" name="CELL_PRICE_PER_SECOND" value="500">
+                            <input id="cell-price-per-second" name="CELL_PRICE_PER_SECOND" type="number" value="500">
                         </div>
                         <div class="config-item">
                             <label for="cell-price-mc">CELL_PRICE_MC</label>
-                            <input type="number" id="cell-price-mc" name="CELL_PRICE_MC" value="1000000">
+                            <input id="cell-price-mc" name="CELL_PRICE_MC" type="number" value="1000000">
                         </div>
                         <div class="config-item">
                             <label for="gas-price-mc">GAS_PRICE_MC</label>
-                            <input type="number" id="gas-price-mc" name="GAS_PRICE_MC" value="10000">
+                            <input id="gas-price-mc" name="GAS_PRICE_MC" type="number" value="10000">
                         </div>
                         <div class="config-item">
                             <label for="cell-price">CELL_PRICE</label>
-                            <input type="number" id="cell-price" name="CELL_PRICE" value="100000">
+                            <input id="cell-price" name="CELL_PRICE" type="number" value="100000">
                         </div>
                         <div class="config-item">
                             <label for="gas-price">GAS_PRICE</label>
-                            <input type="number" id="gas-price" name="GAS_PRICE" value="1000">
+                            <input id="gas-price" name="GAS_PRICE" type="number" value="1000">
                         </div>
                     </div>
                 </div>
@@ -390,22 +403,26 @@
                     <div class="config-grid compact">
                         <div class="config-item">
                             <label for="simple-faucet-initial-balance">SIMPLE_FAUCET_INITIAL_BALANCE</label>
-                            <input type="number" id="simple-faucet-initial-balance" name="SIMPLE_FAUCET_INITIAL_BALANCE" value="1000000">
+                            <input id="simple-faucet-initial-balance" name="SIMPLE_FAUCET_INITIAL_BALANCE" type="number"
+                                   value="1000000">
                         </div>
                         <div class="config-item">
                             <label for="highload-faucet-initial-balance">HIGHLOAD_FAUCET_INITIAL_BALANCE</label>
-                            <input type="number" id="highload-faucet-initial-balance" name="HIGHLOAD_FAUCET_INITIAL_BALANCE" value="1000000">
+                            <input id="highload-faucet-initial-balance" name="HIGHLOAD_FAUCET_INITIAL_BALANCE"
+                                   type="number" value="1000000">
                         </div>
                         <div class="config-item">
                             <label for="data-faucet-initial-balance">DATA_FAUCET_INITIAL_BALANCE</label>
-                            <input type="number" id="data-faucet-initial-balance" name="DATA_FAUCET_INITIAL_BALANCE" value="1000000">
+                            <input id="data-faucet-initial-balance" name="DATA_FAUCET_INITIAL_BALANCE" type="number"
+                                   value="1000000">
                         </div>
                     </div>
                 </div>
 
                 <div class="modal-buttons">
-                    <button type="button" id="reset-config-cancel" class="modal-btn secondary">🚫 Cancel</button>
-                    <button type="submit" id="reset-config-proceed" class="modal-btn primary">🏁 Start Your Engine!</button>
+                    <button class="modal-btn secondary" id="reset-config-cancel" type="button">🚫 Cancel</button>
+                    <button class="modal-btn primary" id="reset-config-proceed" type="submit">🏁 Start Your Engine!
+                    </button>
                 </div>
             </form>
         </div>
