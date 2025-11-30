@@ -430,29 +430,38 @@ services:
   ## TON HTTP API V2
   tonhttpapi:
     container_name: ton-http-api-v2
+    image: toncenter/ton-http-api-cpp:v2.1.4
     profiles: [ton-http-api-v2]
-    image: toncenter/ton-http-api:v2.0.62
     ports:
-      - 8082:8082
+      - 8082:8081
+      - 8182:8082
     volumes:
       - shared-data:/usr/share/data
     environment:
-      - TON_API_TONLIB_LITESERVER_CONFIG=/usr/share/data/global.config.json
-      - TON_API_GET_METHODS_ENABLED=1
-      - TON_API_JSON_RPC_ENABLED=1
-      - TON_API_TONLIB_KEYSTORE=/tmp/keystore/
-      - TON_API_TONLIB_CDLL_PATH=/usr/share/data/libtonlibjson.so
-      - TON_API_LOGS_JSONIFY
-      - TON_API_LOGS_LEVEL
-      - TON_API_ROOT_PATH
+      - THACPP_TONLIB_CONFIG_PATH=/usr/share/data/global.config.json
+      - THACPP_TONLIB_KEYSTORE_PATH=/tmp/keystore/
+      - THACPP_TONLIB_BOC_ENDPOINTS=[]
+      - THACPP_TONLIB_THREADS
+      - THACPP_MAIN_WORKER_THREADS
+      - THACPP_FS_WORKER_THREADS=1
+      - THACPP_HTTP_WORKER_THREADS=2
+      - THACPP_LOG_LEVEL
+      - THACPP_LOG_PATH=@stdout
+      - THACPP_SYSTEM_LOG_LEVEL=error
+      - THACPP_SYSTEM_LOG_PATH=/logs/userver-logs.txt
+      - THACPP_JSONRPC_LOG_LEVEL=error
+      - THACPP_JSONRPC_LOG_PATH=/logs/jsonrpc-logs.txt
+      - THACPP_LOG_FORMAT
+      - THACPP_HTTP_WORKER_USER_AGENT=empty
+      - THACPP_STATIC_CONTENT_DIR=/static
+      - THACPP_MAX_STACK_ENTRY_DEPTH=256
     restart: unless-stopped
     depends_on:
       genesis:
         condition: service_healthy
-    command: -c "gunicorn -k uvicorn.workers.UvicornWorker -w ${TON_API_WORKERS:-1} --bind 0.0.0.0:8082 pyTON.main:app"
     healthcheck:
-      test: curl -sS http://127.0.0.1:8082${TON_API_ROOT_PATH}/healthcheck || echo 1
-      interval: 30s
+      test: curl -sS http://127.0.0.1:8082/api/v2/getMasterchainInfo || echo 1
+      interval: 1s
       timeout: 5s
       retries: 10
     networks:
@@ -511,7 +520,7 @@ services:
         published: 8081
     environment:
       <<: *index-common
-      TON_INDEXER_TON_HTTP_API_ENDPOINT: http://172.28.1.102:8081/
+      TON_INDEXER_TON_HTTP_API_ENDPOINT: http://172.28.1.102:8081/api/v2/
     restart: always
     networks:
       main:
