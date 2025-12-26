@@ -26,6 +26,9 @@ elif [[ $# -eq 2 ]]; then
         echo "Directory '$repo_dir' already exists. Entering..."
         cd "$repo_dir"
         git checkout $branch
+        # pulling changes and updating submodules
+        git pull origin $branch
+        git submodule update --recursive --init
     else
         echo "Cloning $repo_url (branch: $branch) into $repo_dir ..."
         git clone --recursive --branch "$branch" --single-branch "$repo_url" "$repo_dir"
