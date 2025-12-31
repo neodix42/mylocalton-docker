@@ -7,6 +7,7 @@
 
 wc_master setworkchain
 GLOBAL_ID setglobalid   // negative value means a test instance of the blockchain
+<b GLOBAL_ID 32 i, b> 19 config!
 
 // Initial state of Workchain 0 (Basic workchain)
 
