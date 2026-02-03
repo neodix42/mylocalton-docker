@@ -42,6 +42,7 @@ By default, the following services will be available on start:
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
 | Time Machine        | http://127.0.0.1:8083/                                                                   | 
+| Global config       | http://127.0.0.1:8000/localhost.global.config.json                                       | 
 | TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2/                                                            | 
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
 | Http File Server    | http://127.0.0.1:8000/                                                                   |

@@ -2,9 +2,9 @@ name: MyLocalTon Docker (TON testnet)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'main'
+  schedule:
+    # Run every day at midnight UTC
+    - cron: '0 0 * * *'
 
 env:
   REGISTRY: ghcr.io
