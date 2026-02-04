@@ -10,8 +10,8 @@ echo "Current INTERNAL_IP $INTERNAL_IP"
 
 
 if [ ! -f "/var/ton-work/db/global.config.json" ]; then
-  echo "waiting 90 seconds for genesis to be ready very first time..."
-  sleep 90
+  echo "waiting 10 seconds for genesis to be ready very first time..."
+  sleep 10
   echo "Getting global.config.json from genesis via shared volume..."
   cp /usr/share/data/global.config.json /var/ton-work/db
 else
@@ -86,5 +86,5 @@ else
 fi
 
 echo Started $NAME at $INTERNAL_IP:$PUBLIC_PORT
-echo validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
-validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" $CUSTOM_PARAMETERS
+echo validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" --initial-sync-delay 0.0 $CUSTOM_PARAMETERS
+validator-engine -C /var/ton-work/db/global.config.json -v $VERBOSITY --db /var/ton-work/db --ip "$INTERNAL_IP:$PUBLIC_PORT" --initial-sync-delay 0.0 $CUSTOM_PARAMETERS

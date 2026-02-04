@@ -304,7 +304,8 @@ which is based on the official repository https://github.com/ton-blockchain/ton/
 You can change it by setting TON_BRANCH in .env file, for example to `testnet`.
 
 You can also now build MyLocalTon Docker image based on any fork of TON repository.
-Here is the short instruction:
+
+Here is the short instruction on how to build and start the customized container:
 
 ```
 git clone https://github.com/neodix42/mylocalton-docker.git
@@ -342,9 +343,9 @@ These wallets will be always available in the blockchain, and you can use them i
 * Validation
     * automatic participation in elections and reaping of rewards
     * specify from 1 to 6 validators on start
-    * validation cycle lasts 20 minutes (can be changed via env var VALIDATION_PERIOD)
-    * be default, elections last 10 minutes (starts 5 minutes after validation cycle starts and finishes 5 minutes
-      before validation cycles ends)
+    * the validation cycle lasts 20 minutes (can be changed via env var VALIDATION_PERIOD)
+    * by default, elections last 10 minutes (starts 5 minutes after the validation cycle starts and finishes 5 minutes
+      before the validation cycle ends)
     * minimum validator stake is set to 100mln;
     * stake freeze period 3 minutes
     * predefined validators' wallet addresses (`V3R2`, subWalletId = `42`)
@@ -361,74 +362,12 @@ These wallets will be always available in the blockchain, and you can use them i
 * cross-platform (arm64/amd64)
 * tested on Ubuntu, Windows and MacOS
 
-## Development using TON third party SDK
+## TON development using Java
 
-### Exaple of using predefined Faucet wallet with a help of [ton4j](https://github.com/neodiX42/ton4j)
+Refer to [ton4j](https://github.com/ton-blockchain/ton4j) SDK.
 
-<!-- @formatter:off -->
-
-```java
-Tonlib tonlib =
-    Tonlib.builder()
-        .pathToTonlibSharedLib(Utils.getTonlibGithubUrl())
-        .pathToGlobalConfig("http://127.0.0.1:8000/localhost.global.config.json")
-        .ignoreCache(false)
-        .build();
-
-log.info("last {}",tonlib.getLast());
-
-byte[] prvKey = Utils.hexToSignedBytes("a51e8fb6f0fae3834bf430f5012589d319e7b3b3303ceb82c816b762fccf2d05");
-
-// to use mnemonic
-// byte[] prvKey = Mnemonic.toKeyPair(
-//    Arrays.asList("viable","model", "canvas", "decade", "neck", "soap","turtle", "asthma", "bench",
-//    "crouch", "bicycle", "grief", "history", "envelope", "valid", "intact", "invest",
-//    "like", "offer", "urban", "adjust", "popular", "draft", "coral"))
-// .getSecretKey();
-TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
-
-WalletV3R2 contract=WalletV3R2.builder().tonlib(tonlib).wc(-1).keyPair(keyPair).walletId(42).build();
-log.info("WalletV3R2 address {}",contract.getAddress().toRaw());
-assertThat(contract.getAddress().toRaw()).isEqualTo("-1:22f53b7d9aba2cef44755f7078b01614cd4dde2388a1729c2c386cf8f9898afe");
-```
-<!-- @formatter:on -->
-
-### Using Highload Wallet V2 faucet with help of [ton4j](https://github.com/neodiX42/ton4j)
-
-<!-- @formatter:off -->
-```java
-byte[] prvKey = Utils.hexToSignedBytes("e1480435871753a968ef08edabb24f5532dab4cd904dbdc683b8576fb45fa697");
-TweetNaclFast.Signature.KeyPair keyPair = Utils.generateSignatureKeyPairFromSeed(prvKey);
-
-HighloadWallet highloadFaucet = 
-  HighloadWallet.builder()
-    .tonlib(tonlib)
-    .keyPair(keyPair)
-    .wc(-1)
-    .walletId(42L)
-    .queryId(BigInteger.ZERO)
-    .build();
-
-List<Destination> destinations = new ArrayList<>(); // fill it up
-
-HighloadConfig config =
-  HighloadConfig.builder()
-    .walletId(42)
-    .queryId(BigInteger.valueOf(Instant.now().getEpochSecond() + 60L << 32))
-    .destinations(
-      Arrays.asList(
-        Destination.builder()
-          .address("EQAaGHUHfkpWFGs428ETmym4vbvRNxCA1o4sTkwqigKjgf-_")
-          .amount(Utils.toNano(0.3))
-      .build()))
-  .build();
-
-ExtMessageInfo extMessageInfo = highloadFaucet.send(config);
-```
 <!-- @formatter:on -->
 **Important!** MyLocalTon-Docker lite-server runs inside genesis container in its own network on IP `172.28.1.10`,
-if you want to access it from local host you have to refer to `127.0.0.1` IP address.
+if you want to access it from localhost, you have to refer to `127.0.0.1` IP address or simply use this config:
 
-Go inside `global.config.json` and in `liteservers` section replace this IP `-1407450879` to this one `2130706433` or
-download
-`localhost.global.config.json` from file http server http://127.0.0.1:8000 if it is enabled.
+http://127.0.0.1:8000/localhost.global.config.json
