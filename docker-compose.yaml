@@ -430,7 +430,7 @@ services:
   ## TON HTTP API V2
   tonhttpapi:
     container_name: ton-http-api-v2
-    image: toncenter/ton-http-api-cpp:v2.1.4
+    image: toncenter/ton-http-api-cpp:v2.1.7
     profiles: [ton-http-api-v2]
     ports:
       - 8082:8081
@@ -511,7 +511,7 @@ services:
   index-api:
     container_name: index-api
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-api:v1.2.3
+    image: toncenter/ton-indexer-api:v1.2.5
     depends_on:
       - index-worker
     command: -prefork -threads ${TON_INDEXER_WORKERS:-2}
@@ -529,7 +529,7 @@ services:
   run-migrations:
     container_name: run-migrations
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-worker:v1.2.3
+    image: toncenter/ton-indexer-worker:v1.2.5
     depends_on:
       postgres:
         condition: service_healthy
@@ -544,7 +544,7 @@ services:
   index-worker:
     container_name: index-worker
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-worker:v1.2.3
+    image: toncenter/ton-indexer-worker:v1.2.5
     depends_on:
       postgres:
         condition: service_healthy
