@@ -91,8 +91,8 @@ services:
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL}
-      timeout: 10s
-      retries: 10
+      timeout: 5s
+      retries: 20
     deploy:
       resources:
         limits:

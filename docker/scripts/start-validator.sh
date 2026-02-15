@@ -34,6 +34,8 @@ else
 fi
 
 cd /var/ton-work/db
+mkdir -p static
+cp /usr/share/data/static/* static/
 
 if [ ! -f "config.json" ]; then
   echo "config.json does not exist, start very first time"

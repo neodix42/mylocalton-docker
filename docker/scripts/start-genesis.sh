@@ -274,6 +274,9 @@ else
   BASESTATE0_FILEHASH=$(sed ':a;N;$!ba;s/\n//g' <<<$(sed -e "s/\s//g" <<<"$(od -An -t x1 basestate0.fhash)") | awk '{ print toupper($0) }')
   mv basestate0.boc /var/ton-work/db/static/$BASESTATE0_FILEHASH
 
+  mkdir -p /usr/share/data/static
+  cp /var/ton-work/db/static/$ZEROSTATE_FILEHASH /var/ton-work/db/static/$BASESTATE0_FILEHASH /usr/share/data/static/
+
   if [ "$HIDE_PRIVATE_KEYS" == "false" ]; then
     echo "Share private keys via http-server"
     cp main-wallet.pk main-wallet.addr \
