@@ -6,12 +6,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.smartcontract.types.Destination;
 import org.ton.ton4j.smartcontract.types.WalletV5Config;
 import org.ton.ton4j.smartcontract.wallet.v5.WalletV5;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
 
 /** to up V5R1 wallet, upload state-init, transfer to 255 random recipients */
 @Slf4j
@@ -37,11 +37,10 @@ public class Scenario11 implements Scenario {
     String nonBounceableAddress = contract.getAddress().toNonBounceable();
     log.info("v5 address {}", nonBounceableAddress);
     DB.addRequest(nonBounceableAddress, Utils.toNano(1.5));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(15);
 
     contract.deploy();
-
-    contract.waitForDeployment();
+    Utils.sleep(3);
 
     WalletV5Config config =
         WalletV5Config.builder()
@@ -51,7 +50,7 @@ public class Scenario11 implements Scenario {
             .build();
 
     contract.send(config);
-    contract.waitForBalanceChangeWithTolerance(45, Utils.toNano(0.05));
+    Utils.sleep(3);
 
     BigInteger balance = contract.getBalance();
     if (balance.longValue() > Utils.toNano(0.07).longValue()) {

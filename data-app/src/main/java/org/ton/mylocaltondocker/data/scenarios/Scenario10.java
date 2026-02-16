@@ -6,12 +6,12 @@ import com.iwebpp.crypto.TweetNaclFast;
 import java.math.BigInteger;
 import java.util.Collections;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.smartcontract.types.Destination;
 import org.ton.ton4j.smartcontract.types.WalletV5Config;
 import org.ton.ton4j.smartcontract.wallet.v5.WalletV5;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
 
 /** to up V5R1 wallet, upload state-init, send back to faucet */
 @Slf4j
@@ -37,11 +37,10 @@ public class Scenario10 implements Scenario {
     String nonBounceableAddress = contract.getAddress().toNonBounceable();
     log.info("v5 address {}", nonBounceableAddress);
     DB.addRequest(nonBounceableAddress, Utils.toNano(0.1));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(15);
 
     contract.deploy();
-
-    contract.waitForDeployment();
+    Utils.sleep(3);
 
     WalletV5Config config =
         WalletV5Config.builder()
@@ -62,8 +61,7 @@ public class Scenario10 implements Scenario {
             .build();
 
     contract.send(config);
-    contract.waitForBalanceChangeWithTolerance(45, Utils.toNano(0.01));
-
+    Utils.sleep(3);
     BigInteger balance = contract.getBalance();
     if (balance.longValue() > Utils.toNano(0.07).longValue()) {
       log.error("scenario10 failed");

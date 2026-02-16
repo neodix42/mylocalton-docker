@@ -5,6 +5,8 @@ import static org.ton.mylocaltondocker.data.controller.StartUpTask.dataHighloadF
 import com.iwebpp.crypto.TweetNaclFast;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
+import org.ton.mylocaltondocker.data.utils.MyUtils;
 import org.ton.ton4j.address.Address;
 import org.ton.ton4j.cell.Cell;
 import org.ton.ton4j.smartcontract.types.DeployedPlugin;
@@ -16,8 +18,6 @@ import org.ton.ton4j.smartcontract.wallet.v4.SubscriptionInfo;
 import org.ton.ton4j.smartcontract.wallet.v4.WalletV4R2;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
-import org.ton.mylocaltondocker.data.utils.MyUtils;
 
 /**
  * creates beneficiary wallet used in plugin, tops up V4R2 wallet, upload state-init with random
@@ -48,11 +48,10 @@ public class Scenario9 implements Scenario {
     String nonBounceableAddress = walletAddress.toNonBounceable();
 
     DB.addRequest(nonBounceableAddress, Utils.toNano(1));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
-
+    Utils.sleep(15);
     contract.deploy();
 
-    contract.waitForDeployment();
+    Utils.sleep(3);
 
     long walletCurrentSeqno = contract.getSeqno();
 
@@ -89,9 +88,7 @@ public class Scenario9 implements Scenario {
 
     contract.send(config);
 
-    contract.waitForBalanceChangeWithTolerance(60, Utils.toNano(0.1));
-
-    Utils.sleep(10);
+    Utils.sleep(5);
 
     // create and deploy plugin -- end
 
@@ -133,10 +130,9 @@ public class Scenario9 implements Scenario {
             .toCell();
     tonlib.sendRawMessage(extMessage.toBase64());
 
-    tonlib.waitForBalanceChangeWithTolerance(
-        subscriptionInfo.getBeneficiary(), 60, Utils.toNano(0.1));
+    Utils.sleep(6);
 
-    // uninstall/remove plugin from the wallet -- start
+    // uninstall/remove the plugin from the wallet -- start
 
     walletCurrentSeqno = contract.getSeqno();
 
@@ -156,7 +152,6 @@ public class Scenario9 implements Scenario {
             .build();
 
     contract.uninstallPlugin(config);
-    contract.waitForBalanceChangeWithTolerance(60, Utils.toNano(0.05));
 
     // uninstall plugin -- end
 

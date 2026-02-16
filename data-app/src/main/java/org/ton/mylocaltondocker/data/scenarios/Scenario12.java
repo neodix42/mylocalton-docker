@@ -6,6 +6,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.cell.Cell;
 import org.ton.ton4j.cell.CellBuilder;
 import org.ton.ton4j.smartcontract.LibraryDeployer;
@@ -15,7 +16,6 @@ import org.ton.ton4j.smartcontract.types.WalletV5Config;
 import org.ton.ton4j.smartcontract.wallet.v5.WalletV5;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
 
 /** deploy V5R1 as library and do a transfer to 255 random recipients */
 @Slf4j
@@ -40,9 +40,9 @@ public class Scenario12 implements Scenario {
       log.info("raw addressLib {}", libraryDeployer.getAddress().toRaw());
 
       DB.addRequest(nonBounceableAddressLib, Utils.toNano(1));
-      Utils.sleep(30, "wait for lib balance change");
+      Utils.sleep(5, "wait for lib balance change");
       libraryDeployer.deploy();
-      Utils.sleep(30, "wait for lib to be deployed");
+      Utils.sleep(5, "wait for lib to be deployed");
     }
 
     // deploy V5R1 as library
@@ -61,10 +61,9 @@ public class Scenario12 implements Scenario {
     String nonBounceableAddress = contract.getAddress().toNonBounceable();
     log.info("v5 address {}", nonBounceableAddress);
     DB.addRequest(nonBounceableAddress, Utils.toNano(1.5));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(15);
 
     contract.deploy();
-    contract.waitForDeployment();
     Utils.sleep(5);
 
     WalletV5Config config =
@@ -75,7 +74,7 @@ public class Scenario12 implements Scenario {
             .build();
 
     contract.send(config);
-    contract.waitForBalanceChangeWithTolerance(45, Utils.toNano(0.05));
+    Utils.sleep(3);
 
     BigInteger balance = contract.getBalance();
     if (balance.longValue() > Utils.toNano(0.07).longValue()) {

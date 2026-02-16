@@ -183,7 +183,7 @@ public class StartUpTask {
               }
             });
 
-    executor.scheduleAtFixedRate(topUpTask, 30, 15, TimeUnit.SECONDS);
+    executor.scheduleAtFixedRate(topUpTask, 15, 15, TimeUnit.SECONDS);
   }
 
   public void runScenariosScheduler() {

@@ -21,7 +21,7 @@ import org.ton.mylocaltondocker.faucet.Main;
 import org.ton.mylocaltondocker.faucet.db.DB;
 import org.ton.mylocaltondocker.faucet.db.WalletEntity;
 import org.ton.mylocaltondocker.faucet.db.WalletPk;
-import org.ton.ton4j.smartcontract.SendResponse;
+import org.ton.ton4j.provider.SendResponse;
 import org.ton.ton4j.smartcontract.highload.HighloadWallet;
 import org.ton.ton4j.smartcontract.types.Destination;
 import org.ton.ton4j.smartcontract.types.HighloadConfig;
@@ -165,9 +165,9 @@ public class StartUpTask {
                   highloadFaucet.getAddress().toRaw(),
                   Utils.formatNanoValue(highloadFaucet.getBalance()));
             },
-            1,
-            1,
-            TimeUnit.MINUTES);
+            30,
+            30,
+            TimeUnit.SECONDS);
   }
 
   public void runFaucetCleanQueueScheduler() {

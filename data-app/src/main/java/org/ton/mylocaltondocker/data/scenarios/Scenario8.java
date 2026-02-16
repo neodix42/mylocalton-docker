@@ -6,7 +6,8 @@ import com.iwebpp.crypto.TweetNaclFast;
 import lombok.extern.slf4j.Slf4j;
 import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.address.Address;
-import org.ton.ton4j.smartcontract.SendResponse;
+import org.ton.ton4j.provider.SendResponse;
+import org.ton.ton4j.smartcontract.SendMode;
 import org.ton.ton4j.smartcontract.types.WalletV4R2Config;
 import org.ton.ton4j.smartcontract.wallet.v4.WalletV4R2;
 import org.ton.ton4j.tonlib.Tonlib;
@@ -35,10 +36,10 @@ public class Scenario8 implements Scenario {
 
     String nonBounceableAddress = walletAddress.toNonBounceable();
     DB.addRequest(nonBounceableAddress, Utils.toNano(0.1));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(15);
     SendResponse extMessageInfo = contract.deploy();
     log.info("deploy8 {}", extMessageInfo);
-    contract.waitForDeployment();
+    Utils.sleep(3);
 
     long walletCurrentSeqno = contract.getSeqno();
     log.info("walletV4 balance: {}", Utils.formatNanoValue(contract.getBalance()));
@@ -53,13 +54,12 @@ public class Scenario8 implements Scenario {
             .walletId(contract.getWalletId())
             .seqno(contract.getSeqno())
             .destination(dataHighloadFaucetAddress)
-            .mode(3)
+            .sendMode(SendMode.PAY_GAS_SEPARATELY_AND_IGNORE_ERRORS)
             .amount(Utils.toNano(0.06))
             .comment("mlt-scenario8")
             .build();
 
     contract.send(config);
-    contract.waitForBalanceChangeWithTolerance(60, Utils.toNano(0.05));
 
     log.info("FINISHED SCENARIO 8");
   }

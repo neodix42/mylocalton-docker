@@ -4,11 +4,11 @@ import static org.ton.mylocaltondocker.data.controller.StartUpTask.dataHighloadF
 
 import com.iwebpp.crypto.TweetNaclFast;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.smartcontract.types.WalletV1R1Config;
 import org.ton.ton4j.smartcontract.wallet.v1.WalletV1R1;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
 
 /** to up V1R1 wallet, upload state-init, send back to faucet 0.08 */
 @Slf4j
@@ -26,9 +26,9 @@ public class Scenario1 implements Scenario {
 
     String nonBounceableAddress = contract.getAddress().toNonBounceable();
     DB.addRequest(nonBounceableAddress, Utils.toNano(0.1));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(15);
     contract.deploy();
-    contract.waitForDeployment(45);
+    Utils.sleep(3);
 
     WalletV1R1Config config =
         WalletV1R1Config.builder()

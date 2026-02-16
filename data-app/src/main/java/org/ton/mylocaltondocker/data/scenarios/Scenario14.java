@@ -5,6 +5,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Collections;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.utils.MyUtils;
 import org.ton.ton4j.address.Address;
 import org.ton.ton4j.cell.Cell;
 import org.ton.ton4j.smartcontract.multisig.MultiSigWalletV2;
@@ -13,7 +14,6 @@ import org.ton.ton4j.smartcontract.utils.MsgUtils;
 import org.ton.ton4j.smartcontract.wallet.v3.WalletV3R2;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.utils.MyUtils;
 
 /**
  * deploy signer2 wallet, deploy MultiSig V2 with 2 out 3 consensus, deploy order from admin wallet,
@@ -83,8 +83,7 @@ public class Scenario14 implements Scenario {
             .mode(3)
             .build();
     deployer.send(config);
-    deployer.waitForDeployment(30);
-    Utils.sleep(10, "pause");
+    Utils.sleep(5, "pause");
 
     // send external msg to admin wallet that sends internal msg to multisig with body to create
     // order-contract
@@ -114,9 +113,8 @@ public class Scenario14 implements Scenario {
             .build();
 
     deployer.send(config);
-    deployer.waitForBalanceChange();
 
-    Utils.sleep(20);
+    Utils.sleep(5);
 
     Address orderAddress = multiSigWalletV2.getOrderAddress(BigInteger.ZERO);
     log.info("orderAddress {} {}", orderAddress, orderAddress.toRaw());
@@ -137,9 +135,8 @@ public class Scenario14 implements Scenario {
             .body(MultiSigWalletV2.approve(0, 1))
             .build();
     signer2.send(config);
-    signer2.waitForBalanceChange();
 
-    Utils.sleep(20);
+    Utils.sleep(5);
 
     log.info(
         "orderData when twice approved {}", multiSigWalletV2.getOrderData(BigInteger.valueOf(0)));

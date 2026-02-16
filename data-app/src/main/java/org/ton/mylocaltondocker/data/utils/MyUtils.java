@@ -3,12 +3,12 @@ package org.ton.mylocaltondocker.data.utils;
 
 import java.math.BigInteger;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.address.Address;
 import org.ton.ton4j.smartcontract.wallet.Contract;
 import org.ton.ton4j.smartcontract.wallet.v3.WalletV3R2;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
 
 @Slf4j
 public class MyUtils {
@@ -48,9 +48,9 @@ public class MyUtils {
 
     String nonBounceableAddress = contract.getAddress().toNonBounceable();
     DB.addRequest(nonBounceableAddress, topUpAmount);
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(3);
     contract.deploy();
-    contract.waitForDeployment();
+    Utils.sleep(3);
 
     return contract;
   }

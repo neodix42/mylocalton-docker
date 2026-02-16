@@ -21,6 +21,14 @@
             <artifactId>tonlib</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.ton.ton4j</groupId>
+            <artifactId>toncenter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.ton.ton4j</groupId>
+            <artifactId>adnl</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.objectdb</groupId>
             <artifactId>objectdb</artifactId>
             <scope>system</scope>

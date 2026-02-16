@@ -6,11 +6,11 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.ton.mylocaltondocker.data.db.DB;
 import org.ton.ton4j.smartcontract.highload.HighloadWalletV3;
 import org.ton.ton4j.smartcontract.types.*;
 import org.ton.ton4j.tonlib.Tonlib;
 import org.ton.ton4j.utils.Utils;
-import org.ton.mylocaltondocker.data.db.DB;
 
 /** deploy HighLoadWallet V3 and transfer to 1000 random recipients */
 @Slf4j
@@ -32,7 +32,7 @@ public class Scenario13 implements Scenario {
     String nonBounceableAddress = contract.getAddress().toNonBounceable();
     log.info("non-bounceable address {}", nonBounceableAddress);
     DB.addRequest(nonBounceableAddress, Utils.toNano(1));
-    tonlib.waitForBalanceChange(contract.getAddress(), 60);
+    Utils.sleep(15);
 
     HighloadV3Config config =
         HighloadV3Config.builder()
@@ -40,8 +40,7 @@ public class Scenario13 implements Scenario {
             .queryId(HighloadQueryId.fromSeqno(0).getQueryId())
             .build();
     contract.deploy(config);
-
-    contract.waitForDeployment();
+    Utils.sleep(3);
 
     config =
         HighloadV3Config.builder()
