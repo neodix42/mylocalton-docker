@@ -18,7 +18,7 @@ public class MyRestController {
 
   private final ConfigUpdateService configUpdateService;
 
-  @GetMapping("/params")
+  @GetMapping({"/params", "/supported"})
   public Map<String, Object> getSupportedParams() {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("success", true);

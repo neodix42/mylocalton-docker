@@ -1,6 +1,7 @@
 package org.ton.mylocaltondocker.configupdate.service;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.math.BigInteger;
@@ -111,6 +112,7 @@ import org.ton.ton4j.tlb.WorkchainDescrV2;
 import org.ton.ton4j.tlb.WorkchainFormat;
 import org.ton.ton4j.tlb.WorkchainFormatBasic;
 import org.ton.ton4j.tlb.WorkchainFormatExt;
+import org.ton.ton4j.tlb.WcSplitMergeTimings;
 import org.ton.ton4j.utils.Utils;
 
 @Service
@@ -176,6 +178,8 @@ public class ConfigUpdateService {
   private static final Map<String, DictSpec> DICT_SPECS = createDictSpecs();
   private static final Map<String, BigIntFormatSpec> BIGINT_FORMAT_OVERRIDES =
       createBigIntFormatOverrides();
+  private static final Map<String, Integer> UNSIGNED_NUMBER_FIELD_BITS =
+      createUnsignedNumberFieldBits();
 
   private static final Set<String> TAG_FIELDS =
       Set.of("magic", "cfgVoteSetup", "cfgVoteCfg", "workchain", "wfmtBasic", "wfmtExt");
@@ -263,7 +267,7 @@ public class ConfigUpdateService {
       log.error("Failed to update config param {}", id, e);
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("success", false);
-      response.put("message", e.getMessage());
+      response.put("message", resolveThrowableMessage(e));
       return response;
     }
   }
@@ -532,12 +536,27 @@ public class ConfigUpdateService {
     for (FieldSchema fieldSchema : schema.fields) {
       try {
         Object fieldValue = fieldSchema.field.get(value);
-        map.put(fieldSchema.name, toUiValue(fieldValue, fieldSchema.schema));
+        map.put(fieldSchema.name, toUiFieldValue(schema.javaType, fieldSchema, fieldValue));
       } catch (IllegalAccessException e) {
         throw new IllegalStateException("Cannot read field " + fieldSchema.name, e);
       }
     }
     return map;
+  }
+
+  private Object toUiFieldValue(Class<?> ownerType, FieldSchema fieldSchema, Object fieldValue) {
+    if (fieldValue == null) {
+      return toUiValue(null, fieldSchema.schema);
+    }
+
+    Integer bits = UNSIGNED_NUMBER_FIELD_BITS.get(ownerType.getName() + "." + fieldSchema.name);
+    if (bits != null
+        && (fieldSchema.schema.kind == SchemaKind.LONG || fieldSchema.schema.kind == SchemaKind.INT)
+        && fieldValue instanceof Number numberValue) {
+      return formatUnsignedNumber(numberValue.longValue(), bits);
+    }
+
+    return toUiValue(fieldValue, fieldSchema.schema);
   }
 
   private Object toUiDictValue(Object value, TypeSchema schema) {
@@ -609,7 +628,7 @@ public class ConfigUpdateService {
 
     for (FieldSchema fieldSchema : schema.fields) {
       Object rawValue = valueMap.get(fieldSchema.name);
-      Object parsedValue = fromUiValue(rawValue, fieldSchema.schema);
+      Object parsedValue = fromUiFieldValue(rawValue, schema.javaType, fieldSchema);
 
       try {
         if (parsedValue == null && fieldSchema.field.getType().isPrimitive()) {
@@ -622,6 +641,15 @@ public class ConfigUpdateService {
     }
 
     return instance;
+  }
+
+  private Object fromUiFieldValue(Object rawValue, Class<?> ownerType, FieldSchema fieldSchema) {
+    Integer bits = UNSIGNED_NUMBER_FIELD_BITS.get(ownerType.getName() + "." + fieldSchema.name);
+    if (bits != null
+        && (fieldSchema.schema.kind == SchemaKind.LONG || fieldSchema.schema.kind == SchemaKind.INT)) {
+      return parseUnsignedNumber(rawValue, fieldSchema.field.getType(), bits, ownerType.getSimpleName() + "." + fieldSchema.name);
+    }
+    return fromUiValue(rawValue, fieldSchema.schema);
   }
 
   private Object fromUiDict(Object uiValue, TypeSchema schema) {
@@ -766,6 +794,78 @@ public class ConfigUpdateService {
 
   private String asString(Object value) {
     return Objects.toString(value, "");
+  }
+
+  private String formatUnsignedNumber(long value, int bits) {
+    if (value >= 0) {
+      return String.valueOf(value);
+    }
+    BigInteger modulus = BigInteger.ONE.shiftLeft(bits);
+    return BigInteger.valueOf(value).mod(modulus).toString();
+  }
+
+  private Object parseUnsignedNumber(Object value, Class<?> targetType, int bits, String fieldName) {
+    BigInteger parsed = parseRawBigInteger(value);
+    if (parsed.signum() < 0) {
+      parsed = parsed.add(BigInteger.ONE.shiftLeft(bits));
+    }
+
+    BigInteger max = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE);
+    if (parsed.signum() < 0 || parsed.compareTo(max) > 0) {
+      throw new IllegalArgumentException(
+          "Value " + parsed + " is out of range for unsigned " + bits + "-bit field " + fieldName);
+    }
+
+    if (targetType.equals(long.class) || targetType.equals(Long.class)) {
+      return parsed.longValue();
+    }
+
+    if (targetType.equals(int.class) || targetType.equals(Integer.class)) {
+      if (parsed.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+        throw new IllegalArgumentException(
+            "Value " + parsed + " is too large for int field " + fieldName + " in ton4j model");
+      }
+      return parsed.intValue();
+    }
+
+    return parsed.longValue();
+  }
+
+  private BigInteger parseRawBigInteger(Object value) {
+    if (value == null) {
+      return BigInteger.ZERO;
+    }
+    if (value instanceof BigInteger bigInteger) {
+      return bigInteger;
+    }
+    if (value instanceof Number number) {
+      return BigInteger.valueOf(number.longValue());
+    }
+
+    String raw = asString(value).trim();
+    if (raw.isEmpty()) {
+      return BigInteger.ZERO;
+    }
+    if (raw.startsWith("0x") || raw.startsWith("0X")) {
+      return new BigInteger(raw.substring(2), 16);
+    }
+    return new BigInteger(raw);
+  }
+
+  private String resolveThrowableMessage(Throwable throwable) {
+    Throwable root = throwable;
+    if (root instanceof InvocationTargetException invocationTargetException
+        && invocationTargetException.getTargetException() != null) {
+      root = invocationTargetException.getTargetException();
+    }
+    while (root.getCause() != null && root.getCause() != root) {
+      root = root.getCause();
+    }
+    String message = root.getMessage();
+    if (message == null || message.isBlank()) {
+      return root.toString();
+    }
+    return message;
   }
 
   private static Map<Integer, Class<?>> createParamClassById() {
@@ -991,6 +1091,21 @@ public class ConfigUpdateService {
     map.put(
         JettonBridgeParamsV2.class.getName() + ".externalChainAddress",
         new BigIntFormatSpec(BigIntFormat.HEX, 256));
+
+    return Collections.unmodifiableMap(map);
+  }
+
+  private static Map<String, Integer> createUnsignedNumberFieldBits() {
+    Map<String, Integer> map = new LinkedHashMap<>();
+
+    map.put(WorkchainDescrV1.class.getName() + ".enabledSince", 32);
+    map.put(WorkchainDescrV1.class.getName() + ".version", 32);
+    map.put(WorkchainDescrV2.class.getName() + ".enabledSince", 32);
+    map.put(WorkchainDescrV2.class.getName() + ".version", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".splitMergeDelay", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".splitMergeInterval", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".minSplitMergeInterval", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".minSplitMergeDelay", 32);
 
     return Collections.unmodifiableMap(map);
   }
