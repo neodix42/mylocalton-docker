@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,7 +19,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.math.BigInteger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -33,7 +33,7 @@ public class ConfigUpdateApiSequentialTest {
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
   private static final Duration SEQNO_WAIT_TIMEOUT = Duration.ofSeconds(60);
   private static final long SEQNO_POLL_MILLIS = 1_500L;
-  private static final Set<Integer> SKIPPED_PARAM_IDS = Set.of(0, 7, 9, 10, 18, 32, 33, 34, 35, 36, 37);
+  private static final Set<Integer> SKIPPED_PARAM_IDS = Set.of(0, 7, 9, 10, 18, 33, 34, 35, 36, 37);
 
   @Test
   public void shouldUpdateAllConfigParamsSequentially() throws Exception {
@@ -41,6 +41,7 @@ public class ConfigUpdateApiSequentialTest {
     Assert.assertFalse("No supported params returned by API", paramIds.isEmpty());
 
     for (int paramId : paramIds) {
+      System.out.println("updating param " + paramId);
       long seqnoBefore = getSeqno();
 
       JsonNode paramResponse = httpGetJson("/api/config/" + paramId);
@@ -263,7 +264,7 @@ public class ConfigUpdateApiSequentialTest {
     return node;
   }
 
-  private JsonNode normalizePayloadForParam(int paramId, JsonNode payloadValue) {
+  private JsonNode normalizePayloadForParam(int paramId, JsonNode payloadValue) throws Exception {
     if (!(payloadValue instanceof ObjectNode payloadObject)) {
       return payloadValue;
     }
@@ -333,6 +334,17 @@ public class ConfigUpdateApiSequentialTest {
       return payloadObject;
     }
 
+    if (paramId == 32) {
+      JsonNode param34Response = httpGetJson("/api/config/34");
+      JsonNode currValidatorSetNode =
+          param34Response.path("param").path("value").path("currValidatorSet");
+      if (!isEmptyValue(currValidatorSetNode)) {
+        payloadObject.set("prevValidatorSet", currValidatorSetNode.deepCopy());
+      }
+      enforceValidatorSetRules(payloadObject, "prevValidatorSet");
+      return payloadObject;
+    }
+
     if (paramId == 79) {
       JsonNode bridgeNode = payloadObject.get("ethTonTokenBridge");
       ObjectNode bridge;
@@ -349,6 +361,61 @@ public class ConfigUpdateApiSequentialTest {
     }
 
     return payloadObject;
+  }
+
+  private void enforceValidatorSetRules(ObjectNode payloadObject, String fieldName) {
+    JsonNode validatorSetNode = payloadObject.get(fieldName);
+    if (!(validatorSetNode instanceof ObjectNode validatorSet)) {
+      return;
+    }
+
+    JsonNode listNode = validatorSet.get("list");
+    ArrayNode list;
+    if (listNode instanceof ArrayNode arrayNode) {
+      list = arrayNode;
+    } else {
+      list = MAPPER.createArrayNode();
+      validatorSet.set("list", list);
+    }
+
+    if (list.isEmpty()) {
+      ObjectNode entry = MAPPER.createObjectNode();
+      entry.put("key", "0");
+
+      ObjectNode validatorDescr = MAPPER.createObjectNode();
+      validatorDescr.put("_type", "Validator");
+
+      ObjectNode pubKey = MAPPER.createObjectNode();
+      pubKey.put("_type", "SigPubKey");
+      pubKey.put(
+          "pubkey",
+          "5555555555555555555555555555555555555555555555555555555555555555");
+      validatorDescr.set("publicKey", pubKey);
+      validatorDescr.put("weight", "1");
+
+      entry.set("value", validatorDescr);
+      list.add(entry);
+    }
+
+    long listSize = list.size();
+    long total = parseNodeLong(validatorSet.get("total"), listSize > 0 ? listSize : 1L);
+    if (total < 1L) {
+      total = 1L;
+    }
+    if (listSize > 0 && total < listSize) {
+      total = listSize;
+    }
+
+    long main = parseNodeLong(validatorSet.get("main"), 1L);
+    if (main < 1L) {
+      main = 1L;
+    }
+    if (main > total) {
+      main = total;
+    }
+
+    validatorSet.put("total", String.valueOf(total));
+    validatorSet.put("main", String.valueOf(main));
   }
 
   private void ensureBridgeV2Defaults(ObjectNode bridge) {

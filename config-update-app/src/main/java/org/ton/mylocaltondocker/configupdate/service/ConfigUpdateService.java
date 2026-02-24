@@ -92,6 +92,7 @@ import org.ton.ton4j.tlb.GasLimitsPrices;
 import org.ton.ton4j.tlb.GasLimitsPricesExt;
 import org.ton.ton4j.tlb.GasLimitsPricesOrdinary;
 import org.ton.ton4j.tlb.GasLimitsPricesPfx;
+import org.ton.ton4j.tlb.GlobalVersion;
 import org.ton.ton4j.tlb.JettonBridgeParams;
 import org.ton.ton4j.tlb.JettonBridgeParamsV1;
 import org.ton.ton4j.tlb.JettonBridgeParamsV2;
@@ -99,7 +100,6 @@ import org.ton.ton4j.tlb.JettonBridgePrices;
 import org.ton.ton4j.tlb.Message;
 import org.ton.ton4j.tlb.OracleBridgeParams;
 import org.ton.ton4j.tlb.PrecompiledSmc;
-import org.ton.ton4j.tlb.GlobalVersion;
 import org.ton.ton4j.tlb.SigPubKey;
 import org.ton.ton4j.tlb.StoragePrices;
 import org.ton.ton4j.tlb.Validator;
@@ -110,13 +110,13 @@ import org.ton.ton4j.tlb.ValidatorSignedTempKey;
 import org.ton.ton4j.tlb.ValidatorTempKey;
 import org.ton.ton4j.tlb.Validators;
 import org.ton.ton4j.tlb.ValidatorsExt;
+import org.ton.ton4j.tlb.WcSplitMergeTimings;
 import org.ton.ton4j.tlb.WorkchainDescr;
 import org.ton.ton4j.tlb.WorkchainDescrV1;
 import org.ton.ton4j.tlb.WorkchainDescrV2;
 import org.ton.ton4j.tlb.WorkchainFormat;
 import org.ton.ton4j.tlb.WorkchainFormatBasic;
 import org.ton.ton4j.tlb.WorkchainFormatExt;
-import org.ton.ton4j.tlb.WcSplitMergeTimings;
 import org.ton.ton4j.utils.Utils;
 
 @Service
@@ -198,6 +198,248 @@ public class ConfigUpdateService {
 
   private final Map<Integer, TypeSchema> schemaCache = new ConcurrentHashMap<>();
   private final Map<String, Optional<Integer>> addressWorkchainCache = new ConcurrentHashMap<>();
+
+  private static Map<Integer, Class<?>> createParamClassById() {
+    Map<Integer, Class<?>> map = new LinkedHashMap<>();
+    map.put(0, ConfigParams0.class);
+    map.put(1, ConfigParams1.class);
+    map.put(2, ConfigParams2.class);
+    map.put(3, ConfigParams3.class);
+    map.put(4, ConfigParams4.class);
+    map.put(5, ConfigParams5.class);
+    map.put(6, ConfigParams6.class);
+    map.put(7, ConfigParams7.class);
+    map.put(8, ConfigParams8.class);
+    map.put(9, ConfigParams9.class);
+    map.put(10, ConfigParams10.class);
+    map.put(11, ConfigParams11.class);
+    map.put(12, ConfigParams12.class);
+    map.put(13, ConfigParams13.class);
+    map.put(14, ConfigParams14.class);
+    map.put(15, ConfigParams15.class);
+    map.put(16, ConfigParams16.class);
+    map.put(17, ConfigParams17.class);
+    map.put(18, ConfigParams18.class);
+    map.put(19, ConfigParams19.class);
+    map.put(20, ConfigParams20.class);
+    map.put(21, ConfigParams21.class);
+    map.put(22, ConfigParams22.class);
+    map.put(23, ConfigParams23.class);
+    map.put(24, ConfigParams24.class);
+    map.put(25, ConfigParams25.class);
+    map.put(28, ConfigParams28.class);
+    map.put(29, ConfigParams29.class);
+    map.put(31, ConfigParams31.class);
+    map.put(32, ConfigParams32.class);
+    map.put(33, ConfigParams33.class);
+    map.put(34, ConfigParams34.class);
+    map.put(35, ConfigParams35.class);
+    map.put(36, ConfigParams36.class);
+    map.put(37, ConfigParams37.class);
+    map.put(39, ConfigParams39.class);
+    map.put(40, ConfigParams40.class);
+    map.put(44, ConfigParams44.class);
+    map.put(45, ConfigParams45.class);
+    map.put(71, ConfigParams71.class);
+    map.put(72, ConfigParams72.class);
+    map.put(73, ConfigParams73.class);
+    map.put(79, ConfigParams79.class);
+    map.put(81, ConfigParams81.class);
+    map.put(82, ConfigParams82.class);
+    return Collections.unmodifiableMap(map);
+  }
+
+  private static Map<Integer, String> createParamDescriptions() {
+    Map<Integer, String> map = new LinkedHashMap<>();
+    map.put(0, "config address");
+    map.put(1, "elector address");
+    map.put(2, "minter address");
+    map.put(3, "fee collector address");
+    map.put(4, "dns root address");
+    map.put(5, "burning config");
+    map.put(6, "mint prices");
+    map.put(7, "extra currencies");
+    map.put(8, "global version");
+    map.put(9, "mandatory params");
+    map.put(10, "critical params");
+    map.put(11, "config voting setup");
+    map.put(12, "workchains");
+    map.put(13, "complaint pricing");
+    map.put(14, "block creation fees");
+    map.put(15, "elections timing");
+    map.put(16, "validator counts");
+    map.put(17, "stake limits");
+    map.put(18, "storage prices");
+    map.put(19, "global id");
+    map.put(20, "masterchain gas prices");
+    map.put(21, "basechain gas prices");
+    map.put(22, "masterchain block limits");
+    map.put(23, "basechain block limits");
+    map.put(24, "masterchain msg forward prices");
+    map.put(25, "msg forward prices");
+    map.put(28, "catchain config");
+    map.put(29, "consensus config");
+    map.put(31, "fundamental smc addresses");
+    map.put(32, "prev validators");
+    map.put(33, "prev temp validators");
+    map.put(34, "current validators");
+    map.put(35, "current temp validators");
+    map.put(36, "next validators");
+    map.put(37, "next temp validators");
+    map.put(39, "validator signed temp keys");
+    map.put(40, "misbehaviour punishment config");
+    map.put(44, "suspended address list");
+    map.put(45, "precompiled contracts config");
+    map.put(71, "ethereum bridge");
+    map.put(72, "binance smart chain bridge");
+    map.put(73, "polygon bridge");
+    map.put(79, "eth ton token bridge");
+    map.put(81, "bnb ton token bridge");
+    map.put(82, "polygon ton token bridge");
+    return Collections.unmodifiableMap(map);
+  }
+
+  private static Map<Class<?>, List<Class<?>>> createInterfaceOptions() {
+    Map<Class<?>, List<Class<?>>> map = new ConcurrentHashMap<>();
+    map.put(ValidatorSet.class, List.of(Validators.class, ValidatorsExt.class));
+    map.put(ValidatorDescr.class, List.of(Validator.class, ValidatorAddr.class));
+    map.put(WorkchainDescr.class, List.of(WorkchainDescrV1.class, WorkchainDescrV2.class));
+    map.put(WorkchainFormat.class, List.of(WorkchainFormatBasic.class, WorkchainFormatExt.class));
+    map.put(
+        GasLimitsPrices.class,
+        List.of(GasLimitsPricesOrdinary.class, GasLimitsPricesExt.class, GasLimitsPricesPfx.class));
+    map.put(BlockLimits.class, List.of(BlockLimitsV1.class, BlockLimitsV2.class));
+    map.put(CatchainConfig.class, List.of(CatchainConfigC1.class, CatchainConfigC2.class));
+    map.put(
+        ConsensusConfig.class,
+        List.of(
+            ConsensusConfigV1.class,
+            ConsensusConfigNew.class,
+            ConsensusConfigV3.class,
+            ConsensusConfigV4.class));
+    map.put(JettonBridgeParams.class, List.of(JettonBridgeParamsV1.class, JettonBridgeParamsV2.class));
+    return Collections.unmodifiableMap(map);
+  }
+
+  private static Map<String, DictSpec> createDictSpecs() {
+    Map<String, DictSpec> map = new LinkedHashMap<>();
+
+    map.put(
+        ConfigParams7.class.getName() + ".extraCurrencies",
+        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 32, Byte.class, BigIntFormat.DECIMAL, false));
+    map.put(
+        ConfigParams9.class.getName() + ".mandatoryParams",
+        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, Void.class, BigIntFormat.DECIMAL, true));
+    map.put(
+        ConfigParams10.class.getName() + ".criticalParams",
+        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, Void.class, BigIntFormat.DECIMAL, true));
+    map.put(
+        ConfigParams12.class.getName() + ".workchains",
+        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, WorkchainDescr.class, BigIntFormat.DECIMAL, false));
+    map.put(
+        ConfigParams18.class.getName() + ".storagePrices",
+        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, StoragePrices.class, BigIntFormat.DECIMAL, false));
+    map.put(
+        ConfigParams31.class.getName() + ".fundamentalSmcAddr",
+        new DictSpec(256, BigInteger.class, BigIntFormat.ADDRESS_OR_HEX, 0, Void.class, BigIntFormat.DECIMAL, true));
+
+    map.put(
+        Validators.class.getName() + ".list",
+        new DictSpec(16, Long.class, BigIntFormat.DECIMAL, 0, ValidatorDescr.class, BigIntFormat.DECIMAL, false));
+    map.put(
+        ValidatorsExt.class.getName() + ".list",
+        new DictSpec(16, BigInteger.class, BigIntFormat.DECIMAL, 0, ValidatorDescr.class, BigIntFormat.DECIMAL, false));
+
+    map.put(
+        ConfigParams39.class.getName() + ".validatorSignedTemp",
+        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 0, ValidatorSignedTempKey.class, BigIntFormat.DECIMAL, false));
+
+    map.put(
+        ConfigParams44.class.getName() + ".suspendedAddressList",
+        new DictSpec(288, BigInteger.class, BigIntFormat.HEX, 0, Void.class, BigIntFormat.DECIMAL, true));
+    map.put(
+        ConfigParams45.class.getName() + ".precompiledContractsList",
+        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 0, PrecompiledSmc.class, BigIntFormat.DECIMAL, false));
+
+    map.put(
+        OracleBridgeParams.class.getName() + ".oracles",
+        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 256, BigInteger.class, BigIntFormat.HEX, false));
+    map.put(
+        JettonBridgeParamsV1.class.getName() + ".oracles",
+        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 256, BigInteger.class, BigIntFormat.HEX, false));
+    map.put(
+        JettonBridgeParamsV2.class.getName() + ".oracles",
+        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 256, BigInteger.class, BigIntFormat.HEX, false));
+
+    return Collections.unmodifiableMap(map);
+  }
+
+  private static Map<String, BigIntFormatSpec> createBigIntFormatOverrides() {
+    Map<String, BigIntFormatSpec> map = new LinkedHashMap<>();
+
+    // Config smart contract addresses
+    map.put(ConfigParams0.class.getName() + ".configAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(ConfigParams1.class.getName() + ".electorAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(ConfigParams2.class.getName() + ".minterAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(ConfigParams3.class.getName() + ".feeCollectorAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(ConfigParams4.class.getName() + ".dnsRootAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(ConfigParams5.class.getName() + ".blackholeAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+
+    // Hashes / keys
+    map.put(WorkchainDescrV1.class.getName() + ".zeroStateRootHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(WorkchainDescrV1.class.getName() + ".zeroStateFileHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(WorkchainDescrV2.class.getName() + ".zeroStateRootHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(WorkchainDescrV2.class.getName() + ".zeroStateFileHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(SigPubKey.class.getName() + ".pubkey", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(ValidatorAddr.class.getName() + ".adnlAddr", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(ValidatorTempKey.class.getName() + ".adnlAddr", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(CryptoSignature.class.getName() + ".r", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+    map.put(CryptoSignature.class.getName() + ".s", new BigIntFormatSpec(BigIntFormat.HEX, 256));
+
+    // Bridge params
+    map.put(
+        OracleBridgeParams.class.getName() + ".bridgeAddress",
+        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(
+        OracleBridgeParams.class.getName() + ".oracleMultiSigAddress",
+        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(
+        OracleBridgeParams.class.getName() + ".externalChainAddress",
+        new BigIntFormatSpec(BigIntFormat.HEX, 256));
+
+    map.put(
+        JettonBridgeParamsV1.class.getName() + ".bridgeAddress",
+        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(
+        JettonBridgeParamsV1.class.getName() + ".oracleAddress",
+        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(
+        JettonBridgeParamsV2.class.getName() + ".bridgeAddress",
+        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(
+        JettonBridgeParamsV2.class.getName() + ".oracleAddress",
+        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
+    map.put(
+        JettonBridgeParamsV2.class.getName() + ".externalChainAddress",
+        new BigIntFormatSpec(BigIntFormat.HEX, 256));
+
+    return Collections.unmodifiableMap(map);
+  }
+
+  private static Map<String, Integer> createUnsignedNumberFieldBits() {
+    Map<String, Integer> map = new LinkedHashMap<>();
+
+    map.put(WorkchainDescrV1.class.getName() + ".enabledSince", 32);
+    map.put(WorkchainDescrV1.class.getName() + ".version", 32);
+    map.put(WorkchainDescrV2.class.getName() + ".enabledSince", 32);
+    map.put(WorkchainDescrV2.class.getName() + ".version", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".splitMergeDelay", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".splitMergeInterval", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".minSplitMergeInterval", 32);
+    map.put(WcSplitMergeTimings.class.getName() + ".minSplitMergeDelay", 32);
+
+    return Collections.unmodifiableMap(map);
+  }
 
   public List<Map<String, Object>> getSupportedParams() {
     List<Map<String, Object>> result = new ArrayList<>();
@@ -333,11 +575,9 @@ public class ConfigUpdateService {
                 256,
                 k -> k.readUint(256),
                 v -> PrecompiledSmc.deserialize(CellSlice.beginParse(v)));
-        long suspendedUntil = slice.getRestBits() >= 32 ? slice.loadUint(32).longValue() : 0L;
         return ConfigParams45.builder()
             .magic(magic)
             .precompiledContractsList(precompiledContractsList)
-            .suspendedUntil(suspendedUntil)
             .build();
       }
 
@@ -1599,248 +1839,6 @@ public class ConfigUpdateService {
       return root.toString();
     }
     return message;
-  }
-
-  private static Map<Integer, Class<?>> createParamClassById() {
-    Map<Integer, Class<?>> map = new LinkedHashMap<>();
-    map.put(0, ConfigParams0.class);
-    map.put(1, ConfigParams1.class);
-    map.put(2, ConfigParams2.class);
-    map.put(3, ConfigParams3.class);
-    map.put(4, ConfigParams4.class);
-    map.put(5, ConfigParams5.class);
-    map.put(6, ConfigParams6.class);
-    map.put(7, ConfigParams7.class);
-    map.put(8, ConfigParams8.class);
-    map.put(9, ConfigParams9.class);
-    map.put(10, ConfigParams10.class);
-    map.put(11, ConfigParams11.class);
-    map.put(12, ConfigParams12.class);
-    map.put(13, ConfigParams13.class);
-    map.put(14, ConfigParams14.class);
-    map.put(15, ConfigParams15.class);
-    map.put(16, ConfigParams16.class);
-    map.put(17, ConfigParams17.class);
-    map.put(18, ConfigParams18.class);
-    map.put(19, ConfigParams19.class);
-    map.put(20, ConfigParams20.class);
-    map.put(21, ConfigParams21.class);
-    map.put(22, ConfigParams22.class);
-    map.put(23, ConfigParams23.class);
-    map.put(24, ConfigParams24.class);
-    map.put(25, ConfigParams25.class);
-    map.put(28, ConfigParams28.class);
-    map.put(29, ConfigParams29.class);
-    map.put(31, ConfigParams31.class);
-    map.put(32, ConfigParams32.class);
-    map.put(33, ConfigParams33.class);
-    map.put(34, ConfigParams34.class);
-    map.put(35, ConfigParams35.class);
-    map.put(36, ConfigParams36.class);
-    map.put(37, ConfigParams37.class);
-    map.put(39, ConfigParams39.class);
-    map.put(40, ConfigParams40.class);
-    map.put(44, ConfigParams44.class);
-    map.put(45, ConfigParams45.class);
-    map.put(71, ConfigParams71.class);
-    map.put(72, ConfigParams72.class);
-    map.put(73, ConfigParams73.class);
-    map.put(79, ConfigParams79.class);
-    map.put(81, ConfigParams81.class);
-    map.put(82, ConfigParams82.class);
-    return Collections.unmodifiableMap(map);
-  }
-
-  private static Map<Integer, String> createParamDescriptions() {
-    Map<Integer, String> map = new LinkedHashMap<>();
-    map.put(0, "config address");
-    map.put(1, "elector address");
-    map.put(2, "minter address");
-    map.put(3, "fee collector address");
-    map.put(4, "dns root address");
-    map.put(5, "burning config");
-    map.put(6, "mint prices");
-    map.put(7, "extra currencies");
-    map.put(8, "global version");
-    map.put(9, "mandatory params");
-    map.put(10, "critical params");
-    map.put(11, "config voting setup");
-    map.put(12, "workchains");
-    map.put(13, "complaint pricing");
-    map.put(14, "block creation fees");
-    map.put(15, "elections timing");
-    map.put(16, "validator counts");
-    map.put(17, "stake limits");
-    map.put(18, "storage prices");
-    map.put(19, "global id");
-    map.put(20, "masterchain gas prices");
-    map.put(21, "basechain gas prices");
-    map.put(22, "masterchain block limits");
-    map.put(23, "basechain block limits");
-    map.put(24, "masterchain msg forward prices");
-    map.put(25, "msg forward prices");
-    map.put(28, "catchain config");
-    map.put(29, "consensus config");
-    map.put(31, "fundamental smc addresses");
-    map.put(32, "prev validators");
-    map.put(33, "prev temp validators");
-    map.put(34, "current validators");
-    map.put(35, "current temp validators");
-    map.put(36, "next validators");
-    map.put(37, "next temp validators");
-    map.put(39, "validator signed temp keys");
-    map.put(40, "misbehaviour punishment config");
-    map.put(44, "suspended address list");
-    map.put(45, "precompiled contracts config");
-    map.put(71, "ethereum bridge");
-    map.put(72, "binance smart chain bridge");
-    map.put(73, "polygon bridge");
-    map.put(79, "eth ton token bridge");
-    map.put(81, "bnb ton token bridge");
-    map.put(82, "polygon ton token bridge");
-    return Collections.unmodifiableMap(map);
-  }
-
-  private static Map<Class<?>, List<Class<?>>> createInterfaceOptions() {
-    Map<Class<?>, List<Class<?>>> map = new ConcurrentHashMap<>();
-    map.put(ValidatorSet.class, List.of(Validators.class, ValidatorsExt.class));
-    map.put(ValidatorDescr.class, List.of(Validator.class, ValidatorAddr.class));
-    map.put(WorkchainDescr.class, List.of(WorkchainDescrV1.class, WorkchainDescrV2.class));
-    map.put(WorkchainFormat.class, List.of(WorkchainFormatBasic.class, WorkchainFormatExt.class));
-    map.put(
-        GasLimitsPrices.class,
-        List.of(GasLimitsPricesOrdinary.class, GasLimitsPricesExt.class, GasLimitsPricesPfx.class));
-    map.put(BlockLimits.class, List.of(BlockLimitsV1.class, BlockLimitsV2.class));
-    map.put(CatchainConfig.class, List.of(CatchainConfigC1.class, CatchainConfigC2.class));
-    map.put(
-        ConsensusConfig.class,
-        List.of(
-            ConsensusConfigV1.class,
-            ConsensusConfigNew.class,
-            ConsensusConfigV3.class,
-            ConsensusConfigV4.class));
-    map.put(JettonBridgeParams.class, List.of(JettonBridgeParamsV1.class, JettonBridgeParamsV2.class));
-    return Collections.unmodifiableMap(map);
-  }
-
-  private static Map<String, DictSpec> createDictSpecs() {
-    Map<String, DictSpec> map = new LinkedHashMap<>();
-
-    map.put(
-        ConfigParams7.class.getName() + ".extraCurrencies",
-        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 32, Byte.class, BigIntFormat.DECIMAL, false));
-    map.put(
-        ConfigParams9.class.getName() + ".mandatoryParams",
-        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, Void.class, BigIntFormat.DECIMAL, true));
-    map.put(
-        ConfigParams10.class.getName() + ".criticalParams",
-        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, Void.class, BigIntFormat.DECIMAL, true));
-    map.put(
-        ConfigParams12.class.getName() + ".workchains",
-        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, WorkchainDescr.class, BigIntFormat.DECIMAL, false));
-    map.put(
-        ConfigParams18.class.getName() + ".storagePrices",
-        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, StoragePrices.class, BigIntFormat.DECIMAL, false));
-    map.put(
-        ConfigParams31.class.getName() + ".fundamentalSmcAddr",
-        new DictSpec(256, BigInteger.class, BigIntFormat.ADDRESS_OR_HEX, 0, Void.class, BigIntFormat.DECIMAL, true));
-
-    map.put(
-        Validators.class.getName() + ".list",
-        new DictSpec(16, Long.class, BigIntFormat.DECIMAL, 0, ValidatorDescr.class, BigIntFormat.DECIMAL, false));
-    map.put(
-        ValidatorsExt.class.getName() + ".list",
-        new DictSpec(16, BigInteger.class, BigIntFormat.DECIMAL, 0, ValidatorDescr.class, BigIntFormat.DECIMAL, false));
-
-    map.put(
-        ConfigParams39.class.getName() + ".validatorSignedTemp",
-        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 0, ValidatorSignedTempKey.class, BigIntFormat.DECIMAL, false));
-
-    map.put(
-        ConfigParams44.class.getName() + ".suspendedAddressList",
-        new DictSpec(288, BigInteger.class, BigIntFormat.HEX, 0, Void.class, BigIntFormat.DECIMAL, true));
-    map.put(
-        ConfigParams45.class.getName() + ".precompiledContractsList",
-        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 0, PrecompiledSmc.class, BigIntFormat.DECIMAL, false));
-
-    map.put(
-        OracleBridgeParams.class.getName() + ".oracles",
-        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 256, BigInteger.class, BigIntFormat.HEX, false));
-    map.put(
-        JettonBridgeParamsV1.class.getName() + ".oracles",
-        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 256, BigInteger.class, BigIntFormat.HEX, false));
-    map.put(
-        JettonBridgeParamsV2.class.getName() + ".oracles",
-        new DictSpec(256, BigInteger.class, BigIntFormat.HEX, 256, BigInteger.class, BigIntFormat.HEX, false));
-
-    return Collections.unmodifiableMap(map);
-  }
-
-  private static Map<String, BigIntFormatSpec> createBigIntFormatOverrides() {
-    Map<String, BigIntFormatSpec> map = new LinkedHashMap<>();
-
-    // Config smart contract addresses
-    map.put(ConfigParams0.class.getName() + ".configAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(ConfigParams1.class.getName() + ".electorAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(ConfigParams2.class.getName() + ".minterAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(ConfigParams3.class.getName() + ".feeCollectorAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(ConfigParams4.class.getName() + ".dnsRootAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(ConfigParams5.class.getName() + ".blackholeAddr", new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-
-    // Hashes / keys
-    map.put(WorkchainDescrV1.class.getName() + ".zeroStateRootHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(WorkchainDescrV1.class.getName() + ".zeroStateFileHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(WorkchainDescrV2.class.getName() + ".zeroStateRootHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(WorkchainDescrV2.class.getName() + ".zeroStateFileHash", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(SigPubKey.class.getName() + ".pubkey", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(ValidatorAddr.class.getName() + ".adnlAddr", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(ValidatorTempKey.class.getName() + ".adnlAddr", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(CryptoSignature.class.getName() + ".r", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-    map.put(CryptoSignature.class.getName() + ".s", new BigIntFormatSpec(BigIntFormat.HEX, 256));
-
-    // Bridge params
-    map.put(
-        OracleBridgeParams.class.getName() + ".bridgeAddress",
-        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(
-        OracleBridgeParams.class.getName() + ".oracleMultiSigAddress",
-        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(
-        OracleBridgeParams.class.getName() + ".externalChainAddress",
-        new BigIntFormatSpec(BigIntFormat.HEX, 256));
-
-    map.put(
-        JettonBridgeParamsV1.class.getName() + ".bridgeAddress",
-        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(
-        JettonBridgeParamsV1.class.getName() + ".oracleAddress",
-        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(
-        JettonBridgeParamsV2.class.getName() + ".bridgeAddress",
-        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(
-        JettonBridgeParamsV2.class.getName() + ".oracleAddress",
-        new BigIntFormatSpec(BigIntFormat.ADDRESS_OR_HEX, 256));
-    map.put(
-        JettonBridgeParamsV2.class.getName() + ".externalChainAddress",
-        new BigIntFormatSpec(BigIntFormat.HEX, 256));
-
-    return Collections.unmodifiableMap(map);
-  }
-
-  private static Map<String, Integer> createUnsignedNumberFieldBits() {
-    Map<String, Integer> map = new LinkedHashMap<>();
-
-    map.put(WorkchainDescrV1.class.getName() + ".enabledSince", 32);
-    map.put(WorkchainDescrV1.class.getName() + ".version", 32);
-    map.put(WorkchainDescrV2.class.getName() + ".enabledSince", 32);
-    map.put(WorkchainDescrV2.class.getName() + ".version", 32);
-    map.put(WcSplitMergeTimings.class.getName() + ".splitMergeDelay", 32);
-    map.put(WcSplitMergeTimings.class.getName() + ".splitMergeInterval", 32);
-    map.put(WcSplitMergeTimings.class.getName() + ".minSplitMergeInterval", 32);
-    map.put(WcSplitMergeTimings.class.getName() + ".minSplitMergeDelay", 32);
-
-    return Collections.unmodifiableMap(map);
   }
 
   private enum SchemaKind {
