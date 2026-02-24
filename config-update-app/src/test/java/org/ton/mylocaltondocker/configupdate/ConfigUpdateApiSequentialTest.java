@@ -33,7 +33,7 @@ public class ConfigUpdateApiSequentialTest {
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
   private static final Duration SEQNO_WAIT_TIMEOUT = Duration.ofSeconds(60);
   private static final long SEQNO_POLL_MILLIS = 1_500L;
-  private static final Set<Integer> SKIPPED_PARAM_IDS = Set.of(0, 7, 9, 10, 18, 33, 34, 35, 36, 37);
+  private static final Set<Integer> SKIPPED_PARAM_IDS = Set.of(0, 9, 10, 18, 33, 34, 35, 36, 37);
 
   @Test
   public void shouldUpdateAllConfigParamsSequentially() throws Exception {
@@ -285,6 +285,31 @@ public class ConfigUpdateApiSequentialTest {
 
       payloadObject.put("feeBurnNum", String.valueOf(feeBurnNum));
       payloadObject.put("feeBurnDenom", String.valueOf(feeBurnDenom));
+      return payloadObject;
+    }
+
+    if (paramId == 7) {
+      JsonNode extraCurrenciesNode = payloadObject.get("extraCurrencies");
+      ArrayNode extraCurrencies;
+      if (extraCurrenciesNode instanceof ArrayNode arrayNode) {
+        extraCurrencies = arrayNode;
+      } else {
+        extraCurrencies = MAPPER.createArrayNode();
+        payloadObject.set("extraCurrencies", extraCurrencies);
+      }
+
+      if (extraCurrencies.isEmpty()) {
+        ObjectNode entry = MAPPER.createObjectNode();
+        entry.put("key", "1");
+        entry.put("value", "1");
+        extraCurrencies.add(entry);
+      } else {
+        for (JsonNode node : extraCurrencies) {
+          if (node instanceof ObjectNode entryNode) {
+            entryNode.put("value", "1");
+          }
+        }
+      }
       return payloadObject;
     }
 
