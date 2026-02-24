@@ -130,6 +130,12 @@ or you can use it simply to stop and start the blockchain, as well as to customi
 </td>
 <td>
 This service provides a web UI to read and update TON blockchain configuration parameters via ton4j.
+REST API endpoints:
+<ul>
+<li><b>GET /api/config/params</b> - list supported config parameters.</li>
+<li><b>GET /api/config/{id}</b> - fetch schema and current value for a config parameter.</li>
+<li><b>POST /api/config/{id}</b> - submit updated value for a config parameter (JSON body: <code>{"value": ...}</code>).</li>
+</ul>
 </td>
 </tr>
 <tr>
