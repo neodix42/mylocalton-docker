@@ -26,40 +26,18 @@ hashu dup =: basestate0_rhash
 basestate0_rhash basestate0_fhash now ACTUAL_MIN_SPLIT MIN_SPLIT MAX_SPLIT 0 add-std-workchain
 MASTERCHAIN_ONLY
 
-// SmartContract #1 (Simple wallet)
-
-<{ SETCP0 DUP IFNOTRET // return if recv_internal
-   DUP 85143 INT EQUAL IFJMP:<{ // "seqno" get-method
-     DROP c4 PUSHCTR CTOS 32 PLDU  // cnt
-   }>
-   INC 32 THROWIF  // fail unless recv_external
-   512 INT LDSLICEX DUP 32 PLDU   // sign cs cnt
-   c4 PUSHCTR CTOS 32 LDU 256 LDU ENDS  // sign cs cnt cnt' pubk
-   s1 s2 XCPU            // sign cs cnt pubk cnt' cnt
-   EQUAL 33 THROWIFNOT   // ( seqno mismatch? )
-   s2 PUSH HASHSU        // sign cs cnt pubk hash
-   s0 s4 s4 XC2PU        // pubk cs cnt hash sign pubk
-   CHKSIGNU              // pubk cs cnt ?
-   34 THROWIFNOT         // signature mismatch
-   ACCEPT
-   SWAP 32 LDU NIP 8 LDU LDREF ENDS      // pubk cnt mode msg
-   SWAP SENDRAWMSG       // pubk cnt ; ( message sent )
-   INC NEWC 32 STU 256 STU ENDC c4 POPCTR
-}>c
-// code
-<b 0 32 u,
-   "main-wallet.pk" load-generate-keypair drop
+// SmartContract #1 (Advanced wallet)
+// Create new advanced wallet; code adapted from `auto/wallet3-code.fif`
+"wallet-v3-code.fif" include
+<b 0 32 u, 42 32 u,
+   "main-wallet.pk" load-keypair constant main_pk
    B,
 b> // data
-Libs{
-  x{ABACABADABACABA} s>c public_lib
-  x{1234} x{5678} |_ s>c private_lib
-}Libs  // libraries
+empty_cell // libs
 GR$BLOCKCHAIN_INITIAL_BALANCE // balance
 0 // split_depth
 0 // ticktock
-AllOnes 1 * // address: -1:111...111
-6 // mode: create + setaddr
+2 // mode: create + setaddr
 register_smc
 dup make_special dup constant smc1_addr
 Masterchain over
@@ -71,7 +49,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "faucet.pk" load-generate-keypair constant faucet_pk
+   "faucet.pk" load-keypair constant faucet_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -90,7 +68,7 @@ Masterchain over
 "highload-wallet-v2-code.fif" include
 // code
 <b 42 32 i, 0 64 u,
-   "faucet-highload.pk" load-generate-keypair constant faucet_hl_pk
+   "faucet-highload.pk" load-keypair constant faucet_hl_pk
    B,
    false 1 i,
 b> // data
@@ -109,7 +87,7 @@ Masterchain over
 "highload-wallet-v2-code.fif" include
 // code
 <b 42 32 i, 0 64 u,
-   "data-highload.pk" load-generate-keypair constant data_hl_pk
+   "data-highload.pk" load-keypair constant data_hl_pk
    B,
    false 1 i,
 b> // data
@@ -129,7 +107,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator.pk" load-generate-keypair constant validator_pk
+   "validator.pk" load-keypair constant validator_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -147,7 +125,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-1.pk" load-generate-keypair constant validator1_pk
+   "validator-1.pk" load-keypair constant validator1_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -165,7 +143,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-2.pk" load-generate-keypair constant validator2_pk
+   "validator-2.pk" load-keypair constant validator2_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -183,7 +161,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-3.pk" load-generate-keypair constant validator3_pk
+   "validator-3.pk" load-keypair constant validator3_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -201,7 +179,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-4.pk" load-generate-keypair constant validator4_pk
+   "validator-4.pk" load-keypair constant validator4_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -219,7 +197,7 @@ Masterchain over
 "wallet-v3-code.fif" include
 // code
 <b 0 32 u, 42 32 u,
-   "validator-5.pk" load-generate-keypair constant validator5_pk
+   "validator-5.pk" load-keypair constant validator5_pk
    B,
 b> // data
 empty_cell // no libraries
@@ -325,7 +303,7 @@ now dup orig_vset_valid_for + VALIDATORS_MASTERCHAIN_NUM config.validators!
 "auto/CONFIG_CODE_FIF" include   // code in separate source file
 <b configdict ref,  // initial configuration
    0 32 u,          // seqno
-   "config-master.pk" load-generate-keypair drop
+   "config-master.pk" load-keypair drop
    B,
    dictnew dict,   // vote dict
 b> // data

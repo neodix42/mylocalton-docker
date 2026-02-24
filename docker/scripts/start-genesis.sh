@@ -45,7 +45,7 @@ else
 
   if [ "$HIDE_PRIVATE_KEYS" == "true" ]; then
     echo "regenerate private keys"
-    rm validator-1.pk validator-2.pk validator-3.pk validator-4.pk validator-5.pk validator.pk faucet-highload.pk faucet.pk
+    rm main-wallet.pk config-master.pk validator-1.pk validator-2.pk validator-3.pk validator-4.pk validator-5.pk validator.pk faucet-highload.pk faucet.pk
   fi
   # ---------------------------------------------------------
   # start setup genesis

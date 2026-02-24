@@ -22,6 +22,10 @@ COPY docker/scripts/gen-zerostate.fif /usr/share/ton/smartcont/gen-zerostate.fif
 COPY docker/scripts/ton-private-testnet.config.json.template /scripts
 COPY docker/scripts/example.config.json /scripts
 COPY docker/scripts/control.template /scripts
+COPY docker/scripts/main-wallet.pk /usr/share/ton/smartcont
+COPY docker/scripts/main-wallet.addr /usr/share/ton/smartcont
+COPY docker/scripts/config-master.pk /usr/share/ton/smartcont
+COPY docker/scripts/config-master.addr /usr/share/ton/smartcont
 COPY docker/scripts/faucet.pk /usr/share/ton/smartcont
 COPY docker/scripts/faucet-basechain.pk /usr/share/ton/smartcont
 COPY docker/scripts/faucet-highload.pk /usr/share/ton/smartcont
