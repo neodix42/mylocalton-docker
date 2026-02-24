@@ -26,6 +26,14 @@ public class MyRestController {
     return response;
   }
 
+  @GetMapping("/seqno")
+  public Map<String, Object> getConfigSeqno() {
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("success", true);
+    response.put("seqno", configUpdateService.getConfigSeqno());
+    return response;
+  }
+
   @GetMapping("/{id}")
   public Map<String, Object> getParam(@PathVariable("id") int id) {
     Map<String, Object> response = new LinkedHashMap<>();

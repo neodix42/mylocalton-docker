@@ -80,6 +80,8 @@ import org.ton.ton4j.tlb.ConfigParams8;
 import org.ton.ton4j.tlb.ConfigParams81;
 import org.ton.ton4j.tlb.ConfigParams82;
 import org.ton.ton4j.tlb.ConfigParams9;
+import org.ton.ton4j.tlb.ConfigProposalSetup;
+import org.ton.ton4j.tlb.ConfigVotingSetup;
 import org.ton.ton4j.tlb.ConsensusConfig;
 import org.ton.ton4j.tlb.ConsensusConfigNew;
 import org.ton.ton4j.tlb.ConsensusConfigV1;
@@ -93,9 +95,11 @@ import org.ton.ton4j.tlb.GasLimitsPricesPfx;
 import org.ton.ton4j.tlb.JettonBridgeParams;
 import org.ton.ton4j.tlb.JettonBridgeParamsV1;
 import org.ton.ton4j.tlb.JettonBridgeParamsV2;
+import org.ton.ton4j.tlb.JettonBridgePrices;
 import org.ton.ton4j.tlb.Message;
 import org.ton.ton4j.tlb.OracleBridgeParams;
 import org.ton.ton4j.tlb.PrecompiledSmc;
+import org.ton.ton4j.tlb.GlobalVersion;
 import org.ton.ton4j.tlb.SigPubKey;
 import org.ton.ton4j.tlb.StoragePrices;
 import org.ton.ton4j.tlb.Validator;
@@ -213,6 +217,13 @@ public class ConfigUpdateService {
     return result;
   }
 
+  public long getConfigSeqno() {
+    if (Main.adnlLiteClient == null) {
+      throw new IllegalStateException("Service is not initialized yet");
+    }
+    return Main.adnlLiteClient.getSeqno(Main.CONFIG_SMART_CONTRACT_ADDRESS);
+  }
+
   public Map<String, Object> getParamDetails(int id) {
     Class<?> paramClass = requireSupportedParamClass(id);
     TypeSchema schema = schemaCache.computeIfAbsent(id, ignored -> buildSchema(paramClass, 0));
@@ -239,7 +250,7 @@ public class ConfigUpdateService {
         throw new IllegalArgumentException("Config parameter payload cannot be empty");
       }
 
-      Cell paramCell = invokeToCell(configParamObject);
+      Cell paramCell = buildParamCell(id, configParamObject);
       long seqno = Main.adnlLiteClient.getSeqno(Main.CONFIG_SMART_CONTRACT_ADDRESS);
 
       Cell body =
@@ -292,6 +303,57 @@ public class ConfigUpdateService {
         return instantiateClass(paramClass);
       }
 
+      if (id == 18) {
+        TonHashMap storagePrices =
+            CellSlice.beginParse(paramCell)
+                .loadDict(
+                    32,
+                    k -> k.readUint(32),
+                    v -> StoragePrices.deserialize(CellSlice.beginParse(v)));
+        return ConfigParams18.builder().storagePrices(storagePrices).build();
+      }
+
+      if (id == 44) {
+        CellSlice slice = CellSlice.beginParse(paramCell);
+        int magic = slice.loadUint(8).intValue();
+        TonHashMapE suspendedAddressList = slice.loadDictE(288, k -> k.readUint(288), v -> v);
+        long suspendedUntil = slice.loadUint(32).longValue();
+        return ConfigParams44.builder()
+            .magic(magic)
+            .suspendedAddressList(suspendedAddressList)
+            .suspendedUntil(suspendedUntil)
+            .build();
+      }
+
+      if (id == 45) {
+        CellSlice slice = CellSlice.beginParse(paramCell);
+        int magic = slice.loadUint(8).intValue();
+        TonHashMapE precompiledContractsList =
+            slice.loadDictE(
+                256,
+                k -> k.readUint(256),
+                v -> PrecompiledSmc.deserialize(CellSlice.beginParse(v)));
+        long suspendedUntil = slice.getRestBits() >= 32 ? slice.loadUint(32).longValue() : 0L;
+        return ConfigParams45.builder()
+            .magic(magic)
+            .precompiledContractsList(precompiledContractsList)
+            .suspendedUntil(suspendedUntil)
+            .build();
+      }
+
+      if (id >= 32 && id <= 37) {
+        ValidatorSet validatorSet = deserializeValidatorSetFixed(CellSlice.beginParse(paramCell));
+        return switch (id) {
+          case 32 -> ConfigParams32.builder().prevValidatorSet(validatorSet).build();
+          case 33 -> ConfigParams33.builder().prevTempValidatorSet(validatorSet).build();
+          case 34 -> ConfigParams34.builder().currValidatorSet(validatorSet).build();
+          case 35 -> ConfigParams35.builder().currTempValidatorSet(validatorSet).build();
+          case 36 -> ConfigParams36.builder().nextValidatorSet(validatorSet).build();
+          case 37 -> ConfigParams37.builder().nextTempValidatorSet(validatorSet).build();
+          default -> instantiateClass(paramClass);
+        };
+      }
+
       Method deserializeMethod = paramClass.getMethod("deserialize", CellSlice.class);
       return deserializeMethod.invoke(null, CellSlice.beginParse(paramCell));
     } catch (Exception e) {
@@ -305,6 +367,654 @@ public class ConfigUpdateService {
     return (Cell) toCellMethod.invoke(value);
   }
 
+  private Cell buildParamCell(int paramId, Object value) throws Exception {
+    if (paramId == 5 && value instanceof ConfigParams5 configParams5) {
+      return buildConfigParam5Cell(configParams5);
+    }
+    if (paramId == 8 && value instanceof ConfigParams8 configParams8) {
+      return buildConfigParam8Cell(configParams8);
+    }
+    if (paramId == 9 && value instanceof ConfigParams9 configParams9) {
+      return buildConfigParam9Cell(configParams9);
+    }
+    if (paramId == 10 && value instanceof ConfigParams10 configParams10) {
+      return buildConfigParam10Cell(configParams10);
+    }
+    if (paramId == 11 && value instanceof ConfigParams11 configParams11) {
+      return buildConfigParam11Cell(configParams11);
+    }
+    if (paramId == 17 && value instanceof ConfigParams17 configParams17) {
+      return buildConfigParam17Cell(configParams17);
+    }
+    if (paramId == 29 && value instanceof ConfigParams29 configParams29) {
+      return buildConfigParam29Cell(configParams29);
+    }
+    if (paramId == 79 && value instanceof ConfigParams79 configParams79) {
+      return buildConfigParam79Cell(configParams79);
+    }
+    if (paramId == 81 && value instanceof ConfigParams81 configParams81) {
+      return buildConfigParam81Cell(configParams81);
+    }
+    if (paramId == 82 && value instanceof ConfigParams82 configParams82) {
+      return buildConfigParam82Cell(configParams82);
+    }
+    if (paramId == 44 && value instanceof ConfigParams44 configParams44) {
+      return buildConfigParam44Cell(configParams44);
+    }
+    if (paramId == 45 && value instanceof ConfigParams45 configParams45) {
+      return buildConfigParam45Cell(configParams45);
+    }
+    if (paramId >= 32 && paramId <= 37) {
+      ValidatorSet validatorSet = extractValidatorSetFromConfigParam(paramId, value);
+      if (validatorSet != null) {
+        return CellBuilder.beginCell().storeCell(buildValidatorSetCell(validatorSet)).endCell();
+      }
+    }
+    return invokeToCell(value);
+  }
+
+  private Cell buildConfigParam5Cell(ConfigParams5 config) {
+    long feeBurnDenom = normalizeUnsignedLong(config.getFeeBurnDenom(), 32);
+    if (feeBurnDenom < 1) {
+      feeBurnDenom = 1;
+    }
+
+    long feeBurnNum = normalizeUnsignedLong(config.getFeeBurnNum(), 32);
+    if (feeBurnNum > feeBurnDenom) {
+      feeBurnNum = feeBurnDenom;
+    }
+
+    BigInteger blackholeAddr = config.blackholeAddr;
+
+    CellBuilder cellBuilder = CellBuilder.beginCell().storeUint(0x01, 8);
+    if (blackholeAddr == null) {
+      cellBuilder.storeBit(false);
+    } else {
+      cellBuilder.storeBit(true).storeUint(normalizeUnsignedBigInteger(blackholeAddr, 256), 256);
+    }
+
+    return cellBuilder.storeUint(feeBurnNum, 32).storeUint(feeBurnDenom, 32).endCell();
+  }
+
+  private Cell buildConfigParam8Cell(ConfigParams8 config) {
+    GlobalVersion globalVersion = config.getGlobalVersion();
+    long version = 0L;
+    BigInteger capabilities = BigInteger.ZERO;
+
+    if (globalVersion != null) {
+      version = normalizeUnsignedLong(globalVersion.getVersion(), 32);
+      capabilities = normalizeUnsignedBigInteger(globalVersion.getCapabilities(), 64);
+    }
+
+    return CellBuilder.beginCell()
+        .storeUint(0xc4, 8)
+        .storeUint(version, 32)
+        .storeUint(capabilities, 64)
+        .endCell();
+  }
+
+  private Cell buildConfigParam9Cell(ConfigParams9 config) {
+    TonHashMap mandatoryParams = config.getMandatoryParams();
+    if (mandatoryParams == null || mandatoryParams.getElements() == null || mandatoryParams.getElements().isEmpty()) {
+      throw new IllegalArgumentException("ConfigParam 9 mandatory params dictionary cannot be empty");
+    }
+
+    Cell dict =
+        mandatoryParams.serialize(
+            k ->
+                CellBuilder.beginCell()
+                    .storeUint(normalizeUnsignedBigInteger((BigInteger) k, 32), 32)
+                    .endCell()
+                    .getBits(),
+            v -> CellBuilder.beginCell().endCell());
+
+    return CellBuilder.beginCell().storeDict(dict).endCell();
+  }
+
+  private Cell buildConfigParam10Cell(ConfigParams10 config) {
+    TonHashMap criticalParams = config.getCriticalParams();
+    if (criticalParams == null || criticalParams.getElements() == null || criticalParams.getElements().isEmpty()) {
+      throw new IllegalArgumentException("ConfigParam 10 critical params dictionary cannot be empty");
+    }
+
+    Cell dict =
+        criticalParams.serialize(
+            k ->
+                CellBuilder.beginCell()
+                    .storeUint(normalizeUnsignedBigInteger((BigInteger) k, 32), 32)
+                    .endCell()
+                    .getBits(),
+            v -> CellBuilder.beginCell().endCell());
+
+    return CellBuilder.beginCell().storeDict(dict).endCell();
+  }
+
+  private Cell buildConfigParam11Cell(ConfigParams11 config) {
+    ConfigVotingSetup votingSetup = config.getConfigVotingSetup();
+    if (votingSetup == null) {
+      throw new IllegalArgumentException("ConfigParam 11 voting setup cannot be empty");
+    }
+
+    Cell normalParamsCell = buildConfigProposalSetupCell(votingSetup.getNormalParams());
+    Cell criticalParamsCell = buildConfigProposalSetupCell(votingSetup.getCriticalParams());
+
+    return CellBuilder.beginCell()
+        .storeUint(0x91, 8)
+        .storeRef(normalParamsCell)
+        .storeRef(criticalParamsCell)
+        .endCell();
+  }
+
+  private Cell buildConfigProposalSetupCell(ConfigProposalSetup setup) {
+    if (setup == null) {
+      throw new IllegalArgumentException("Config proposal setup cannot be empty");
+    }
+
+    return CellBuilder.beginCell()
+        .storeUint(0x36, 8)
+        .storeUint(normalizeUnsignedLong(setup.getMinTotRounds(), 8), 8)
+        .storeUint(normalizeUnsignedLong(setup.getMaxTotRounds(), 8), 8)
+        .storeUint(normalizeUnsignedLong(setup.getMinWins(), 8), 8)
+        .storeUint(normalizeUnsignedLong(setup.getMaxLosses(), 8), 8)
+        .storeUint(normalizeUnsignedLong(setup.getMinStoreSec(), 32), 32)
+        .storeUint(normalizeUnsignedLong(setup.getMaxStoreSec(), 32), 32)
+        .storeUint(normalizeUnsignedLong(setup.getBitPrice(), 32), 32)
+        .storeUint(normalizeUnsignedLong(setup.getCellPrice(), 32), 32)
+        .endCell();
+  }
+
+  private Cell buildConfigParam17Cell(ConfigParams17 config) {
+    return CellBuilder.beginCell()
+        .storeCoins(sanitizeCoins(config.getMinStake()))
+        .storeCoins(sanitizeCoins(config.getMaxStake()))
+        .storeCoins(sanitizeCoins(config.getMinTotalStake()))
+        .storeUint(normalizeUnsignedLong(config.getMaxStakeFactor(), 32), 32)
+        .endCell();
+  }
+
+  private BigInteger sanitizeCoins(BigInteger value) {
+    if (value == null || value.signum() < 0) {
+      return BigInteger.ZERO;
+    }
+    return value;
+  }
+
+  private Cell buildConfigParam29Cell(ConfigParams29 config) throws Exception {
+    ConsensusConfig consensusConfig = config.getConsensusConfig();
+    if (consensusConfig == null) {
+      throw new IllegalArgumentException("ConfigParam 29 consensus config cannot be empty");
+    }
+    Cell consensusCell = buildConsensusConfigCell(consensusConfig);
+    return CellBuilder.beginCell().storeCell(consensusCell).endCell();
+  }
+
+  private Cell buildConsensusConfigCell(ConsensusConfig consensusConfig) throws Exception {
+    if (consensusConfig instanceof ConsensusConfigV1 cfg) {
+      long roundCandidates = Math.max(1L, normalizeUnsignedLong(cfg.getRoundCandidates(), 32));
+      return CellBuilder.beginCell()
+          .storeUint(0xd6, 8)
+          .storeUint(roundCandidates, 32)
+          .storeUint(normalizeUnsignedLong(cfg.getNextCandidateDelayMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getConsensusTimeoutMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getFastAttempts(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getAttemptDuration(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getCatchainNaxDeps(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxBlockBytes(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxCollatedBytes(), 32), 32)
+          .endCell();
+    }
+
+    if (consensusConfig instanceof ConsensusConfigNew cfg) {
+      long roundCandidates = Math.max(1L, normalizeUnsignedLong(cfg.getRoundCandidates(), 8));
+      return CellBuilder.beginCell()
+          .storeUint(0xd7, 8)
+          .storeUint(0, 7)
+          .storeBit(cfg.isNewCatchainIds())
+          .storeUint(roundCandidates, 8)
+          .storeUint(normalizeUnsignedLong(cfg.getNextCandidateDelayMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getConsensusTimeoutMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getFastAttempts(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getAttemptDuration(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getCatchainNaxDeps(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxBlockBytes(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxCollatedBytes(), 32), 32)
+          .endCell();
+    }
+
+    if (consensusConfig instanceof ConsensusConfigV3 cfg) {
+      long roundCandidates = Math.max(1L, normalizeUnsignedLong(cfg.getRoundCandidates(), 8));
+      return CellBuilder.beginCell()
+          .storeUint(0xd8, 8)
+          .storeUint(0, 7)
+          .storeBit(cfg.isNewCatchainIds())
+          .storeUint(roundCandidates, 8)
+          .storeUint(normalizeUnsignedLong(cfg.getNextCandidateDelayMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getConsensusTimeoutMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getFastAttempts(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getAttemptDuration(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getCatchainNaxDeps(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxBlockBytes(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxCollatedBytes(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getProtoVersion(), 16), 16)
+          .endCell();
+    }
+
+    if (consensusConfig instanceof ConsensusConfigV4 cfg) {
+      long roundCandidates = Math.max(1L, normalizeUnsignedLong(cfg.getRoundCandidates(), 8));
+      return CellBuilder.beginCell()
+          .storeUint(0xd9, 8)
+          .storeUint(0, 7)
+          .storeBit(cfg.isNewCatchainIds())
+          .storeUint(roundCandidates, 8)
+          .storeUint(normalizeUnsignedLong(cfg.getNextCandidateDelayMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getConsensusTimeoutMs(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getFastAttempts(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getAttemptDuration(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getCatchainNaxDeps(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxBlockBytes(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getMaxCollatedBytes(), 32), 32)
+          .storeUint(normalizeUnsignedLong(cfg.getProtoVersion(), 16), 16)
+          .storeUint(normalizeUnsignedLong(cfg.getCatchainMaxBlocksCoeff(), 32), 32)
+          .endCell();
+    }
+
+    return invokeToCell(consensusConfig);
+  }
+
+  private ValidatorSet extractValidatorSetFromConfigParam(int paramId, Object value) {
+    return switch (paramId) {
+      case 32 -> value instanceof ConfigParams32 p ? p.getPrevValidatorSet() : null;
+      case 33 -> value instanceof ConfigParams33 p ? p.getPrevTempValidatorSet() : null;
+      case 34 -> value instanceof ConfigParams34 p ? p.getCurrValidatorSet() : null;
+      case 35 -> value instanceof ConfigParams35 p ? p.getCurrTempValidatorSet() : null;
+      case 36 -> value instanceof ConfigParams36 p ? p.getNextValidatorSet() : null;
+      case 37 -> value instanceof ConfigParams37 p ? p.getNextTempValidatorSet() : null;
+      default -> null;
+    };
+  }
+
+  private ValidatorSet deserializeValidatorSetFixed(CellSlice cs) {
+    int magic = cs.preloadUint(8).intValue();
+    if (magic == 0x11) {
+      return Validators.builder()
+          .magic(cs.loadUint(8).intValue())
+          .uTimeSince(cs.loadUint(32).longValue())
+          .uTimeUntil(cs.loadUint(32).longValue())
+          .total(cs.loadUint(16).intValue())
+          .main(cs.loadUint(16).intValue())
+          .list(
+              cs.loadDict(
+                  16,
+                  k -> k.readUint(16).longValue(),
+                  v -> deserializeValidatorDescrFixed(CellSlice.beginParse(v))))
+          .build();
+    }
+    if (magic == 0x12) {
+      return ValidatorsExt.builder()
+          .magic(cs.loadUint(8).longValue())
+          .uTimeSince(cs.loadUint(32).longValue())
+          .uTimeUntil(cs.loadUint(32).longValue())
+          .total(cs.loadUint(16).intValue())
+          .main(cs.loadUint(16).intValue())
+          .totalWeight(cs.loadUint(64))
+          .list(
+              cs.loadDictE(
+                  16,
+                  k -> k.readUint(16),
+                  v -> deserializeValidatorDescrFixed(CellSlice.beginParse(v))))
+          .build();
+    }
+    throw new IllegalArgumentException("Unsupported ValidatorSet magic: " + magic);
+  }
+
+  private ValidatorDescr deserializeValidatorDescrFixed(CellSlice cs) {
+    int magic = cs.preloadUint(8).intValue();
+    if (magic == 0x53) {
+      return Validator.builder()
+          .magic(cs.loadUint(8).longValue())
+          .publicKey(deserializeSigPubKeyFixed(cs))
+          .weight(cs.loadUint(64))
+          .build();
+    }
+    if (magic == 0x73) {
+      return ValidatorAddr.builder()
+          .magic(cs.loadUint(8).intValue())
+          .publicKey(deserializeSigPubKeyFixed(cs))
+          .weight(cs.loadUint(64))
+          .adnlAddr(cs.loadUint(256))
+          .build();
+    }
+    throw new IllegalArgumentException("Unsupported ValidatorDescr magic: " + magic);
+  }
+
+  private SigPubKey deserializeSigPubKeyFixed(CellSlice cs) {
+    return SigPubKey.builder()
+        .magic(cs.loadUint(32).longValue())
+        .pubkey(cs.loadUint(256))
+        .build();
+  }
+
+  private Cell buildValidatorSetCell(ValidatorSet validatorSet) throws Exception {
+    if (validatorSet instanceof Validators validators) {
+      TonHashMap list = validators.getList();
+      if (list == null) {
+        throw new IllegalArgumentException("Validator list cannot be empty");
+      }
+
+      Cell dict =
+          list.serialize(
+              k ->
+                  CellBuilder.beginCell()
+                      .storeUint(normalizeUnsignedLong(asLongKey(k), 16), 16)
+                      .endCell()
+                      .getBits(),
+              v ->
+                  CellBuilder.beginCell()
+                      .storeCell(buildValidatorDescrCellUnchecked((ValidatorDescr) v))
+                      .endCell());
+
+      long total = normalizeUnsignedLong(validators.getTotal(), 16);
+      long main = normalizeUnsignedLong(validators.getMain(), 16);
+      if (main < 1) {
+        main = 1;
+      }
+      if (main > total) {
+        total = main;
+      }
+
+      return CellBuilder.beginCell()
+          .storeUint(0x11, 8)
+          .storeUint(normalizeUnsignedLong(validators.getUTimeSince(), 32), 32)
+          .storeUint(normalizeUnsignedLong(validators.getUTimeUntil(), 32), 32)
+          .storeUint(total, 16)
+          .storeUint(main, 16)
+          .storeDict(dict)
+          .endCell();
+    }
+
+    if (validatorSet instanceof ValidatorsExt validatorsExt) {
+      TonHashMapE list = validatorsExt.getList();
+      if (list == null) {
+        list = new TonHashMapE(16);
+      }
+
+      Cell dict =
+          list.serialize(
+              k ->
+                  CellBuilder.beginCell()
+                      .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(k), 16), 16)
+                      .endCell()
+                      .getBits(),
+              v ->
+                  CellBuilder.beginCell()
+                      .storeCell(buildValidatorDescrCellUnchecked((ValidatorDescr) v))
+                      .endCell());
+
+      long total = normalizeUnsignedLong(validatorsExt.getTotal(), 16);
+      long main = normalizeUnsignedLong(validatorsExt.getMain(), 16);
+      if (main < 1) {
+        main = 1;
+      }
+      if (main > total) {
+        total = main;
+      }
+
+      return CellBuilder.beginCell()
+          .storeUint(0x12, 8)
+          .storeUint(normalizeUnsignedLong(validatorsExt.getUTimeSince(), 32), 32)
+          .storeUint(normalizeUnsignedLong(validatorsExt.getUTimeUntil(), 32), 32)
+          .storeUint(total, 16)
+          .storeUint(main, 16)
+          .storeUint(normalizeUnsignedBigInteger(validatorsExt.getTotalWeight(), 64), 64)
+          .storeDict(dict)
+          .endCell();
+    }
+
+    return invokeToCell(validatorSet);
+  }
+
+  private Cell buildValidatorDescrCell(ValidatorDescr validatorDescr) throws Exception {
+    if (validatorDescr instanceof Validator validator) {
+      return CellBuilder.beginCell()
+          .storeUint(0x53, 8)
+          .storeCell(buildSigPubKeyCell(validator.getPublicKey()))
+          .storeUint(normalizeUnsignedBigInteger(validator.getWeight(), 64), 64)
+          .endCell();
+    }
+
+    if (validatorDescr instanceof ValidatorAddr validatorAddr) {
+      return CellBuilder.beginCell()
+          .storeUint(0x73, 8)
+          .storeCell(buildSigPubKeyCell(validatorAddr.getPublicKey()))
+          .storeUint(normalizeUnsignedBigInteger(validatorAddr.getWeight(), 64), 64)
+          .storeUint(normalizeUnsignedBigInteger(validatorAddr.getAdnlAddr(), 256), 256)
+          .endCell();
+    }
+
+    return invokeToCell(validatorDescr);
+  }
+
+  private Cell buildValidatorDescrCellUnchecked(ValidatorDescr validatorDescr) {
+    try {
+      return buildValidatorDescrCell(validatorDescr);
+    } catch (Exception e) {
+      throw new IllegalStateException("Cannot serialize validator descriptor", e);
+    }
+  }
+
+  private Cell buildSigPubKeyCell(SigPubKey sigPubKey) {
+    if (sigPubKey == null) {
+      throw new IllegalArgumentException("Validator public key cannot be empty");
+    }
+    return CellBuilder.beginCell()
+        .storeUint(0x8e81278aL, 32)
+        .storeUint(normalizeUnsignedBigInteger(sigPubKey.getPubkey(), 256), 256)
+        .endCell();
+  }
+
+  private long asLongKey(Object key) {
+    if (key instanceof Long l) {
+      return l;
+    }
+    if (key instanceof Integer i) {
+      return i.longValue();
+    }
+    if (key instanceof BigInteger bi) {
+      return bi.longValue();
+    }
+    return Long.parseLong(String.valueOf(key));
+  }
+
+  private BigInteger asBigIntegerKey(Object key) {
+    if (key instanceof BigInteger bi) {
+      return bi;
+    }
+    if (key instanceof Number number) {
+      return BigInteger.valueOf(number.longValue());
+    }
+    return new BigInteger(String.valueOf(key));
+  }
+
+  private Cell buildConfigParam44Cell(ConfigParams44 config) {
+    TonHashMapE suspendedAddressList = config.getSuspendedAddressList();
+    if (suspendedAddressList == null) {
+      suspendedAddressList = new TonHashMapE(288);
+    }
+
+    Cell dict =
+        suspendedAddressList.serialize(
+            k ->
+                CellBuilder.beginCell()
+                    .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(k), 288), 288)
+                    .endCell()
+                    .getBits(),
+            v -> CellBuilder.beginCell().endCell());
+
+    return CellBuilder.beginCell()
+        .storeUint(0x00, 8)
+        .storeDict(dict)
+        .storeUint(normalizeUnsignedLong(config.getSuspendedUntil(), 32), 32)
+        .endCell();
+  }
+
+  private Cell buildConfigParam45Cell(ConfigParams45 config) {
+    TonHashMapE precompiledContractsList = config.getPrecompiledContractsList();
+    if (precompiledContractsList == null) {
+      precompiledContractsList = new TonHashMapE(256);
+    }
+
+    Cell dict =
+        precompiledContractsList.serialize(
+            k ->
+                CellBuilder.beginCell()
+                    .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(k), 256), 256)
+                    .endCell()
+                    .getBits(),
+            v ->
+                CellBuilder.beginCell()
+                    .storeCell(buildPrecompiledSmcCell((PrecompiledSmc) v))
+                    .endCell());
+
+    return CellBuilder.beginCell()
+        .storeUint(0xc0, 8)
+        .storeDict(dict)
+        .endCell();
+  }
+
+  private Cell buildPrecompiledSmcCell(PrecompiledSmc precompiledSmc) {
+    if (precompiledSmc == null) {
+      return CellBuilder.beginCell().storeUint(0xb0, 8).storeUint(BigInteger.ZERO, 64).endCell();
+    }
+    return CellBuilder.beginCell()
+        .storeUint(0xb0, 8)
+        .storeUint(normalizeUnsignedBigInteger(precompiledSmc.getGasUsage(), 64), 64)
+        .endCell();
+  }
+
+  private Cell buildConfigParam79Cell(ConfigParams79 config) throws Exception {
+    JettonBridgeParams bridge = config.getEthTonTokenBridge();
+    if (bridge == null) {
+      throw new IllegalArgumentException("ConfigParam 79 bridge params cannot be empty");
+    }
+    return CellBuilder.beginCell().storeCell(buildJettonBridgeParamsCell(bridge)).endCell();
+  }
+
+  private Cell buildConfigParam81Cell(ConfigParams81 config) throws Exception {
+    JettonBridgeParams bridge = config.getBnbTonTokenBridge();
+    if (bridge == null) {
+      throw new IllegalArgumentException("ConfigParam 81 bridge params cannot be empty");
+    }
+    return CellBuilder.beginCell().storeCell(buildJettonBridgeParamsCell(bridge)).endCell();
+  }
+
+  private Cell buildConfigParam82Cell(ConfigParams82 config) throws Exception {
+    JettonBridgeParams bridge = config.getPolygonTonTokenBridge();
+    if (bridge == null) {
+      throw new IllegalArgumentException("ConfigParam 82 bridge params cannot be empty");
+    }
+    return CellBuilder.beginCell().storeCell(buildJettonBridgeParamsCell(bridge)).endCell();
+  }
+
+  private Cell buildJettonBridgeParamsCell(JettonBridgeParams params) throws Exception {
+    if (params instanceof JettonBridgeParamsV2 v2) {
+      TonHashMapE oracles = v2.getOracles();
+      if (oracles == null) {
+        oracles = new TonHashMapE(256);
+      }
+
+      Cell dict =
+          oracles.serialize(
+              k ->
+                  CellBuilder.beginCell()
+                      .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(k), 256), 256)
+                      .endCell()
+                      .getBits(),
+              v ->
+                  CellBuilder.beginCell()
+                      .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(v), 256), 256)
+                      .endCell());
+
+      return CellBuilder.beginCell()
+          .storeUint(0x01, 8)
+          .storeUint(normalizeUnsignedBigInteger(v2.getBridgeAddress(), 256), 256)
+          .storeUint(normalizeUnsignedBigInteger(v2.getOracleAddress(), 256), 256)
+          .storeDict(dict)
+          .storeUint(normalizeUnsignedLong(v2.getStateFlags(), 8), 8)
+          .storeRef(buildJettonBridgePricesCell(v2.getPrices()))
+          .storeUint(normalizeUnsignedBigInteger(v2.getExternalChainAddress(), 256), 256)
+          .endCell();
+    }
+
+    if (params instanceof JettonBridgeParamsV1 v1) {
+      TonHashMapE oracles = v1.getOracles();
+      if (oracles == null) {
+        oracles = new TonHashMapE(256);
+      }
+
+      Cell dict =
+          oracles.serialize(
+              k ->
+                  CellBuilder.beginCell()
+                      .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(k), 256), 256)
+                      .endCell()
+                      .getBits(),
+              v ->
+                  CellBuilder.beginCell()
+                      .storeUint(normalizeUnsignedBigInteger(asBigIntegerKey(v), 256), 256)
+                      .endCell());
+
+      return CellBuilder.beginCell()
+          .storeUint(0x00, 8)
+          .storeUint(normalizeUnsignedBigInteger(v1.getBridgeAddress(), 256), 256)
+          .storeUint(normalizeUnsignedBigInteger(v1.getOracleAddress(), 256), 256)
+          .storeDict(dict)
+          .storeUint(normalizeUnsignedLong(v1.getStateFlags(), 8), 8)
+          .storeCoins(sanitizeCoins(v1.getBurnBridgeFee()))
+          .endCell();
+    }
+
+    return invokeToCell(params);
+  }
+
+  private Cell buildJettonBridgePricesCell(JettonBridgePrices prices) {
+    JettonBridgePrices resolved =
+        prices == null
+            ? JettonBridgePrices.builder()
+                .bridgeBurnFee(BigInteger.ZERO)
+                .bridgeMintFee(BigInteger.ZERO)
+                .walletMinTonsForStorage(BigInteger.ZERO)
+                .walletGasConsumption(BigInteger.ZERO)
+                .minterMinTonsForStorage(BigInteger.ZERO)
+                .discoverGasConsumption(BigInteger.ZERO)
+                .build()
+            : prices;
+
+    return CellBuilder.beginCell()
+        .storeCoins(sanitizeCoins(resolved.getBridgeBurnFee()))
+        .storeCoins(sanitizeCoins(resolved.getBridgeMintFee()))
+        .storeCoins(sanitizeCoins(resolved.getWalletMinTonsForStorage()))
+        .storeCoins(sanitizeCoins(resolved.getWalletGasConsumption()))
+        .storeCoins(sanitizeCoins(resolved.getMinterMinTonsForStorage()))
+        .storeCoins(sanitizeCoins(resolved.getDiscoverGasConsumption()))
+        .endCell();
+  }
+
+  private long normalizeUnsignedLong(long value, int bits) {
+    return normalizeUnsignedBigInteger(BigInteger.valueOf(value), bits).longValue();
+  }
+
+  private BigInteger normalizeUnsignedBigInteger(BigInteger value, int bits) {
+    if (bits <= 0) {
+      return value == null ? BigInteger.ZERO : value;
+    }
+    BigInteger modulus = BigInteger.ONE.shiftLeft(bits);
+    BigInteger normalized = value == null ? BigInteger.ZERO : value.mod(modulus);
+    if (normalized.signum() < 0) {
+      normalized = normalized.add(modulus);
+    }
+    return normalized;
+  }
+
   private TypeSchema buildSchema(Class<?> javaType, int depth) {
     if (depth > MAX_SCHEMA_DEPTH) {
       throw new IllegalStateException("Schema nesting is too deep for " + javaType.getSimpleName());
@@ -315,6 +1025,9 @@ public class ConfigUpdateService {
     }
     if (javaType.equals(long.class) || javaType.equals(Long.class)) {
       return TypeSchema.longNumber(javaType);
+    }
+    if (javaType.equals(byte.class) || javaType.equals(Byte.class)) {
+      return TypeSchema.intNumber(javaType);
     }
     if (javaType.equals(int.class) || javaType.equals(Integer.class)) {
       return TypeSchema.intNumber(javaType);
@@ -588,6 +1301,9 @@ public class ConfigUpdateService {
       case LONG:
         return parseLong(uiValue);
       case INT:
+        if (schema.javaType.equals(byte.class) || schema.javaType.equals(Byte.class)) {
+          return parseByte(uiValue);
+        }
         return parseInt(uiValue);
       case BOOLEAN:
         return parseBoolean(uiValue);
@@ -780,6 +1496,23 @@ public class ConfigUpdateService {
       return new BigInteger(raw.substring(2), 16).intValue();
     }
     return Integer.parseInt(raw);
+  }
+
+  private Byte parseByte(Object value) {
+    if (value == null) {
+      return 0;
+    }
+    if (value instanceof Number number) {
+      return (byte) number.intValue();
+    }
+    String raw = asString(value).trim();
+    if (raw.isEmpty()) {
+      return 0;
+    }
+    if (HEX_PATTERN.matcher(raw).matches() && (raw.startsWith("0x") || raw.startsWith("0X"))) {
+      return (byte) new BigInteger(raw.substring(2), 16).intValue();
+    }
+    return (byte) Integer.parseInt(raw);
   }
 
   private Boolean parseBoolean(Object value) {
@@ -995,7 +1728,7 @@ public class ConfigUpdateService {
 
     map.put(
         ConfigParams7.class.getName() + ".extraCurrencies",
-        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 32, BigInteger.class, BigIntFormat.DECIMAL, false));
+        new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 32, Byte.class, BigIntFormat.DECIMAL, false));
     map.put(
         ConfigParams9.class.getName() + ".mandatoryParams",
         new DictSpec(32, BigInteger.class, BigIntFormat.DECIMAL, 0, Void.class, BigIntFormat.DECIMAL, true));
