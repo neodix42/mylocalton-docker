@@ -33,7 +33,7 @@ public class ConfigUpdateApiSequentialTest {
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
   private static final Duration SEQNO_WAIT_TIMEOUT = Duration.ofSeconds(60);
   private static final long SEQNO_POLL_MILLIS = 1_500L;
-  private static final Set<Integer> SKIPPED_PARAM_IDS = Set.of(0, 9, 10, 18, 33, 34, 35, 36, 37);
+  private static final Set<Integer> SKIPPED_PARAM_IDS = Set.of(0, 9, 33, 34, 35, 36, 37);
 
   @Test
   public void shouldUpdateAllConfigParamsSequentially() throws Exception {
@@ -75,7 +75,7 @@ public class ConfigUpdateApiSequentialTest {
             returnedSeqno);
       }
 
-      long seqnoAfter = waitForSeqnoChange(seqnoBefore);
+      long seqnoAfter = waitForSeqnoChange(seqnoBefore, SEQNO_WAIT_TIMEOUT);
       Assert.assertTrue(
           "Seqno did not change after update for param " + paramId + ". Before=" + seqnoBefore + ", after=" + seqnoAfter,
           seqnoAfter > seqnoBefore);
@@ -107,8 +107,8 @@ public class ConfigUpdateApiSequentialTest {
     return response.path("seqno").asLong(-1L);
   }
 
-  private long waitForSeqnoChange(long previousSeqno) throws Exception {
-    long deadlineNanos = System.nanoTime() + SEQNO_WAIT_TIMEOUT.toNanos();
+  private long waitForSeqnoChange(long previousSeqno, Duration timeout) throws Exception {
+    long deadlineNanos = System.nanoTime() + timeout.toNanos();
     long lastSeen = previousSeqno;
 
     while (System.nanoTime() < deadlineNanos) {
@@ -343,7 +343,6 @@ public class ConfigUpdateApiSequentialTest {
     }
 
     if (paramId == 10) {
-      removeOneDictEntry(payloadObject, "criticalParams");
       return payloadObject;
     }
 

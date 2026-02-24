@@ -620,6 +620,9 @@ public class ConfigUpdateService {
     if (paramId == 10 && value instanceof ConfigParams10 configParams10) {
       return buildConfigParam10Cell(configParams10);
     }
+    if (paramId == 18 && value instanceof ConfigParams18 configParams18) {
+      return buildConfigParam18Cell(configParams18);
+    }
     if (paramId == 11 && value instanceof ConfigParams11 configParams11) {
       return buildConfigParam11Cell(configParams11);
     }
@@ -708,7 +711,7 @@ public class ConfigUpdateService {
                     .getBits(),
             v -> CellBuilder.beginCell().endCell());
 
-    return CellBuilder.beginCell().storeDict(dict).endCell();
+    return CellBuilder.beginCell().storeCell(dict).endCell();
   }
 
   private Cell buildConfigParam10Cell(ConfigParams10 config) {
@@ -726,7 +729,45 @@ public class ConfigUpdateService {
                     .getBits(),
             v -> CellBuilder.beginCell().endCell());
 
-    return CellBuilder.beginCell().storeDict(dict).endCell();
+    return CellBuilder.beginCell().storeCell(dict).endCell();
+  }
+
+  private Cell buildConfigParam18Cell(ConfigParams18 config) {
+    TonHashMap storagePrices = config.getStoragePrices();
+    if (storagePrices == null
+        || storagePrices.getElements() == null
+        || storagePrices.getElements().isEmpty()) {
+      throw new IllegalArgumentException("ConfigParam 18 storage prices dictionary cannot be empty");
+    }
+
+    Cell dict =
+        storagePrices.serialize(
+            k ->
+                CellBuilder.beginCell()
+                    .storeUint(normalizeUnsignedBigInteger((BigInteger) k, 32), 32)
+                    .endCell()
+                    .getBits(),
+            v ->
+                CellBuilder.beginCell()
+                    .storeCell(buildStoragePricesCell((StoragePrices) v))
+                    .endCell());
+
+    return CellBuilder.beginCell().storeCell(dict).endCell();
+  }
+
+  private Cell buildStoragePricesCell(StoragePrices storagePrices) {
+    if (storagePrices == null) {
+      throw new IllegalArgumentException("StoragePrices value cannot be empty");
+    }
+
+    return CellBuilder.beginCell()
+        .storeUint(0xcc, 8)
+        .storeUint(normalizeUnsignedLong(storagePrices.getUtimeSince(), 32), 32)
+        .storeUint(normalizeUnsignedBigInteger(storagePrices.getBitPricePs(), 64), 64)
+        .storeUint(normalizeUnsignedBigInteger(storagePrices.getCellPricePs(), 64), 64)
+        .storeUint(normalizeUnsignedBigInteger(storagePrices.getMcBitPricePs(), 64), 64)
+        .storeUint(normalizeUnsignedBigInteger(storagePrices.getMcCellPricePs(), 64), 64)
+        .endCell();
   }
 
   private Cell buildConfigParam11Cell(ConfigParams11 config) {
