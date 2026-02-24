@@ -12,6 +12,7 @@
         <module>faucet-app</module>
         <module>data-app</module>
         <module>time-machine-app</module>
+        <module>config-update-app</module>
     </modules>
 
     <properties>

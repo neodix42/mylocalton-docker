@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>TON Config Update</title>
+  <link href="style.css?v=3" rel="stylesheet">
+</head>
+<body>
+<div class="background"></div>
+<main class="page">
+  <section class="panel">
+    <h1>TON Config Update</h1>
+    <p class="subtitle">
+      Read current config values and send signed update messages through config wallet.
+      For 256-bit fields you can use decimal, hex (with or without <code>0x</code>), or TON address.
+    </p>
+
+    <div class="selector-row">
+      <label for="paramSelect">Config parameter</label>
+      <div class="selector-inline">
+        <select id="paramSelect"></select>
+        <button id="loadParamBtn" type="button">Load</button>
+      </div>
+    </div>
+
+    <div id="meta" class="meta"></div>
+    <div id="editor" class="editor"></div>
+
+    <div class="actions">
+      <button id="submitBtn" type="button">Send update</button>
+    </div>
+
+    <pre id="status" class="status"></pre>
+  </section>
+</main>
+
+<script src="script.js?v=3"></script>
+</body>
+</html>

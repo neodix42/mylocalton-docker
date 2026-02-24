@@ -223,6 +223,32 @@ services:
       main:
         ipv4_address: 172.28.1.22
 
+  config-update:
+    container_name: config-update
+    profiles: [config-update]
+    image: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}:${TON_BRANCH:-latest}
+    build:
+      context: .
+      dockerfile: ./config-update/Dockerfile
+      args:
+        MLT_CONFIG_UPDATE_IMAGE: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}
+        TON_BRANCH: ${TON_BRANCH:-latest}
+    ports:
+      - 8084:8084
+    volumes:
+      - shared-data:/usr/share/data
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8084
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8084 || echo 1
+    networks:
+      main:
+        ipv4_address: 172.28.1.26
+
   time-machine:
     container_name: time-machine
     profiles: [time-machine]

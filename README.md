@@ -4,7 +4,7 @@ MyLocalTon allows you quickly to set up and launch your own [TON blockchain](htt
 up to 6 validators.
 To facilitate the development process it also includes services like
 [TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
-Time Machine, Faucet and Random Data Generator.
+Time Machine, Faucet, Config Update and Random Data Generator.
 
 <img alt="MyLocalTon Docker demo" src='./demo.png'>
 
@@ -45,6 +45,7 @@ By default, the following services will be available on start:
 | Global config       | http://127.0.0.1:8000/localhost.global.config.json                                       | 
 | TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2/                                                            | 
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
+| Config update       | http://127.0.0.1:8084/                                                                   |
 | Http File Server    | http://127.0.0.1:8000/                                                                   |
 | Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |
 | Faucet              | http://127.0.0.1:88                                                                      |
@@ -56,7 +57,7 @@ By default, the following services will be available on start:
 To deploy optional services, you may use Compose profiles
 
 ```
-docker compose --profile indexer --profile data --profile faucet up -d
+docker compose --profile indexer --profile data --profile faucet --profile config-update up -d
 ```
 
 or change `COMPOSE_PROFILES` variable in `.env` file.
@@ -66,6 +67,7 @@ Available profiles:
 - `blockchain-explorer`: enables default native TON blockchain explorer
 - `lite-server`: deploys external TON lite-server, by default one runs as embedded inside genesis container
 - `time-machine`: deploys Time Machine service
+- `config-update`: deploys web UI for reading/updating TON config params
 - `faucet`: deploys faucet service to get coins to some special address
 - `data`: generates some activity with TON, Jettons and NFTs
 - `validators-<N>`: launches N validators in addition to genesis node, for example `validators-2` enables 2 additional
@@ -117,6 +119,17 @@ The default parameters for this local TON blockchain are the same as in the Main
 This is the face of MyLocalTon Docker. 
 Here you can take the snapshots of your TON blockchain and navigate between them as you like,
 or you can use it simply to stop and start the blockchain, as well as to customize and start it from scratch. 
+</td>
+</tr>
+<tr>
+<td>config-update</td>
+<td>
+<ul>
+<li><b>SERVER_PORT</b> - used by config update service, default port <b>8084</b>, optional.</li>
+</ul>
+</td>
+<td>
+This service provides a web UI to read and update TON blockchain configuration parameters via ton4j.
 </td>
 </tr>
 <tr>
@@ -236,6 +249,7 @@ In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.
 | TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2                                                             | 
 | TON-HTTP-API V3     | http://127.0.0.1:8081/                                                                   |
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
+| Config update       | http://127.0.0.1:8084/                                                                   |
 | Faucet              | http://127.0.0.1:88                                                                      |
 | Traffic generation  | http://127.0.0.1:99/                                                                     |
 | HTTP file server    | http://127.0.0.1:8000/                                                                   |
