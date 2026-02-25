@@ -20,20 +20,25 @@ public class StartUpTask {
 
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() {
-    while (!Files.exists(GLOBAL_CONFIG_PATH)) {
-      log.info("config-update-app is waiting for {}", GLOBAL_CONFIG_PATH);
+    Path globalConfigPath = resolvePathFromEnv("GLOBAL_CONFIG_PATH", GLOBAL_CONFIG_PATH);
+    Path configKeyPath = resolvePathFromEnv("CONFIG_KEY_PATH", CONFIG_KEY_PATH);
+
+    log.info("config-update-app paths: GLOBAL_CONFIG_PATH={}, CONFIG_KEY_PATH={}", globalConfigPath, configKeyPath);
+
+    while (!Files.exists(globalConfigPath)) {
+      log.info("config-update-app is waiting for {}", globalConfigPath);
       Utils.sleep(3);
     }
 
-    while (!Files.exists(CONFIG_KEY_PATH)) {
-      log.info("config-update-app is waiting for {}", CONFIG_KEY_PATH);
+    while (!Files.exists(configKeyPath)) {
+      log.info("config-update-app is waiting for {}", configKeyPath);
       Utils.sleep(3);
     }
 
     try {
-      Main.adnlLiteClient = AdnlLiteClient.builder().configPath(GLOBAL_CONFIG_PATH.toString()).build();
+      Main.adnlLiteClient = AdnlLiteClient.builder().configPath(globalConfigPath.toString()).build();
 
-      byte[] privateKeySeed = Files.readAllBytes(CONFIG_KEY_PATH);
+      byte[] privateKeySeed = Files.readAllBytes(configKeyPath);
       Main.configKeyPair = Utils.generateSignatureKeyPairFromSeed(privateKeySeed);
 
       long seqno = Main.adnlLiteClient.getSeqno(Main.CONFIG_SMART_CONTRACT_ADDRESS);
@@ -41,5 +46,13 @@ public class StartUpTask {
     } catch (Exception e) {
       throw new IllegalStateException("Unable to initialize config-update-app", e);
     }
+  }
+
+  private Path resolvePathFromEnv(String envName, Path defaultPath) {
+    String value = System.getenv(envName);
+    if (value == null || value.isBlank()) {
+      return defaultPath;
+    }
+    return Path.of(value);
   }
 }

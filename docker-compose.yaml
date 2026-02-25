@@ -243,6 +243,8 @@ services:
         condition: service_healthy
     environment:
       - SERVER_PORT=8084
+      - GLOBAL_CONFIG_PATH
+      - CONFIG_KEY_PATH
     healthcheck:
       test: curl -sS http://127.0.0.1:8084 || echo 1
     networks:

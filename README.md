@@ -133,6 +133,8 @@ This service provides a web UI to read and update TON blockchain configuration p
 REST API endpoints:
 <ul>
 <li><b>GET /api/config/params</b> - list supported config parameters.</li>
+<li><b>GET /api/config/supported</b> - alias of <b>/api/config/params</b>.</li>
+<li><b>GET /api/config/seqno</b> - return current seqno of config smart contract.</li>
 <li><b>GET /api/config/{id}</b> - fetch schema and current value for a config parameter.</li>
 <li><b>POST /api/config/{id}</b> - submit updated value for a config parameter (JSON body: <code>{"value": ...}</code>).</li>
 </ul>
