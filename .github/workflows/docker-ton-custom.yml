@@ -126,3 +126,17 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:${{ inputs.branch }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v4.0.0-${{ inputs.branch }}
+
+      - name: Build and push config-udpate
+        id: docker_build_6
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          file: ./config-udpate/Dockerfile
+          build-args: |
+            TON_BRANCH=${{ inputs.branch }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-udpate:${{ inputs.branch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-udpate:v4.0.0-${{ inputs.branch }}

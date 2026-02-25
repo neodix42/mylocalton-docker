@@ -112,3 +112,15 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v4.0.0
+
+      - name: Build and push config-update
+        id: docker_build_6
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          context: ./
+          file: ./config-update/Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-update:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-update:v4.0.0
