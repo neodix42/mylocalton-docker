@@ -326,12 +326,7 @@ public class MyRestController {
     List<String> warnings = new ArrayList<>();
     String projectDir = getComposeProjectDir();
 
-    try {
-      runComposeCommand(projectDir, null, List.of("down", "-v"));
-    } catch (Exception e) {
-      warnings.add("docker compose down -v failed: " + e.getMessage());
-      log.warn("docker compose down -v failed, continuing with force cleanup", e);
-    }
+    cleanupComposeServicesExceptAdmin(projectDir, warnings);
 
     forceRemoveKnownContainers(warnings);
     forceRemoveKnownVolumes(warnings);
@@ -577,19 +572,19 @@ public class MyRestController {
     }
 
     for (String targetName : targetNames) {
-      if ("admin-portal".equals(targetName)) {
-        // Keep the admin panel alive to return cleanup status to UI.
-        continue;
-      }
-
       try {
         List<Container> refreshed = getAllContainers();
         Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(refreshed, targetName);
         if (containerOptional.isEmpty()) {
           continue;
         }
+        Container container = containerOptional.get();
+        if (isAdminPortalContainer(container)) {
+          // Keep the admin panel alive to return cleanup status to UI.
+          continue;
+        }
         dockerClient
-            .removeContainerCmd(containerOptional.get().getId())
+            .removeContainerCmd(container.getId())
             .withForce(true)
             .withRemoveVolumes(true)
             .exec();
@@ -599,6 +594,70 @@ public class MyRestController {
         log.warn(warning, e);
       }
     }
+  }
+
+  private void cleanupComposeServicesExceptAdmin(String projectDir, List<String> warnings) {
+    List<String> composeServices;
+    try {
+      composeServices = new ArrayList<>(getComposeServiceNames(projectDir));
+    } catch (Exception e) {
+      String warning = "Failed to read compose services: " + e.getMessage();
+      warnings.add(warning);
+      log.warn(warning, e);
+      return;
+    }
+
+    composeServices.removeIf("admin-portal"::equals);
+    if (composeServices.isEmpty()) {
+      return;
+    }
+
+    List<String> stopArgs = new ArrayList<>();
+    stopArgs.add("stop");
+    stopArgs.addAll(composeServices);
+    try {
+      runComposeCommand(projectDir, null, stopArgs);
+    } catch (Exception e) {
+      String warning = "Failed to stop compose services: " + e.getMessage();
+      warnings.add(warning);
+      log.warn(warning, e);
+    }
+
+    List<String> removeArgs = new ArrayList<>(List.of("rm", "-f", "-s", "-v"));
+    removeArgs.addAll(composeServices);
+    try {
+      runComposeCommand(projectDir, null, removeArgs);
+    } catch (Exception e) {
+      String warning = "Failed to remove compose services: " + e.getMessage();
+      warnings.add(warning);
+      log.warn(warning, e);
+    }
+  }
+
+  private List<String> getComposeServiceNames(String projectDir) throws Exception {
+    String composeFile = projectDir + "/docker-compose.yaml";
+    String projectName = getComposeProjectName();
+    String output =
+        runCommandCapture(
+            List.of(
+                "docker",
+                "compose",
+                "-p",
+                projectName,
+                "-f",
+                composeFile,
+                "config",
+                "--services"),
+            projectDir);
+
+    if (output == null || output.isBlank()) {
+      return List.of();
+    }
+
+    return Arrays.stream(output.split("\\R"))
+        .map(String::trim)
+        .filter(name -> !name.isBlank())
+        .toList();
   }
 
   private void forceRemoveKnownVolumes(List<String> warnings) {
@@ -831,6 +890,17 @@ public class MyRestController {
         .map(name -> name.startsWith("/") ? name.substring(1) : name)
         .findFirst()
         .orElse("");
+  }
+
+  private boolean isAdminPortalContainer(Container container) {
+    if ("admin-portal".equals(extractManagedName(container))) {
+      return true;
+    }
+    Map<String, String> labels = container.getLabels();
+    if (labels == null) {
+      return false;
+    }
+    return "admin-portal".equals(labels.get("com.docker.compose.service"));
   }
 
   private boolean isValidatorName(String name) {
