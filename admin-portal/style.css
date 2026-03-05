@@ -241,6 +241,15 @@ body {
   color: #536170;
 }
 
+.viewer-subtitle-link {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
+.viewer-subtitle-link:hover {
+  color: var(--primary);
+}
+
 .open-external {
   text-decoration: none;
   color: #0f172a;

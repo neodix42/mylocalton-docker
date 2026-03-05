@@ -264,7 +264,6 @@ services:
     ports:
       - 8085:8085
     volumes:
-      - shared-data:/usr/share/data
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/workspace
     restart: unless-stopped

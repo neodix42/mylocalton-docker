@@ -18,6 +18,32 @@ const BLOCKCHAIN_MENU_ITEM = {
   special: true,
 };
 
+const SERVICE_DESCRIPTIONS = {
+  "file-server":
+    "Shared docker volume across all services, exposes file http server on port 8000",
+  "data-generator":
+    "This service runs various scenarios that generate random load on a blockchain. More info on wiki https://github.com/neodix42/mylocalton-docker/wiki/Data-(traffic-generation)-container",
+  "ton-blockchain":
+    "TON is a fully decentralized layer-1 blockchain designed by Telegram to onboard billions of users.",
+  faucet:
+    "This service allows generating a new wallet and top it up with test toncoins.",
+  "blockchain-explorer": "Native TON blockchain explorer",
+  "time-machine":
+    "This service allows taking the snapshots of your local TON blockchain and navigating between them as you like.",
+  "config-update":
+    "This service allows you to change TON blockchain system parameters in real-time.",
+  "ton-center-v2":
+    "This is a TonCenter TON HTTP API service provided by the TON Core team. In the Mainnet it is accessible via https://toncenter.com/api/v2/",
+  "ton-center-v3":
+    "This is a TonCenter TON Indexer V3 service provided by the TON Core team. In the Mainnet it is accessible via https://toncenter.com/api/v3/index.html",
+};
+
+const CLICKABLE_SUBTITLE_LINKS = [
+  "https://github.com/neodix42/mylocalton-docker/wiki/Data-(traffic-generation)-container",
+  "https://toncenter.com/api/v2/",
+  "https://toncenter.com/api/v3/index.html",
+];
+
 const state = {
   services: [],
   selectedServiceId: null,
@@ -164,7 +190,10 @@ function renderViewer() {
   }
 
   viewerTitleEl.textContent = selected.name;
-  viewerSubtitleEl.textContent = `${selected.containerName} (${selected.composeService})`;
+  const subtitleText =
+    SERVICE_DESCRIPTIONS[selected.id] ||
+    `${selected.containerName} (${selected.composeService})`;
+  renderViewerSubtitle(subtitleText);
   if (selected.id === BLOCKCHAIN_MENU_ITEM.id) {
     externalLinkEl.classList.add("hidden");
   } else {
@@ -196,6 +225,50 @@ function renderViewer() {
 
   placeholderEl.style.display = "none";
   frameEl.classList.add("show");
+}
+
+function renderViewerSubtitle(text) {
+  viewerSubtitleEl.textContent = "";
+  if (!text) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    let matchUrl = null;
+    let matchIndex = -1;
+
+    CLICKABLE_SUBTITLE_LINKS.forEach((url) => {
+      const index = remaining.indexOf(url);
+      if (index !== -1 && (matchIndex === -1 || index < matchIndex)) {
+        matchUrl = url;
+        matchIndex = index;
+      }
+    });
+
+    if (!matchUrl || matchIndex === -1) {
+      fragment.appendChild(document.createTextNode(remaining));
+      break;
+    }
+
+    if (matchIndex > 0) {
+      fragment.appendChild(document.createTextNode(remaining.slice(0, matchIndex)));
+    }
+
+    const anchor = document.createElement("a");
+    anchor.href = matchUrl;
+    anchor.textContent = matchUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.className = "viewer-subtitle-link";
+    fragment.appendChild(anchor);
+
+    remaining = remaining.slice(matchIndex + matchUrl.length);
+  }
+
+  viewerSubtitleEl.appendChild(fragment);
 }
 
 async function controlService(serviceId, action) {

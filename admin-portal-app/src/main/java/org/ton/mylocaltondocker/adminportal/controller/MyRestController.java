@@ -36,6 +36,18 @@ public class MyRestController {
 
   private static final Pattern VALIDATOR_INDEX_PATTERN = Pattern.compile("^validator-(\\d+)$");
   private static final int MAX_VALIDATORS = 5;
+  private static final String DEFAULT_SHARED_DATA_VOLUME = "mylocaltondocker_shared-data";
+  private static final List<String> KNOWN_AUX_CONTAINER_NAMES =
+      List.of(
+          "lite-server",
+          "explorer-restarter",
+          "index-event-cache",
+          "index-event-classifier",
+          "run-migrations",
+          "index-worker",
+          "index-postgres");
+  private static final List<String> KNOWN_VOLUME_PREFIXES =
+      List.of("ton-db-val", "ton_index", "postgres_data");
   private static final List<String> KNOWN_VOLUME_KEYS =
       List.of(
           "shared-data",
@@ -556,6 +568,7 @@ public class MyRestController {
     for (ManagedService service : ManagedService.values()) {
       targetNames.add(service.getContainerName());
     }
+    targetNames.addAll(KNOWN_AUX_CONTAINER_NAMES);
     targetNames.add("genesis");
     for (int i = 1; i <= MAX_VALIDATORS; i++) {
       targetNames.add("validator-" + i);
@@ -665,6 +678,7 @@ public class MyRestController {
     String projectDir = getComposeProjectDir();
 
     Set<String> volumeNames = new LinkedHashSet<>();
+    volumeNames.add(DEFAULT_SHARED_DATA_VOLUME);
     for (String volumeKey : KNOWN_VOLUME_KEYS) {
       volumeNames.add(projectName + "_" + volumeKey);
       volumeNames.add(volumeKey);
@@ -691,6 +705,21 @@ public class MyRestController {
       log.warn(warning, e);
     }
 
+    try {
+      String allVolumes = runCommandCapture(List.of("docker", "volume", "ls", "-q"), projectDir);
+      if (allVolumes != null && !allVolumes.isBlank()) {
+        Arrays.stream(allVolumes.split("\\R"))
+            .map(String::trim)
+            .filter(name -> !name.isBlank())
+            .filter(this::hasKnownVolumePrefix)
+            .forEach(volumeNames::add);
+      }
+    } catch (Exception e) {
+      String warning = "Failed to list all docker volumes: " + e.getMessage();
+      warnings.add(warning);
+      log.warn(warning, e);
+    }
+
     for (String volumeName : volumeNames) {
       try {
         runCommand(List.of("docker", "volume", "rm", "-f", volumeName), projectDir);
@@ -711,6 +740,18 @@ public class MyRestController {
       return "";
     }
     return value.replace("'", "'\"'\"'");
+  }
+
+  private boolean hasKnownVolumePrefix(String volumeName) {
+    for (String prefix : KNOWN_VOLUME_PREFIXES) {
+      if (volumeName.startsWith(prefix)) {
+        return true;
+      }
+      if (volumeName.startsWith(getComposeProjectName() + "_" + prefix)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void restartBlockchainNodeViaCompose(String nodeId) {
