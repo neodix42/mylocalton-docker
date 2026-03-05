@@ -1,0 +1,253 @@
+:root {
+  --sidebar-width: 360px;
+  --bg: #f1f4f8;
+  --sidebar-bg: #1f2a37;
+  --sidebar-border: #364354;
+  --text-main: #111827;
+  --text-light: #e5e7eb;
+  --text-muted: #aeb8c7;
+  --line: #d8e0e8;
+  --card: #ffffff;
+  --primary: #0d9488;
+  --primary-dark: #0f766e;
+  --danger: #b91c1c;
+  --danger-dark: #991b1b;
+  --disabled: #637385;
+  --shadow: 0 14px 40px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color: var(--text-main);
+  background: radial-gradient(circle at 30% 20%, #ffffff 0%, var(--bg) 70%);
+  min-height: 100vh;
+}
+
+.portal-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: linear-gradient(180deg, #16202c 0%, var(--sidebar-bg) 100%);
+  color: var(--text-light);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sidebar-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.sidebar-header p {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.service-list {
+  padding: 14px;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.service-item {
+  border: 1px solid #344355;
+  border-radius: 10px;
+  background: rgba(24, 36, 49, 0.82);
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.service-item.active {
+  border-color: #6ee7b7;
+  transform: translateX(2px);
+}
+
+.service-item.special {
+  border-color: #4f6f8c;
+  background: linear-gradient(180deg, rgba(26, 45, 61, 0.95), rgba(24, 36, 49, 0.88));
+}
+
+.service-item.down {
+  opacity: 0.55;
+}
+
+.service-name {
+  width: 100%;
+  text-align: left;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+.service-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.control-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.control-btn:disabled {
+  background: #64748b;
+  color: #e2e8f0;
+  cursor: not-allowed;
+}
+
+.control-btn.start {
+  background: var(--primary);
+  color: #f0fdfa;
+}
+
+.control-btn.start:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.control-btn.stop {
+  background: var(--danger);
+  color: #fef2f2;
+}
+
+.control-btn.stop:hover:not(:disabled) {
+  background: var(--danger-dark);
+}
+
+.viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 12px;
+}
+
+.viewer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.viewer-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.viewer-header p {
+  margin: 6px 0 0;
+  color: #536170;
+}
+
+.open-external {
+  text-decoration: none;
+  color: #0f172a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f8fafc;
+}
+
+.open-external.hidden {
+  visibility: hidden;
+}
+
+.status-banner {
+  display: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-banner.show {
+  display: block;
+}
+
+.status-banner.ok {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.status-banner.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.viewer-placeholder {
+  flex: 1;
+  border: 1px dashed #9aa9b8;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  color: #475569;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  text-align: center;
+  padding: 20px;
+}
+
+.service-frame {
+  display: none;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.service-frame.show {
+  display: block;
+}
+
+@media (max-width: 1100px) {
+  .portal-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .service-list {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TON Blockchain Status</title>
+  <link rel="stylesheet" href="blockchain.css">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>TON Blockchain</h1>
+    <p>Genesis and enabled validators status</p>
+  </header>
+
+  <div id="status-banner" class="status-banner"></div>
+
+  <table class="status-table">
+    <thead>
+    <tr>
+      <th>Node</th>
+      <th>Status</th>
+      <th>Health</th>
+      <th>Details</th>
+    </tr>
+    </thead>
+    <tbody id="nodes-body"></tbody>
+  </table>
+</div>
+
+<script src="blockchain.js"></script>
+</body>
+</html>

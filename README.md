@@ -4,7 +4,7 @@ MyLocalTon allows you quickly to set up and launch your own [TON blockchain](htt
 up to 6 validators.
 To facilitate the development process it also includes services like
 [TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
-Time Machine, Faucet, Config Update and Random Data Generator.
+Time Machine, Admin Portal, Faucet, Config Update and Random Data Generator.
 
 <img alt="MyLocalTon Docker demo" src='./demo.png'>
 
@@ -41,7 +41,8 @@ By default, the following services will be available on start:
 
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
-| Time Machine        | http://127.0.0.1:8083/                                                                   | 
+| Admin Portal        | http://127.0.0.1:8085/                                                                   |
+| Time Machine        | http://127.0.0.1:8083/                                                                   |
 | Global config       | http://127.0.0.1:8000/localhost.global.config.json                                       | 
 | TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2/                                                            | 
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
@@ -64,6 +65,7 @@ or change `COMPOSE_PROFILES` variable in `.env` file.
 
 Available profiles:
 
+- `admin-portal`: deploys Admin Portal service
 - `blockchain-explorer`: enables default native TON blockchain explorer
 - `lite-server`: deploys external TON lite-server, by default one runs as embedded inside genesis container
 - `time-machine`: deploys Time Machine service
@@ -106,6 +108,17 @@ found <a href="https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-
 This is the very first and default validator of initial TON blockchain. 
 It creates the so-called zero state with specified parameters.
 The default parameters for this local TON blockchain are the same as in the Mainnet.
+</td>
+</tr>
+<tr>
+<td>admin-portal</td>
+<td>
+<ul>
+<li><b>SERVER_PORT</b> - used by admin portal service, default port <b>8085</b>, optional;</li>
+</ul>
+</td>
+<td>
+This service provides a web UI to monitor and start/stop MyLocalTon services from one place.
 </td>
 </tr>
 <tr>
@@ -254,6 +267,7 @@ In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.
 | Service name        | Link                                                                                     | 
 |---------------------|------------------------------------------------------------------------------------------|
 | Time Machine        | http://127.0.0.1:8083/                                                                   | 
+| Admin Portal        | http://127.0.0.1:8085/                                                                   |
 | TON-HTTP-API V2     | http://127.0.0.1:8082/api/v2                                                             | 
 | TON-HTTP-API V3     | http://127.0.0.1:8081/                                                                   |
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
@@ -343,21 +357,21 @@ To speed up your development process, we created a set of predefined wallets.
 
 These wallets will always be available in the blockchain, and you can use them in your SDK.
 
-| Wallet/Contract Name                        | Wallet                                                                                                                                                                                                                                         | Mnemonic                                                                                                                                                                   |
-|---------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|  
-| main-wallet                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21` <br/>Private key: `155e56fcb4a908d7e639dd72b43c8b6c159116393bdb8a65044661fbd1e6e4d6`                                            |                  |
-| config-master                               | Address: `-1:5555555555555555555555555555555555555555555555555555555555555555` <br/>Private key: `ea8474240765aedb032132ccce724f93c7c209dba98d62887ecf685e8fbd757c`                                         |                  |
-| genesis                                     | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:6744e92c6f71c776fbbcef299e31bf76f39c245cd56f2075b89c6a22026b4131` <br/>Private key: `3c5156df1a46a1c84264c5e4019b9172232595936729595da5c15267c0761ba8`                                         | `quantum input cannon actress public limit case torch manage pig wrestle sunny riot midnight mouse romance guitar chat race famous jacket donor empty sad`                 |
-| validator-1                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:ac76977d75e874006e37bf1113ff0b111851b1b72217b7e281424d2389be0122` <br/>Private key: `bf97c398d24e3d23a1dcf48120a43f0981ec331cf3e1632ba641157694a9b0c8`                                         | `dentist melt vault invest alcohol argue sausage embrace afford verify control credit waste file hope vocal air ahead gesture wage innocent today party salad`             |
-| validator-2                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:061e92aa93905a0e1499dd9964f5c8e06d8bfe349c0dee03c6395b609a9b2e63` <br/>Private key: `bd8343a5338eaa2f4ca327755cc6e23a46dc916db6397c7164abec4fa74470d4`                                         | `involve talk only inform oblige police liberty inform brain daughter erode arrest betray situate gesture curious talent position response window flower car include hunt` |
-| validator-3                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:05045ba974ca403d9bf46b4835fd5cbd0a525c366a92cd020ea2af39761d9e99` <br/>Private key: `9b87d2d9356ef460c2a5b7d087ac7753abb7a4080b3bd48898012e92c12603dc`                                         | `prevent farm bottom wasp limb black planet spider glove grunt apart nerve run motor depart kick about exchange delay police saddle image blast satoshi`                   |
-| validator-4                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:578a994a4be99fedf40953621cf780d109aea2126de9c1ad5362ece75867a10a` <br/>Private key: `ca76a4fc98b7f0f8dcbcc051b2c44e5ffa46340ba613edf72be50d4bc9bdd9ea`                                         | `tattoo program weird deer minimum replace dwarf blind guess cotton casual tool smooth carbon guide poet uphold cheese stand sunset fetch drink dumb chaos`                |
-| validator-5                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:f002d1a5106c751c7346369cda745085253cb9bf009e5769a017a28e2264faab` <br/>Private key: `6d2b9c3d816edb18f7114df57123aa3ad0d4a453ba9e01081635f6d8c58d3cc2`                                         | `alley brass abandon essence boring sing bundle knee image pilot life noodle rough always drastic approve quick spot spy bronze behind include merit mutual`               |
-| Faucet wallet                               | Version: V3R2<br/>WalletId: 42<br/>Balance: 1mio TON<br/>Masterchain<br/>Address: `-1:22f53b7d9aba2cef44755f7078b01614cd4dde2388a1729c2c386cf8f9898afe` <br/>Private key: `a51e8fb6f0fae3834bf430f5012589d319e7b3b3303ceb82c816b762fccf2d05`   | `viable model canvas decade neck soap turtle asthma bench crouch bicycle grief history envelope valid intact invest like offer urban adjust popular draft coral`           |
+| Wallet/Contract Name                        | Wallet                                                                                                                                                                                                                                            | Mnemonic                                                                                                                                                                   |
+|---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|  
+| main-wallet                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:ee8bd22f43f56e50e0f914cedbd0594ece7ed7a3e8131b73862cab98294c4a21` <br/>Private key: `155e56fcb4a908d7e639dd72b43c8b6c159116393bdb8a65044661fbd1e6e4d6`                                            |                                                                                                                                                                            |
+| config-master                               | Address: `-1:5555555555555555555555555555555555555555555555555555555555555555` <br/>Private key: `ea8474240765aedb032132ccce724f93c7c209dba98d62887ecf685e8fbd757c`                                                                               |                                                                                                                                                                            |
+| genesis                                     | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:6744e92c6f71c776fbbcef299e31bf76f39c245cd56f2075b89c6a22026b4131` <br/>Private key: `3c5156df1a46a1c84264c5e4019b9172232595936729595da5c15267c0761ba8`                                            | `quantum input cannon actress public limit case torch manage pig wrestle sunny riot midnight mouse romance guitar chat race famous jacket donor empty sad`                 |
+| validator-1                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:ac76977d75e874006e37bf1113ff0b111851b1b72217b7e281424d2389be0122` <br/>Private key: `bf97c398d24e3d23a1dcf48120a43f0981ec331cf3e1632ba641157694a9b0c8`                                            | `dentist melt vault invest alcohol argue sausage embrace afford verify control credit waste file hope vocal air ahead gesture wage innocent today party salad`             |
+| validator-2                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:061e92aa93905a0e1499dd9964f5c8e06d8bfe349c0dee03c6395b609a9b2e63` <br/>Private key: `bd8343a5338eaa2f4ca327755cc6e23a46dc916db6397c7164abec4fa74470d4`                                            | `involve talk only inform oblige police liberty inform brain daughter erode arrest betray situate gesture curious talent position response window flower car include hunt` |
+| validator-3                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:05045ba974ca403d9bf46b4835fd5cbd0a525c366a92cd020ea2af39761d9e99` <br/>Private key: `9b87d2d9356ef460c2a5b7d087ac7753abb7a4080b3bd48898012e92c12603dc`                                            | `prevent farm bottom wasp limb black planet spider glove grunt apart nerve run motor depart kick about exchange delay police saddle image blast satoshi`                   |
+| validator-4                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:578a994a4be99fedf40953621cf780d109aea2126de9c1ad5362ece75867a10a` <br/>Private key: `ca76a4fc98b7f0f8dcbcc051b2c44e5ffa46340ba613edf72be50d4bc9bdd9ea`                                            | `tattoo program weird deer minimum replace dwarf blind guess cotton casual tool smooth carbon guide poet uphold cheese stand sunset fetch drink dumb chaos`                |
+| validator-5                                 | Version: V3R2<br/>WalletId: 42<br/>Address: `-1:f002d1a5106c751c7346369cda745085253cb9bf009e5769a017a28e2264faab` <br/>Private key: `6d2b9c3d816edb18f7114df57123aa3ad0d4a453ba9e01081635f6d8c58d3cc2`                                            | `alley brass abandon essence boring sing bundle knee image pilot life noodle rough always drastic approve quick spot spy bronze behind include merit mutual`               |
+| Faucet wallet                               | Version: V3R2<br/>WalletId: 42<br/>Balance: 1mio TON<br/>Masterchain<br/>Address: `-1:22f53b7d9aba2cef44755f7078b01614cd4dde2388a1729c2c386cf8f9898afe` <br/>Private key: `a51e8fb6f0fae3834bf430f5012589d319e7b3b3303ceb82c816b762fccf2d05`      | `viable model canvas decade neck soap turtle asthma bench crouch bicycle grief history envelope valid intact invest like offer urban adjust popular draft coral`           |
 | Faucet Highload                             | Version: Highload V2<br/>QueryId: 0<br/>Balance: 1mio TON<br/>Masterchain<br/>Address: `-1:5ee77ced0b7ae6ef88ab3f4350d8872c64667ffbe76073455215d3cdfab3294b` <br/>Private key: `e1480435871753a968ef08edabb24f5532dab4cd904dbdc683b8576fb45fa697` | `twenty unfair stay entry during please water april fabric morning length lumber style tomorrow melody similar forum width ride render void rather custom coin`            |
 | Faucet Highload (used by traffic generator) | Version: Highload V2<br/>QueryId: 0<br/>Balance: 1mio TON<br/>Masterchain<br/>Address: `-1:10df89757ee2bd09779d876a29b3e8ec4e706f902c9704eea5434d0a165e7ccd` <br/>Private key: `f2480435871753a968ef08edabb24f5532dab4cd904dbdc683b8576fb45fa697` |                                                                                                                                                                            |
-| Faucet wallet (basechain)                   | Version: V3R2<br/>WalletId: 42<br/>Balance: 1mio TON<br/>Basechain<br/>Address: `0:1da77f0269bbbb76c862ea424b257df63bd1acb0d4eb681b68c9aadfbf553b93` <br/>Private key: `1bd726fa69d850a5c0032334b16802c7eda48fde7a0e24f28011b22159cc97b7`      | `again tired walnut legal case simple gate deer huge version enable special metal collect hurdle merit between salmon elbow pattern initial receive total slender`         |
-| Faucet Highload (basechain)                 | Version: Highload V2<br/>QueryId: 0<br/>Balance: 1mio TON<br/>Basechain<br/>Address: `0:d07625ea432039dc94dc019025f971bbeba0f7a1d9aaf6abfa94df70e60bca8f` <br/>Private key: `d0cc460a43dd4555401cdc562c6f01bf8bb8c0e882037f57fc05683dd85f3013` | `cement frequent produce tattoo casino tired road seat emotion nominee gloom busy father poet jealous all mail return one planet frozen over earth move`                   |
+| Faucet wallet (basechain)                   | Version: V3R2<br/>WalletId: 42<br/>Balance: 1mio TON<br/>Basechain<br/>Address: `0:1da77f0269bbbb76c862ea424b257df63bd1acb0d4eb681b68c9aadfbf553b93` <br/>Private key: `1bd726fa69d850a5c0032334b16802c7eda48fde7a0e24f28011b22159cc97b7`         | `again tired walnut legal case simple gate deer huge version enable special metal collect hurdle merit between salmon elbow pattern initial receive total slender`         |
+| Faucet Highload (basechain)                 | Version: Highload V2<br/>QueryId: 0<br/>Balance: 1mio TON<br/>Basechain<br/>Address: `0:d07625ea432039dc94dc019025f971bbeba0f7a1d9aaf6abfa94df70e60bca8f` <br/>Private key: `d0cc460a43dd4555401cdc562c6f01bf8bb8c0e882037f57fc05683dd85f3013`    | `cement frequent produce tattoo casino tired road seat emotion nominee gloom busy father poet jealous all mail return one planet frozen over earth move`                   |
 
 ## Features
 

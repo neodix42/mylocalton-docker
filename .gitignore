@@ -1,6 +1,8 @@
 /data-app/target/
 /faucet-app/target/
 /time-machine-app/target/
+/config-update-app/target/
+/admin-portal-app/target/
 /target/
 /local-build
 /private

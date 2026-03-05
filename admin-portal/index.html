@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>MyLocalTon Admin Portal</title>
+  <link href="style.css" rel="stylesheet">
+</head>
+<body>
+<div class="portal-layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>MyLocalTon</h1>
+      <p>Service Control</p>
+    </div>
+    <div class="service-list" id="service-list"></div>
+  </aside>
+
+  <main class="viewer">
+    <div class="viewer-header">
+      <div>
+        <h2 id="viewer-title">Select a service</h2>
+        <p id="viewer-subtitle">Choose a service from the menu to open its main page.</p>
+      </div>
+      <a class="open-external" href="#" id="open-external" rel="noopener noreferrer" target="_blank">Open in new tab</a>
+    </div>
+
+    <div class="status-banner" id="status-banner"></div>
+
+    <div class="viewer-placeholder" id="viewer-placeholder">
+      Select a running service to preview it here.
+    </div>
+    <iframe class="service-frame" id="service-frame" title="Service View"></iframe>
+  </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

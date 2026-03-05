@@ -251,6 +251,38 @@ services:
       main:
         ipv4_address: 172.28.1.26
 
+  admin-portal:
+    container_name: admin-portal
+    profiles: [admin-portal]
+    image: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}:${TON_BRANCH:-latest}
+    build:
+      context: .
+      dockerfile: ./admin-portal/Dockerfile
+      args:
+        MLT_ADMIN_PORTAL_IMAGE: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}
+        TON_BRANCH: ${TON_BRANCH:-latest}
+    ports:
+      - 8085:8085
+    volumes:
+      - shared-data:/usr/share/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8085
+      - COMPOSE_PROJECT_DIR=/workspace
+      - COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8085 || echo 1
+    networks:
+      main:
+        ipv4_address: 172.28.1.27
+
   time-machine:
     container_name: time-machine
     profiles: [time-machine]

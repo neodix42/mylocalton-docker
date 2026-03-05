@@ -50,7 +50,7 @@ docker build -t ton-custom:$branch .
 cd ..
 
 echo
-echo "Compiling Java projects [Faucet, Data Generator, Time Machine]"
+echo "Compiling Java projects [Faucet, Data Generator, Time Machine, Admin Portal]"
 echo
 mvn clean install
 
@@ -62,6 +62,7 @@ docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t 
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-explorer:$branch -f explorer/Dockerfile .
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-faucet:$branch -f faucet/Dockerfile .
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-time-machine:$branch -f time-machine/Dockerfile .
+docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-admin-portal:$branch -f admin-portal/Dockerfile .
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker-lite-server:$branch -f lite-server/Dockerfile .
 docker build --build-arg TON_IMAGE=ton-custom --build-arg TON_BRANCH=$branch -t mylocalton-custom-docker:$branch -f Dockerfile .
 
@@ -73,7 +74,7 @@ sed -i -E "s|^MLT_FAUCET_IMAGE=.*$|MLT_FAUCET_IMAGE=mylocalton-custom-docker-fau
 sed -i -E "s|^MLT_EXPLORER_IMAGE=.*$|MLT_EXPLORER_IMAGE=mylocalton-custom-docker-explorer|" .env
 sed -i -E "s|^MLT_LITE_SERVER_IMAGE=.*$|MLT_LITE_SERVER_IMAGE=mylocalton-custom-docker-lite-server|" .env
 sed -i -E "s|^MLT_TIME_MACHINE_IMAGE=.*$|MLT_TIME_MACHINE_IMAGE=mylocalton-custom-docker-time-machine|" .env
+sed -i -E "s|^MLT_ADMIN_PORTAL_IMAGE=.*$|MLT_ADMIN_PORTAL_IMAGE=mylocalton-custom-docker-admin-portal|" .env
 
 docker compose up
-
 
