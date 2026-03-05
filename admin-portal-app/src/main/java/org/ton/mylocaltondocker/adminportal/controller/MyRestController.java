@@ -36,6 +36,15 @@ public class MyRestController {
 
   private static final Pattern VALIDATOR_INDEX_PATTERN = Pattern.compile("^validator-(\\d+)$");
   private static final int MAX_VALIDATORS = 5;
+  private static final List<TonCenterV3Component> TON_CENTER_V3_COMPONENTS =
+      List.of(
+          new TonCenterV3Component("run-migrations", "run-migrations", "run-migrations", true),
+          new TonCenterV3Component("event-cache", "event-cache", "index-event-cache", false),
+          new TonCenterV3Component(
+              "event-classifier", "event-classifier", "index-event-classifier", false),
+          new TonCenterV3Component("index-api", "index-api", "index-api", false),
+          new TonCenterV3Component("index-worker", "index-worker", "index-worker", false),
+          new TonCenterV3Component("postgres", "postgres", "index-postgres", false));
   private static final String DEFAULT_SHARED_DATA_VOLUME = "mylocaltondocker_shared-data";
   private static final List<String> KNOWN_AUX_CONTAINER_NAMES =
       List.of(
@@ -376,6 +385,10 @@ public class MyRestController {
     }
 
     try {
+      if (ManagedService.TON_CENTER_V3.equals(service)) {
+        return changeTonCenterV3StackState(start);
+      }
+
       List<Container> containers = getAllContainers();
       Optional<Container> containerOptional =
           AdminPortalUtils.findContainerByName(containers, service.getContainerName());
@@ -425,6 +438,97 @@ public class MyRestController {
               + service.getName()
               + ": "
               + e.getMessage());
+    }
+  }
+
+  private ResponseEntity<Map<String, Object>> changeTonCenterV3StackState(boolean start) {
+    if (start) {
+      startTonCenterV3Stack();
+    } else {
+      stopTonCenterV3Stack();
+    }
+    return buildActionResponse(
+        ManagedService.TON_CENTER_V3,
+        start ? "TON Center V3 stack started" : "TON Center V3 stack stopped");
+  }
+
+  private void startTonCenterV3Stack() {
+    List<String> failures = new ArrayList<>();
+    for (TonCenterV3Component component : TON_CENTER_V3_COMPONENTS) {
+      startTonCenterV3Component(component, failures);
+    }
+    if (!failures.isEmpty()) {
+      throw new IllegalStateException(String.join("; ", failures));
+    }
+  }
+
+  private void stopTonCenterV3Stack() {
+    for (TonCenterV3Component component : TON_CENTER_V3_COMPONENTS) {
+      stopTonCenterV3Component(component);
+    }
+  }
+
+  private void startTonCenterV3Component(
+      TonCenterV3Component component, List<String> failures) {
+    Optional<Container> containerOptional =
+        AdminPortalUtils.findContainerByName(getAllContainers(), component.containerName());
+    if (containerOptional.isPresent()) {
+      String containerId = containerOptional.get().getId();
+      if (isContainerRunning(containerId)) {
+        return;
+      }
+      try {
+        dockerClient.startContainerCmd(containerId).exec();
+      } catch (Exception e) {
+        failures.add("Failed to start " + component.displayName() + ": " + e.getMessage());
+      }
+      return;
+    }
+
+    try {
+      runComposeCommand(
+          getComposeProjectDir(),
+          "indexer",
+          List.of("up", "-d", "--no-deps", component.composeService()));
+    } catch (Exception e) {
+      if (component.optionalIfMissing()) {
+        log.warn(
+            "TON Center V3 component {} is optional and could not be started: {}",
+            component.displayName(),
+            e.getMessage());
+        return;
+      }
+      failures.add(
+          "Failed to start "
+              + component.displayName()
+              + " (container and compose fallback): "
+              + e.getMessage());
+    }
+  }
+
+  private void stopTonCenterV3Component(TonCenterV3Component component) {
+    Optional<Container> containerOptional =
+        AdminPortalUtils.findContainerByName(getAllContainers(), component.containerName());
+    if (containerOptional.isPresent()) {
+      String containerId = containerOptional.get().getId();
+      if (!isContainerRunning(containerId)) {
+        return;
+      }
+      try {
+        dockerClient.stopContainerCmd(containerId).withTimeout(10).exec();
+      } catch (Exception e) {
+        log.warn("Failed to stop {} fallback container", component.containerName(), e);
+      }
+      return;
+    }
+
+    try {
+      runComposeCommand(getComposeProjectDir(), "indexer", List.of("stop", component.composeService()));
+    } catch (Exception e) {
+      log.warn(
+          "Failed to stop TON Center V3 component {} via compose fallback",
+          component.composeService(),
+          e);
     }
   }
 
@@ -753,6 +857,9 @@ public class MyRestController {
     }
     return false;
   }
+
+  private record TonCenterV3Component(
+      String displayName, String composeService, String containerName, boolean optionalIfMissing) {}
 
   private void restartBlockchainNodeViaCompose(String nodeId) {
     Map<String, String> envOverrides = new LinkedHashMap<>();

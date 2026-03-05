@@ -267,9 +267,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/workspace
     restart: unless-stopped
-    depends_on:
-      genesis:
-        condition: service_healthy
     environment:
       - SERVER_PORT=8085
       - COMPOSE_PROJECT_DIR=/workspace
