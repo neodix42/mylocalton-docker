@@ -11,12 +11,13 @@
   <header class="header-row">
     <div>
       <h1>Local TON Blockchain</h1>
-      <p>Genesis and other nodes</p>
+      <p>TON is a fully decentralized layer-1 blockchain designed by Telegram to onboard billions of users.</p>
     </div>
     <div class="header-actions">
       <button class="bulk-node-btn start-all-btn" id="start-all-btn" type="button">Start all nodes</button>
       <button class="bulk-node-btn stop-all-btn" id="stop-all-btn" type="button">Stop all nodes</button>
       <button class="add-node-btn" id="add-node-btn" type="button">Add node</button>
+      <button class="bulk-node-btn start-over-btn" id="start-over-btn" type="button">Start over</button>
       <button class="bulk-node-btn cleanup-btn" id="cleanup-btn" type="button">Clean up</button>
     </div>
   </header>
@@ -56,6 +57,41 @@
     <div class="confirm-modal-actions">
       <button class="confirm-btn cancel" id="cleanup-cancel-btn" type="button">Cancel</button>
       <button class="confirm-btn yes" id="cleanup-confirm-btn" type="button">Yes</button>
+    </div>
+  </div>
+</div>
+
+<div aria-hidden="true" class="confirm-modal" id="start-over-confirm-modal">
+  <div aria-labelledby="start-over-confirm-title" aria-modal="true" class="confirm-modal-card" role="dialog">
+    <h2 id="start-over-confirm-title">Confirm Reset</h2>
+    <p class="confirm-modal-text">
+      The current blockchain and all its snapshots will be deleted. On the next screen you will be able to configure settings for your new TON blockchain. Do you want to proceed?
+    </p>
+    <div class="confirm-modal-actions">
+      <button class="confirm-btn cancel" id="start-over-confirm-cancel-btn" type="button">Cancel</button>
+      <button class="confirm-btn yes" id="start-over-confirm-yes-btn" type="button">Yes</button>
+    </div>
+  </div>
+</div>
+
+<div aria-hidden="true" class="confirm-modal" id="start-over-config-modal">
+  <div aria-labelledby="start-over-config-title" aria-modal="true" class="confirm-modal-card start-over-config-card" role="dialog">
+    <h2 id="start-over-config-title">Configure New TON Blockchain</h2>
+    <p class="confirm-modal-text">Edit values and confirm to launch a new run.</p>
+    <div class="start-over-config-table-wrap">
+      <table class="start-over-config-table">
+        <thead>
+        <tr>
+          <th>Variable</th>
+          <th>Value</th>
+        </tr>
+        </thead>
+        <tbody id="start-over-config-body"></tbody>
+      </table>
+    </div>
+    <div class="confirm-modal-actions">
+      <button class="confirm-btn cancel" id="start-over-config-cancel-btn" type="button">Cancel</button>
+      <button class="confirm-btn yes" id="start-over-config-confirm-btn" type="button">Start over</button>
     </div>
   </div>
 </div>

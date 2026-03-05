@@ -3,10 +3,18 @@ const statusBannerEl = document.getElementById("status-banner");
 const addNodeBtnEl = document.getElementById("add-node-btn");
 const startAllBtnEl = document.getElementById("start-all-btn");
 const stopAllBtnEl = document.getElementById("stop-all-btn");
+const startOverBtnEl = document.getElementById("start-over-btn");
 const cleanupBtnEl = document.getElementById("cleanup-btn");
 const cleanupModalEl = document.getElementById("cleanup-modal");
 const cleanupConfirmBtnEl = document.getElementById("cleanup-confirm-btn");
 const cleanupCancelBtnEl = document.getElementById("cleanup-cancel-btn");
+const startOverConfirmModalEl = document.getElementById("start-over-confirm-modal");
+const startOverConfirmYesBtnEl = document.getElementById("start-over-confirm-yes-btn");
+const startOverConfirmCancelBtnEl = document.getElementById("start-over-confirm-cancel-btn");
+const startOverConfigModalEl = document.getElementById("start-over-config-modal");
+const startOverConfigBodyEl = document.getElementById("start-over-config-body");
+const startOverConfigConfirmBtnEl = document.getElementById("start-over-config-confirm-btn");
+const startOverConfigCancelBtnEl = document.getElementById("start-over-config-cancel-btn");
 const logsModalEl = document.getElementById("logs-modal");
 const logsModalTitleEl = document.getElementById("logs-modal-title");
 const logsModalContentEl = document.getElementById("logs-modal-content");
@@ -21,6 +29,9 @@ const state = {
   bulkActionInProgress: false,
   bulkActionType: null,
   cleanupInProgress: false,
+  startOverInProgress: false,
+  startOverConfigLoading: false,
+  startOverVariables: [],
 };
 
 async function fetchBlockchainNodes() {
@@ -77,7 +88,9 @@ function renderNodes(nodes) {
     actionBtn.disabled =
       state.bulkActionInProgress ||
       state.restartInProgressNodeId !== null ||
-      state.cleanupInProgress;
+      state.cleanupInProgress ||
+      state.startOverInProgress ||
+      state.startOverConfigLoading;
 
     if (node.running) {
       actionBtn.textContent = "Stop validator";
@@ -106,7 +119,9 @@ function renderNodes(nodes) {
       !node.exists ||
       state.restartInProgressNodeId !== null ||
       state.bulkActionInProgress ||
-      state.cleanupInProgress;
+      state.cleanupInProgress ||
+      state.startOverInProgress ||
+      state.startOverConfigLoading;
     restartBtn.title = node.exists
       ? "Recreate with verbosity=3"
       : "Container not created";
@@ -123,7 +138,11 @@ function renderNodes(nodes) {
     logsBtn.type = "button";
     logsBtn.textContent = "Show logs";
     logsBtn.disabled =
-      !node.exists || state.bulkActionInProgress || state.cleanupInProgress;
+      !node.exists ||
+      state.bulkActionInProgress ||
+      state.cleanupInProgress ||
+      state.startOverInProgress ||
+      state.startOverConfigLoading;
     logsBtn.title = node.exists ? "Show last 100 lines" : "Container not created";
     logsBtn.addEventListener("click", async () => {
       await openLogs(node.id, node.name);
@@ -166,6 +185,8 @@ function updateAddNodeButton(nodes) {
     state.bulkActionInProgress ||
     state.restartInProgressNodeId !== null ||
     state.cleanupInProgress ||
+    state.startOverInProgress ||
+    state.startOverConfigLoading ||
     !canAdd;
 
   if (!genesisNode?.running) {
@@ -185,7 +206,9 @@ function updateBulkActionButtons(nodes) {
     state.bulkActionInProgress ||
     state.addInProgress ||
     state.restartInProgressNodeId !== null ||
-    state.cleanupInProgress;
+    state.cleanupInProgress ||
+    state.startOverInProgress ||
+    state.startOverConfigLoading;
 
   startAllBtnEl.textContent =
     state.bulkActionInProgress && state.bulkActionType === "start"
@@ -195,10 +218,12 @@ function updateBulkActionButtons(nodes) {
     state.bulkActionInProgress && state.bulkActionType === "stop"
       ? "Stopping..."
       : "Stop all nodes";
+  startOverBtnEl.textContent = state.startOverInProgress ? "Starting over..." : "Start over";
   cleanupBtnEl.textContent = state.cleanupInProgress ? "Cleaning..." : "Clean up";
 
   startAllBtnEl.disabled = locked || stoppedNodesCount === 0;
   stopAllBtnEl.disabled = locked || runningNodesCount === 0;
+  startOverBtnEl.disabled = locked;
   cleanupBtnEl.disabled = locked;
 
   if (stoppedNodesCount === 0) {
@@ -458,6 +483,145 @@ async function cleanUpEnvironment() {
   }
 }
 
+function showStartOverConfirmModal() {
+  if (state.cleanupInProgress || state.startOverInProgress || state.startOverConfigLoading) {
+    return;
+  }
+
+  startOverConfirmModalEl.classList.add("show");
+  startOverConfirmModalEl.setAttribute("aria-hidden", "false");
+}
+
+function closeStartOverConfirmModal() {
+  startOverConfirmModalEl.classList.remove("show");
+  startOverConfirmModalEl.setAttribute("aria-hidden", "true");
+}
+
+async function openStartOverConfigModal() {
+  closeStartOverConfirmModal();
+  state.startOverConfigLoading = true;
+  updateAddNodeButton(state.nodes);
+  updateBulkActionButtons(state.nodes);
+  renderNodes(state.nodes);
+
+  startOverConfigBodyEl.innerHTML = "";
+  startOverConfigConfirmBtnEl.disabled = true;
+  startOverConfigCancelBtnEl.disabled = true;
+  const loadingRow = document.createElement("tr");
+  const loadingCell = document.createElement("td");
+  loadingCell.colSpan = 2;
+  loadingCell.textContent = "Loading variables...";
+  loadingRow.appendChild(loadingCell);
+  startOverConfigBodyEl.appendChild(loadingRow);
+  startOverConfigModalEl.classList.add("show");
+  startOverConfigModalEl.setAttribute("aria-hidden", "false");
+
+  try {
+    const response = await fetch("/api/admin/blockchain-nodes/start-over/variables");
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to load start-over variables");
+    }
+
+    state.startOverVariables = Array.isArray(data.variables) ? data.variables : [];
+    renderStartOverConfigRows(state.startOverVariables);
+  } catch (error) {
+    closeStartOverConfigModal(true);
+    showBanner(error.message, false);
+  } finally {
+    state.startOverConfigLoading = false;
+    startOverConfigConfirmBtnEl.disabled = false;
+    startOverConfigCancelBtnEl.disabled = false;
+    updateAddNodeButton(state.nodes);
+    updateBulkActionButtons(state.nodes);
+    renderNodes(state.nodes);
+  }
+}
+
+function renderStartOverConfigRows(variables) {
+  startOverConfigBodyEl.innerHTML = "";
+  variables.forEach((variable) => {
+    const row = document.createElement("tr");
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = variable.name;
+
+    const valueCell = document.createElement("td");
+    const input = document.createElement("input");
+    input.className = "start-over-config-value-input";
+    input.type = "text";
+    input.value = variable.value ?? "";
+    input.setAttribute("data-var-name", variable.name);
+    valueCell.appendChild(input);
+
+    row.appendChild(nameCell);
+    row.appendChild(valueCell);
+    startOverConfigBodyEl.appendChild(row);
+  });
+}
+
+function closeStartOverConfigModal(force = false) {
+  if (!force && state.startOverInProgress) {
+    return;
+  }
+  startOverConfigModalEl.classList.remove("show");
+  startOverConfigModalEl.setAttribute("aria-hidden", "true");
+}
+
+function collectStartOverValues() {
+  const values = {};
+  const inputs = startOverConfigBodyEl.querySelectorAll("input[data-var-name]");
+  inputs.forEach((input) => {
+    const variableName = input.getAttribute("data-var-name");
+    values[variableName] = input.value;
+  });
+  return values;
+}
+
+async function executeStartOver() {
+  try {
+    state.startOverInProgress = true;
+    startOverConfigConfirmBtnEl.disabled = true;
+    startOverConfigCancelBtnEl.disabled = true;
+    startOverConfigConfirmBtnEl.textContent = "Starting over...";
+    closeStartOverConfigModal(true);
+    updateAddNodeButton(state.nodes);
+    updateBulkActionButtons(state.nodes);
+    renderNodes(state.nodes);
+
+    const values = collectStartOverValues();
+    const response = await fetch("/api/admin/blockchain-nodes/start-over", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(values),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Start over failed");
+    }
+
+    const warningsCount = Array.isArray(data.warnings) ? data.warnings.length : 0;
+    if (warningsCount > 0) {
+      showBanner(`${data.message || "Start over finished"} (${warningsCount} warning(s))`, false);
+    } else {
+      showBanner(data.message || "Start over finished", true);
+    }
+    await fetchBlockchainNodes();
+  } catch (error) {
+    showBanner(error.message || "Start over failed", false);
+  } finally {
+    state.startOverInProgress = false;
+    startOverConfigConfirmBtnEl.disabled = false;
+    startOverConfigCancelBtnEl.disabled = false;
+    startOverConfigConfirmBtnEl.textContent = "Start over";
+    updateAddNodeButton(state.nodes);
+    updateBulkActionButtons(state.nodes);
+    renderNodes(state.nodes);
+  }
+}
+
 function showCleanupModal() {
   if (state.cleanupInProgress) {
     return;
@@ -526,12 +690,27 @@ function init() {
   addNodeBtnEl.addEventListener("click", addNode);
   startAllBtnEl.addEventListener("click", startAllNodes);
   stopAllBtnEl.addEventListener("click", stopAllNodes);
+  startOverBtnEl.addEventListener("click", showStartOverConfirmModal);
   cleanupBtnEl.addEventListener("click", showCleanupModal);
   cleanupConfirmBtnEl.addEventListener("click", cleanUpEnvironment);
   cleanupCancelBtnEl.addEventListener("click", () => closeCleanupModal());
   cleanupModalEl.addEventListener("click", (event) => {
     if (event.target === cleanupModalEl) {
       closeCleanupModal();
+    }
+  });
+  startOverConfirmYesBtnEl.addEventListener("click", openStartOverConfigModal);
+  startOverConfirmCancelBtnEl.addEventListener("click", closeStartOverConfirmModal);
+  startOverConfirmModalEl.addEventListener("click", (event) => {
+    if (event.target === startOverConfirmModalEl) {
+      closeStartOverConfirmModal();
+    }
+  });
+  startOverConfigConfirmBtnEl.addEventListener("click", executeStartOver);
+  startOverConfigCancelBtnEl.addEventListener("click", () => closeStartOverConfigModal());
+  startOverConfigModalEl.addEventListener("click", (event) => {
+    if (event.target === startOverConfigModalEl) {
+      closeStartOverConfigModal();
     }
   });
   logsModalCloseEl.addEventListener("click", closeLogsModal);
@@ -547,6 +726,16 @@ function init() {
 
     if (cleanupModalEl.classList.contains("show")) {
       closeCleanupModal();
+      return;
+    }
+
+    if (startOverConfirmModalEl.classList.contains("show")) {
+      closeStartOverConfirmModal();
+      return;
+    }
+
+    if (startOverConfigModalEl.classList.contains("show")) {
+      closeStartOverConfigModal();
       return;
     }
 

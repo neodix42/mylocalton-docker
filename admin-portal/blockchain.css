@@ -103,6 +103,15 @@ header p {
   background: #5f1515;
 }
 
+.bulk-node-btn.start-over-btn {
+  background: #5b21b6;
+  color: #f5f3ff;
+}
+
+.bulk-node-btn.start-over-btn:hover:not(:disabled) {
+  background: #4c1d95;
+}
+
 .bulk-node-btn:disabled {
   cursor: not-allowed;
   background: #9ca3af;
@@ -372,6 +381,47 @@ header p {
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 14px 40px rgba(15, 23, 42, 0.2);
+}
+
+.start-over-config-card {
+  width: min(900px, 100%);
+}
+
+.start-over-config-table-wrap {
+  margin-top: 12px;
+  max-height: 56vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.start-over-config-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.start-over-config-table th,
+.start-over-config-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.start-over-config-table th {
+  background: #eef3f8;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.start-over-config-value-input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
 }
 
 .confirm-modal-card h2 {

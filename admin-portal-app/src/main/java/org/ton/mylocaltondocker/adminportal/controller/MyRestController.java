@@ -10,6 +10,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -26,6 +28,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -69,6 +72,70 @@ public class MyRestController {
           "ton-db-val3",
           "ton-db-val4",
           "ton-db-val5");
+  private static final List<String> START_OVER_ENV_LINES =
+      List.of(
+          "NEXT_BLOCK_GENERATION_DELAY=2",
+          "HEALTHCHECK_INTERVAL=15s",
+          "EXTERNAL_IP=",
+          "VALIDATION_PERIOD=1200",
+          "MASTERCHAIN_ONLY=false",
+          "GENESIS_VERBOSITY=1",
+          "VALIDATOR_VERBOSITY=1",
+          "EMBEDDED_FILE_HTTP_SERVER=false",
+          "EMBEDDED_FILE_HTTP_SERVER_PORT=8888",
+          "CUSTOM_PARAMETERS=\"--state-ttl 315360000 --archive-ttl 315360000 -f /usr/share/ton/smartcont/\"",
+          "CUSTOM_CONFIG_SMC_URL=",
+          "VERSION_CAPABILITIES=11",
+          "GLOBAL_ID=-217",
+          "MAX_VALIDATORS=1000",
+          "MAX_MAIN_VALIDATORS=100",
+          "MIN_VALIDATORS=1",
+          "MIN_STAKE=1000000",
+          "MAX_STAKE=1000000000",
+          "MAX_FACTOR=10",
+          "MIN_TOTAL_STAKE=10000",
+          "ELECTION_START_BEFORE=900",
+          "ELECTION_END_BEFORE=300",
+          "ELECTION_STAKE_FROZEN=180",
+          "ORIGINAL_VALIDATOR_SET_VALID_FOR=120",
+          "ACTUAL_MIN_SPLIT=0",
+          "MIN_SPLIT=0",
+          "MAX_SPLIT=4",
+          "CELL_PRICE=100000",
+          "CELL_PRICE_MC=1000000",
+          "GAS_PRICE=1000",
+          "GAS_PRICE_MC=10000",
+          "SIMPLE_FAUCET_INITIAL_BALANCE=1000000",
+          "HIGHLOAD_FAUCET_INITIAL_BALANCE=1000000",
+          "DATA_FAUCET_INITIAL_BALANCE=1000000",
+          "VALIDATOR_0_INITIAL_BALANCE=500000000",
+          "VALIDATOR_1_INITIAL_BALANCE=500000000",
+          "VALIDATOR_2_INITIAL_BALANCE=500000000",
+          "VALIDATOR_3_INITIAL_BALANCE=500000000",
+          "VALIDATOR_4_INITIAL_BALANCE=500000000",
+          "VALIDATOR_5_INITIAL_BALANCE=500000000",
+          "BIT_PRICE_PER_SECOND=1",
+          "CELL_PRICE_PER_SECOND=500",
+          "BIT_PRICE_PER_SECOND_MC=1000",
+          "CELL_PRICE_PER_SECOND_MC=500000",
+          "CRITICAL_PARAM_MIN_WINS=4",
+          "CRITICAL_PARAM_MAX_LOSSES=2",
+          "PROTO_VERSION=5",
+          "VALIDATORS_MASTERCHAIN_NUM=1",
+          "VALIDATORS_PER_SHARD=1",
+          "BLOCK_LIMIT_MULTIPLIER=1",
+          "BLOCK_SIZE_UNDERLOAD_KB=256",
+          "BLOCK_SIZE_SOFT_KB=1024",
+          "BLOCK_SIZE_HARD_KB=2048",
+          "BLOCK_GAS_LIMIT_UNDERLOAD=2000000",
+          "BLOCK_GAS_LIMIT_SOFT=10000000",
+          "BLOCK_GAS_LIMIT_HARD=20000000",
+          "SPAM_RUN=0",
+          "SPAM_CHAINS=10",
+          "SPAM_HOPS=65535",
+          "SPAM_SPLIT_HOPS=7",
+          "SPAM_DURATION_MINUTES=300");
+  private static final Map<String, String> START_OVER_ENV_DEFAULTS = createStartOverEnvDefaults();
 
   @GetMapping("/services")
   public ResponseEntity<Map<String, Object>> getServices() {
@@ -363,6 +430,68 @@ public class MyRestController {
     return ResponseEntity.ok(response);
   }
 
+  @GetMapping("/blockchain-nodes/start-over/variables")
+  public ResponseEntity<Map<String, Object>> getStartOverVariables() {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    try {
+      Map<String, String> envValues = readEnvFileValues(getEnvFilePath(getComposeProjectDir()));
+      List<Map<String, Object>> variables = new ArrayList<>();
+      for (Map.Entry<String, String> entry : START_OVER_ENV_DEFAULTS.entrySet()) {
+        Map<String, Object> variable = new LinkedHashMap<>();
+        variable.put("name", entry.getKey());
+        String envValue = envValues.get(entry.getKey());
+        variable.put("value", envValue == null || envValue.isBlank() ? entry.getValue() : envValue);
+        variables.add(variable);
+      }
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("variables", variables);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to load start-over variables", e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "Failed to load start-over variables: " + e.getMessage());
+    }
+  }
+
+  @PostMapping("/blockchain-nodes/start-over")
+  public ResponseEntity<Map<String, Object>> startOverBlockchain(
+      @RequestBody(required = false) Map<String, String> inputValues) {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    String projectDir = getComposeProjectDir();
+    List<String> warnings = new ArrayList<>();
+
+    try {
+      Map<String, String> valuesToApply = mergeStartOverValues(inputValues);
+      List<String> relaunchServices = resolveServicesForStartOverRelaunch(projectDir);
+
+      writeEnvFileValues(getEnvFilePath(projectDir), valuesToApply);
+      cleanupComposeServicesExceptAdmin(projectDir, warnings);
+      forceRemoveKnownContainers(warnings);
+      forceRemoveKnownVolumes(warnings);
+      relaunchServicesAfterStartOver(projectDir, relaunchServices);
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("warnings", warnings);
+      response.put("message", warnings.isEmpty() ? "Start over finished" : "Start over finished with warnings");
+      response.put("services", relaunchServices);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to start over blockchain", e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Failed to start over blockchain: " + e.getMessage());
+    }
+  }
+
   @PostMapping("/services/{serviceId}/start")
   public ResponseEntity<Map<String, Object>> startService(
       @PathVariable("serviceId") String serviceId) {
@@ -629,6 +758,151 @@ public class MyRestController {
     return envValue;
   }
 
+  private Path getEnvFilePath(String projectDir) {
+    return Path.of(projectDir, ".env");
+  }
+
+  private Map<String, String> readEnvFileValues(Path envFile) throws Exception {
+    Map<String, String> values = new LinkedHashMap<>();
+    if (!Files.exists(envFile)) {
+      return values;
+    }
+
+    List<String> lines = Files.readAllLines(envFile, StandardCharsets.UTF_8);
+    for (String line : lines) {
+      String trimmed = line.trim();
+      if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+        continue;
+      }
+      int separatorIndex = line.indexOf('=');
+      if (separatorIndex <= 0) {
+        continue;
+      }
+      String key = line.substring(0, separatorIndex).trim();
+      String value = line.substring(separatorIndex + 1);
+      values.put(key, value);
+    }
+    return values;
+  }
+
+  private void writeEnvFileValues(Path envFile, Map<String, String> newValues) throws Exception {
+    List<String> existingLines =
+        Files.exists(envFile)
+            ? new ArrayList<>(Files.readAllLines(envFile, StandardCharsets.UTF_8))
+            : new ArrayList<>();
+    Set<String> remainingKeys = new LinkedHashSet<>(newValues.keySet());
+    List<String> updatedLines = new ArrayList<>();
+
+    for (String line : existingLines) {
+      int separatorIndex = line.indexOf('=');
+      if (separatorIndex <= 0) {
+        updatedLines.add(line);
+        continue;
+      }
+
+      String key = line.substring(0, separatorIndex).trim();
+      if (!newValues.containsKey(key)) {
+        updatedLines.add(line);
+        continue;
+      }
+
+      updatedLines.add(key + "=" + Optional.ofNullable(newValues.get(key)).orElse(""));
+      remainingKeys.remove(key);
+    }
+
+    if (!remainingKeys.isEmpty()) {
+      if (!updatedLines.isEmpty() && !updatedLines.get(updatedLines.size() - 1).isBlank()) {
+        updatedLines.add("");
+      }
+      for (String key : remainingKeys) {
+        updatedLines.add(key + "=" + Optional.ofNullable(newValues.get(key)).orElse(""));
+      }
+    }
+
+    Files.write(envFile, updatedLines, StandardCharsets.UTF_8);
+  }
+
+  private Map<String, String> mergeStartOverValues(Map<String, String> inputValues) {
+    Map<String, String> values = new LinkedHashMap<>();
+    for (Map.Entry<String, String> entry : START_OVER_ENV_DEFAULTS.entrySet()) {
+      String key = entry.getKey();
+      String defaultValue = entry.getValue();
+      String value = inputValues == null ? null : inputValues.get(key);
+      values.put(key, value == null ? defaultValue : value);
+    }
+    return values;
+  }
+
+  private List<String> resolveServicesForStartOverRelaunch(String projectDir) {
+    Set<String> allowedServices = new LinkedHashSet<>();
+    try {
+      allowedServices.addAll(getComposeServiceNames(projectDir));
+    } catch (Exception e) {
+      log.warn("Failed to resolve compose service names for start-over relaunch", e);
+    }
+
+    Set<String> selectedServices = new LinkedHashSet<>();
+    for (Container container : getAllContainers()) {
+      if (isAdminPortalContainer(container)) {
+        continue;
+      }
+
+      String serviceName = null;
+      Map<String, String> labels = container.getLabels();
+      if (labels != null) {
+        serviceName = labels.get("com.docker.compose.service");
+      }
+      if (serviceName == null || serviceName.isBlank()) {
+        serviceName = mapContainerNameToComposeService(extractManagedName(container));
+      }
+      if (serviceName == null || serviceName.isBlank()) {
+        continue;
+      }
+      if (!allowedServices.isEmpty() && !allowedServices.contains(serviceName)) {
+        continue;
+      }
+      if ("admin-portal".equals(serviceName)) {
+        continue;
+      }
+      selectedServices.add(serviceName);
+    }
+
+    if (selectedServices.isEmpty()) {
+      selectedServices.add("genesis");
+    }
+
+    return new ArrayList<>(selectedServices);
+  }
+
+  private String mapContainerNameToComposeService(String containerName) {
+    if (containerName == null || containerName.isBlank()) {
+      return null;
+    }
+
+    for (ManagedService service : ManagedService.values()) {
+      if (service.getContainerName().equals(containerName)) {
+        return service.getComposeService();
+      }
+    }
+
+    return switch (containerName) {
+      case "index-event-cache" -> "event-cache";
+      case "index-event-classifier" -> "event-classifier";
+      case "index-postgres" -> "postgres";
+      default -> containerName;
+    };
+  }
+
+  private void relaunchServicesAfterStartOver(String projectDir, List<String> services) {
+    if (services == null || services.isEmpty()) {
+      return;
+    }
+
+    List<String> composeArgs = new ArrayList<>(List.of("up", "-d"));
+    composeArgs.addAll(services);
+    runComposeCommand(projectDir, null, composeArgs);
+  }
+
   private ResponseEntity<Map<String, Object>> buildActionResponse(ManagedService service, String message) {
     List<Container> refreshedContainers = getAllContainers();
 
@@ -856,6 +1130,20 @@ public class MyRestController {
       }
     }
     return false;
+  }
+
+  private static Map<String, String> createStartOverEnvDefaults() {
+    Map<String, String> defaults = new LinkedHashMap<>();
+    for (String envLine : START_OVER_ENV_LINES) {
+      int separatorIndex = envLine.indexOf('=');
+      if (separatorIndex <= 0) {
+        continue;
+      }
+      String key = envLine.substring(0, separatorIndex).trim();
+      String value = envLine.substring(separatorIndex + 1);
+      defaults.put(key, value);
+    }
+    return defaults;
   }
 
   private record TonCenterV3Component(
