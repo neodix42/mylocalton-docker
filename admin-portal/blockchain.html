@@ -17,6 +17,7 @@
       <button class="bulk-node-btn start-all-btn" id="start-all-btn" type="button">Start all nodes</button>
       <button class="bulk-node-btn stop-all-btn" id="stop-all-btn" type="button">Stop all nodes</button>
       <button class="add-node-btn" id="add-node-btn" type="button">Add node</button>
+      <button class="bulk-node-btn cleanup-btn" id="cleanup-btn" type="button">Clean up</button>
     </div>
   </header>
 
@@ -43,6 +44,19 @@
       <button class="logs-modal-close" id="logs-modal-close" type="button">Close</button>
     </div>
     <pre class="logs-modal-content" id="logs-modal-content">No logs loaded.</pre>
+  </div>
+</div>
+
+<div aria-hidden="true" class="confirm-modal" id="cleanup-modal">
+  <div aria-labelledby="cleanup-modal-title" aria-modal="true" class="confirm-modal-card" role="dialog">
+    <h2 id="cleanup-modal-title">Clean up</h2>
+    <p class="confirm-modal-text">
+      Are you sure you want to clean up? This will stop and remove all containers and delete all volumes, and only Admin Portal stays running. This action cannot be undone.
+    </p>
+    <div class="confirm-modal-actions">
+      <button class="confirm-btn cancel" id="cleanup-cancel-btn" type="button">Cancel</button>
+      <button class="confirm-btn yes" id="cleanup-confirm-btn" type="button">Yes</button>
+    </div>
   </div>
 </div>
 

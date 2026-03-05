@@ -94,6 +94,15 @@ header p {
   background: #991b1b;
 }
 
+.bulk-node-btn.cleanup-btn {
+  background: #7f1d1d;
+  color: #fef2f2;
+}
+
+.bulk-node-btn.cleanup-btn:hover:not(:disabled) {
+  background: #5f1515;
+}
+
 .bulk-node-btn:disabled {
   cursor: not-allowed;
   background: #9ca3af;
@@ -341,6 +350,81 @@ header p {
   color: #e2e8f0;
 }
 
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 16px;
+  z-index: 1100;
+}
+
+.confirm-modal.show {
+  display: flex;
+}
+
+.confirm-modal-card {
+  width: min(560px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.2);
+}
+
+.confirm-modal-card h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.confirm-modal-text {
+  margin: 0;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.confirm-modal-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirm-btn.cancel {
+  background: #cbd5e1;
+  color: #1e293b;
+}
+
+.confirm-btn.cancel:hover:not(:disabled) {
+  background: #94a3b8;
+}
+
+.confirm-btn.yes {
+  background: #7f1d1d;
+  color: #fef2f2;
+}
+
+.confirm-btn.yes:hover:not(:disabled) {
+  background: #5f1515;
+}
+
+.confirm-btn:disabled {
+  background: #9ca3af;
+  color: #f3f4f6;
+  cursor: not-allowed;
+}
+
 @media (max-width: 760px) {
   .status-table th:nth-child(4),
   .status-table td:nth-child(4),
@@ -350,6 +434,10 @@ header p {
   }
 
   .logs-modal {
+    padding: 8px;
+  }
+
+  .confirm-modal {
     padding: 8px;
   }
 }

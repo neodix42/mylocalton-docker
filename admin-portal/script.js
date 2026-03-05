@@ -23,7 +23,15 @@ const state = {
   selectedServiceId: null,
   refreshHandle: null,
   blockchainActive: false,
+  serviceActionInProgress: {},
 };
+
+const BLOCKCHAIN_IFRAME_SOURCE = "ton-blockchain-panel";
+
+const PLAY_ICON_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polygon points="7,5 19,12 7,19" fill="#22c55e"></polygon></svg>';
+const STOP_ICON_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="#ef4444"></rect></svg>';
 
 async function fetchServices() {
   try {
@@ -98,12 +106,20 @@ function renderServices() {
     if (!service.special) {
       const controls = document.createElement("div");
       controls.className = "service-controls";
+      const pendingAction = state.serviceActionInProgress[service.id] || null;
+      const actionInProgress = pendingAction !== null;
 
       const startButton = document.createElement("button");
       startButton.className = "control-btn start";
-      startButton.textContent = "Start";
+      startButton.innerHTML = PLAY_ICON_SVG;
       startButton.type = "button";
-      startButton.disabled = service.endpointUp;
+      startButton.classList.toggle("loading", pendingAction === "start");
+      startButton.title = pendingAction === "start" ? "Starting..." : "Start";
+      startButton.setAttribute(
+        "aria-label",
+        pendingAction === "start" ? "Starting..." : "Start",
+      );
+      startButton.disabled = actionInProgress || service.endpointUp;
       startButton.addEventListener("click", async (event) => {
         event.stopPropagation();
         await controlService(service.id, "start");
@@ -111,9 +127,15 @@ function renderServices() {
 
       const stopButton = document.createElement("button");
       stopButton.className = "control-btn stop";
-      stopButton.textContent = "Stop";
+      stopButton.innerHTML = STOP_ICON_SVG;
       stopButton.type = "button";
-      stopButton.disabled = !service.running;
+      stopButton.classList.toggle("loading", pendingAction === "stop");
+      stopButton.title = pendingAction === "stop" ? "Stoping..." : "Stop";
+      stopButton.setAttribute(
+        "aria-label",
+        pendingAction === "stop" ? "Stoping..." : "Stop",
+      );
+      stopButton.disabled = actionInProgress || !service.running;
       stopButton.addEventListener("click", async (event) => {
         event.stopPropagation();
         await controlService(service.id, "stop");
@@ -178,6 +200,9 @@ function renderViewer() {
 
 async function controlService(serviceId, action) {
   try {
+    state.serviceActionInProgress[serviceId] = action;
+    renderServices();
+
     const response = await fetch(`/api/admin/services/${serviceId}/${action}`, {
       method: "POST",
     });
@@ -191,6 +216,9 @@ async function controlService(serviceId, action) {
     await fetchServices();
   } catch (error) {
     showBanner(error.message, false);
+  } finally {
+    delete state.serviceActionInProgress[serviceId];
+    renderServices();
   }
 }
 
@@ -207,6 +235,19 @@ function showBanner(message, ok) {
 function init() {
   fetchServices();
   state.refreshHandle = setInterval(fetchServices, 10000);
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || typeof data !== "object") {
+      return;
+    }
+    if (data.source !== BLOCKCHAIN_IFRAME_SOURCE || data.type !== "error") {
+      return;
+    }
+    if (typeof data.message !== "string" || data.message.trim().length === 0) {
+      return;
+    }
+    showBanner(data.message, false);
+  });
 }
 
 window.addEventListener("load", init);

@@ -3,10 +3,15 @@ const statusBannerEl = document.getElementById("status-banner");
 const addNodeBtnEl = document.getElementById("add-node-btn");
 const startAllBtnEl = document.getElementById("start-all-btn");
 const stopAllBtnEl = document.getElementById("stop-all-btn");
+const cleanupBtnEl = document.getElementById("cleanup-btn");
+const cleanupModalEl = document.getElementById("cleanup-modal");
+const cleanupConfirmBtnEl = document.getElementById("cleanup-confirm-btn");
+const cleanupCancelBtnEl = document.getElementById("cleanup-cancel-btn");
 const logsModalEl = document.getElementById("logs-modal");
 const logsModalTitleEl = document.getElementById("logs-modal-title");
 const logsModalContentEl = document.getElementById("logs-modal-content");
 const logsModalCloseEl = document.getElementById("logs-modal-close");
+const PARENT_BANNER_SOURCE = "ton-blockchain-panel";
 
 const state = {
   nodes: [],
@@ -15,6 +20,7 @@ const state = {
   restartInProgressNodeId: null,
   bulkActionInProgress: false,
   bulkActionType: null,
+  cleanupInProgress: false,
 };
 
 async function fetchBlockchainNodes() {
@@ -32,6 +38,10 @@ async function fetchBlockchainNodes() {
     updateBulkActionButtons(state.nodes);
     clearBanner();
   } catch (error) {
+    // When embedded in the main admin viewer, parent page already reports fetch issues.
+    if (isEmbeddedInViewer()) {
+      return;
+    }
     showBanner(error.message, false);
   }
 }
@@ -64,7 +74,10 @@ function renderNodes(nodes) {
     const actionBtn = document.createElement("button");
     actionBtn.className = "action-btn";
     actionBtn.type = "button";
-    actionBtn.disabled = state.bulkActionInProgress || state.restartInProgressNodeId !== null;
+    actionBtn.disabled =
+      state.bulkActionInProgress ||
+      state.restartInProgressNodeId !== null ||
+      state.cleanupInProgress;
 
     if (node.running) {
       actionBtn.textContent = "Stop validator";
@@ -92,7 +105,8 @@ function renderNodes(nodes) {
     restartBtn.disabled =
       !node.exists ||
       state.restartInProgressNodeId !== null ||
-      state.bulkActionInProgress;
+      state.bulkActionInProgress ||
+      state.cleanupInProgress;
     restartBtn.title = node.exists
       ? "Recreate with verbosity=3"
       : "Container not created";
@@ -108,7 +122,8 @@ function renderNodes(nodes) {
     logsBtn.className = "action-btn logs";
     logsBtn.type = "button";
     logsBtn.textContent = "Show logs";
-    logsBtn.disabled = !node.exists || state.bulkActionInProgress;
+    logsBtn.disabled =
+      !node.exists || state.bulkActionInProgress || state.cleanupInProgress;
     logsBtn.title = node.exists ? "Show last 100 lines" : "Container not created";
     logsBtn.addEventListener("click", async () => {
       await openLogs(node.id, node.name);
@@ -150,6 +165,7 @@ function updateAddNodeButton(nodes) {
     state.addInProgress ||
     state.bulkActionInProgress ||
     state.restartInProgressNodeId !== null ||
+    state.cleanupInProgress ||
     !canAdd;
 
   if (!genesisNode?.running) {
@@ -168,7 +184,8 @@ function updateBulkActionButtons(nodes) {
   const locked =
     state.bulkActionInProgress ||
     state.addInProgress ||
-    state.restartInProgressNodeId !== null;
+    state.restartInProgressNodeId !== null ||
+    state.cleanupInProgress;
 
   startAllBtnEl.textContent =
     state.bulkActionInProgress && state.bulkActionType === "start"
@@ -178,9 +195,11 @@ function updateBulkActionButtons(nodes) {
     state.bulkActionInProgress && state.bulkActionType === "stop"
       ? "Stopping..."
       : "Stop all nodes";
+  cleanupBtnEl.textContent = state.cleanupInProgress ? "Cleaning..." : "Clean up";
 
   startAllBtnEl.disabled = locked || stoppedNodesCount === 0;
   stopAllBtnEl.disabled = locked || runningNodesCount === 0;
+  cleanupBtnEl.disabled = locked;
 
   if (stoppedNodesCount === 0) {
     startAllBtnEl.title = "All nodes are already running";
@@ -404,6 +423,59 @@ async function openLogs(nodeId, nodeName) {
   }
 }
 
+async function cleanUpEnvironment() {
+  try {
+    closeCleanupModal(true);
+    state.cleanupInProgress = true;
+    updateAddNodeButton(state.nodes);
+    updateBulkActionButtons(state.nodes);
+    renderNodes(state.nodes);
+
+    const response = await fetch("/api/admin/blockchain-nodes/cleanup", {
+      method: "POST",
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Cleanup failed");
+    }
+
+    const warningsCount = Array.isArray(data.warnings) ? data.warnings.length : 0;
+    if (warningsCount > 0) {
+      showBanner(`${data.message || "Cleanup finished"} (${warningsCount} warning(s))`, false);
+    } else {
+      showBanner(data.message || "Cleanup finished", true);
+    }
+
+    await fetchBlockchainNodes();
+  } catch (error) {
+    showBanner(error.message || "Cleanup failed", false);
+  } finally {
+    state.cleanupInProgress = false;
+    updateAddNodeButton(state.nodes);
+    updateBulkActionButtons(state.nodes);
+    renderNodes(state.nodes);
+  }
+}
+
+function showCleanupModal() {
+  if (state.cleanupInProgress) {
+    return;
+  }
+
+  cleanupModalEl.classList.add("show");
+  cleanupModalEl.setAttribute("aria-hidden", "false");
+}
+
+function closeCleanupModal(force = false) {
+  if (!force && state.cleanupInProgress) {
+    return;
+  }
+
+  cleanupModalEl.classList.remove("show");
+  cleanupModalEl.setAttribute("aria-hidden", "true");
+}
+
 function showLogsModal(nodeName, content) {
   logsModalTitleEl.textContent = `${nodeName} logs`;
   logsModalContentEl.textContent = content;
@@ -418,6 +490,11 @@ function closeLogsModal() {
 }
 
 function showBanner(message, ok) {
+  if (!ok && isEmbeddedInViewer()) {
+    notifyParentError(message);
+    return;
+  }
+
   statusBannerEl.textContent = message;
   statusBannerEl.className = `status-banner show ${ok ? "ok" : "error"}`;
 }
@@ -427,10 +504,36 @@ function clearBanner() {
   statusBannerEl.textContent = "";
 }
 
+function isEmbeddedInViewer() {
+  return window.self !== window.top;
+}
+
+function notifyParentError(message) {
+  try {
+    window.parent.postMessage(
+      {
+        source: PARENT_BANNER_SOURCE,
+        type: "error",
+        message,
+      },
+      "*",
+    );
+  } catch (_ignored) {
+  }
+}
+
 function init() {
   addNodeBtnEl.addEventListener("click", addNode);
   startAllBtnEl.addEventListener("click", startAllNodes);
   stopAllBtnEl.addEventListener("click", stopAllNodes);
+  cleanupBtnEl.addEventListener("click", showCleanupModal);
+  cleanupConfirmBtnEl.addEventListener("click", cleanUpEnvironment);
+  cleanupCancelBtnEl.addEventListener("click", () => closeCleanupModal());
+  cleanupModalEl.addEventListener("click", (event) => {
+    if (event.target === cleanupModalEl) {
+      closeCleanupModal();
+    }
+  });
   logsModalCloseEl.addEventListener("click", closeLogsModal);
   logsModalEl.addEventListener("click", (event) => {
     if (event.target === logsModalEl) {
@@ -438,7 +541,16 @@ function init() {
     }
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && logsModalEl.classList.contains("show")) {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    if (cleanupModalEl.classList.contains("show")) {
+      closeCleanupModal();
+      return;
+    }
+
+    if (logsModalEl.classList.contains("show")) {
       closeLogsModal();
     }
   });

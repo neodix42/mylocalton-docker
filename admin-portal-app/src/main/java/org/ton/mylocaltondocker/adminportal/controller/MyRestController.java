@@ -36,6 +36,18 @@ public class MyRestController {
 
   private static final Pattern VALIDATOR_INDEX_PATTERN = Pattern.compile("^validator-(\\d+)$");
   private static final int MAX_VALIDATORS = 5;
+  private static final List<String> KNOWN_VOLUME_KEYS =
+      List.of(
+          "shared-data",
+          "postgres_data",
+          "ton_index_workdir",
+          "event_cache",
+          "ton-db-val0",
+          "ton-db-val1",
+          "ton-db-val2",
+          "ton-db-val3",
+          "ton-db-val4",
+          "ton-db-val5");
 
   @GetMapping("/services")
   public ResponseEntity<Map<String, Object>> getServices() {
@@ -305,6 +317,36 @@ public class MyRestController {
     }
   }
 
+  @PostMapping("/blockchain-nodes/cleanup")
+  public ResponseEntity<Map<String, Object>> cleanupBlockchainEnvironment() {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    List<String> warnings = new ArrayList<>();
+    String projectDir = getComposeProjectDir();
+
+    try {
+      runComposeCommand(projectDir, null, List.of("down", "-v"));
+    } catch (Exception e) {
+      warnings.add("docker compose down -v failed: " + e.getMessage());
+      log.warn("docker compose down -v failed, continuing with force cleanup", e);
+    }
+
+    forceRemoveKnownContainers(warnings);
+    forceRemoveKnownVolumes(warnings);
+
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("success", true);
+    response.put("warnings", warnings);
+    if (warnings.isEmpty()) {
+      response.put("message", "Cleanup finished");
+    } else {
+      response.put("message", "Cleanup finished with warnings");
+    }
+    return ResponseEntity.ok(response);
+  }
+
   @PostMapping("/services/{serviceId}/start")
   public ResponseEntity<Map<String, Object>> startService(
       @PathVariable("serviceId") String serviceId) {
@@ -509,6 +551,107 @@ public class MyRestController {
       }
     }
     return runningCount;
+  }
+
+  private void forceRemoveKnownContainers(List<String> warnings) {
+    String projectName = getComposeProjectName();
+    List<Container> containers = getAllContainers();
+
+    Set<String> targetNames = new LinkedHashSet<>();
+    for (ManagedService service : ManagedService.values()) {
+      targetNames.add(service.getContainerName());
+    }
+    targetNames.add("genesis");
+    for (int i = 1; i <= MAX_VALIDATORS; i++) {
+      targetNames.add("validator-" + i);
+    }
+
+    for (Container container : containers) {
+      Map<String, String> labels = container.getLabels();
+      if (labels != null && projectName.equals(labels.get("com.docker.compose.project"))) {
+        String containerName = extractManagedName(container);
+        if (!containerName.isBlank()) {
+          targetNames.add(containerName);
+        }
+      }
+    }
+
+    for (String targetName : targetNames) {
+      if ("admin-portal".equals(targetName)) {
+        // Keep the admin panel alive to return cleanup status to UI.
+        continue;
+      }
+
+      try {
+        List<Container> refreshed = getAllContainers();
+        Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(refreshed, targetName);
+        if (containerOptional.isEmpty()) {
+          continue;
+        }
+        dockerClient
+            .removeContainerCmd(containerOptional.get().getId())
+            .withForce(true)
+            .withRemoveVolumes(true)
+            .exec();
+      } catch (Exception e) {
+        String warning = "Failed to remove container " + targetName + ": " + e.getMessage();
+        warnings.add(warning);
+        log.warn(warning, e);
+      }
+    }
+  }
+
+  private void forceRemoveKnownVolumes(List<String> warnings) {
+    String projectName = getComposeProjectName();
+    String projectDir = getComposeProjectDir();
+
+    Set<String> volumeNames = new LinkedHashSet<>();
+    for (String volumeKey : KNOWN_VOLUME_KEYS) {
+      volumeNames.add(projectName + "_" + volumeKey);
+      volumeNames.add(volumeKey);
+    }
+
+    try {
+      String byLabel =
+          runCommandCapture(
+              List.of(
+                  "sh",
+                  "-lc",
+                  "docker volume ls -q --filter label=com.docker.compose.project="
+                      + escapeForShell(projectName)),
+              projectDir);
+      if (byLabel != null && !byLabel.isBlank()) {
+        Arrays.stream(byLabel.split("\\R"))
+            .map(String::trim)
+            .filter(name -> !name.isBlank())
+            .forEach(volumeNames::add);
+      }
+    } catch (Exception e) {
+      String warning = "Failed to list project volumes: " + e.getMessage();
+      warnings.add(warning);
+      log.warn(warning, e);
+    }
+
+    for (String volumeName : volumeNames) {
+      try {
+        runCommand(List.of("docker", "volume", "rm", "-f", volumeName), projectDir);
+      } catch (Exception e) {
+        String message = e.getMessage() == null ? "" : e.getMessage();
+        if (message.contains("No such volume")) {
+          continue;
+        }
+        String warning = "Failed to remove volume " + volumeName + ": " + message;
+        warnings.add(warning);
+        log.warn(warning, e);
+      }
+    }
+  }
+
+  private String escapeForShell(String value) {
+    if (value == null) {
+      return "";
+    }
+    return value.replace("'", "'\"'\"'");
   }
 
   private void restartBlockchainNodeViaCompose(String nodeId) {
