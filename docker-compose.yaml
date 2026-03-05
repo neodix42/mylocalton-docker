@@ -274,6 +274,7 @@ services:
     environment:
       - SERVER_PORT=8085
       - COMPOSE_PROJECT_DIR=/workspace
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mylocaltondocker}
       - COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

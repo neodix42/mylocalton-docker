@@ -73,6 +73,7 @@ body {
   background: rgba(24, 36, 49, 0.82);
   padding: 12px;
   cursor: pointer;
+  position: relative;
   transition: border-color 0.2s ease, transform 0.2s ease;
 }
 
@@ -87,7 +88,16 @@ body {
 }
 
 .service-item.down {
-  opacity: 0.55;
+  border-color: #425164;
+  background: rgba(22, 32, 45, 0.9);
+}
+
+.service-item.down .service-name {
+  color: #cbd5e1;
+}
+
+.service-item.down .control-btn {
+  opacity: 1;
 }
 
 .service-name {
@@ -97,7 +107,27 @@ body {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 10px;
-  padding: 0 2px;
+  padding: 0 22px 0 2px;
+}
+
+.service-status-icon {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.service-status-icon.active {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.55);
+}
+
+.service-status-icon.inactive {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.45);
 }
 
 .service-controls {

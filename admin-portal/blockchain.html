@@ -2,18 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
   <title>TON Blockchain Status</title>
-  <link rel="stylesheet" href="blockchain.css">
+  <link href="blockchain.css" rel="stylesheet">
 </head>
 <body>
 <div class="container">
-  <header>
-    <h1>TON Blockchain</h1>
-    <p>Genesis and enabled validators status</p>
+  <header class="header-row">
+    <div>
+      <h1>TON Blockchain</h1>
+      <p>Genesis and other nodes</p>
+    </div>
+    <div class="header-actions">
+      <button class="bulk-node-btn start-all-btn" id="start-all-btn" type="button">Start all nodes</button>
+      <button class="bulk-node-btn stop-all-btn" id="stop-all-btn" type="button">Stop all nodes</button>
+      <button class="add-node-btn" id="add-node-btn" type="button">Add node</button>
+    </div>
   </header>
 
-  <div id="status-banner" class="status-banner"></div>
+  <div class="status-banner" id="status-banner"></div>
 
   <table class="status-table">
     <thead>
@@ -22,10 +29,21 @@
       <th>Status</th>
       <th>Health</th>
       <th>Details</th>
+      <th>Action</th>
     </tr>
     </thead>
     <tbody id="nodes-body"></tbody>
   </table>
+</div>
+
+<div aria-hidden="true" class="logs-modal" id="logs-modal">
+  <div aria-labelledby="logs-modal-title" aria-modal="true" class="logs-modal-card" role="dialog">
+    <div class="logs-modal-header">
+      <h2 id="logs-modal-title">Service logs</h2>
+      <button class="logs-modal-close" id="logs-modal-close" type="button">Close</button>
+    </div>
+    <pre class="logs-modal-content" id="logs-modal-content">No logs loaded.</pre>
+  </div>
 </div>
 
 <script src="blockchain.js"></script>

@@ -22,18 +22,35 @@ const state = {
   services: [],
   selectedServiceId: null,
   refreshHandle: null,
+  blockchainActive: false,
 };
 
 async function fetchServices() {
   try {
-    const response = await fetch("/api/admin/services");
-    const data = await response.json();
+    const [servicesResponse, blockchainNodesResponse] = await Promise.all([
+      fetch("/api/admin/services"),
+      fetch("/api/admin/blockchain-nodes"),
+    ]);
+    const data = await servicesResponse.json();
 
-    if (!response.ok || !data.success) {
+    if (!servicesResponse.ok || !data.success) {
       throw new Error(data.message || "Unable to load services");
     }
 
-    state.services = [{ ...BLOCKCHAIN_MENU_ITEM }, ...(data.services || [])];
+    state.blockchainActive = false;
+    if (blockchainNodesResponse.ok) {
+      try {
+        const blockchainData = await blockchainNodesResponse.json();
+        const nodes = blockchainData.nodes || [];
+        state.blockchainActive = nodes.some((node) => node.running);
+      } catch (_ignored) {
+      }
+    }
+
+    state.services = [
+      { ...BLOCKCHAIN_MENU_ITEM, endpointUp: state.blockchainActive },
+      ...(data.services || []),
+    ];
     if (!state.selectedServiceId && state.services.length > 0) {
       state.selectedServiceId = state.services[0].id;
     }
@@ -69,6 +86,13 @@ function renderServices() {
     const nameButton = document.createElement("div");
     nameButton.className = "service-name";
     nameButton.textContent = service.name;
+
+    const statusIcon = document.createElement("span");
+    statusIcon.className = "service-status-icon";
+    statusIcon.classList.add(service.endpointUp ? "active" : "inactive");
+    statusIcon.title = service.endpointUp ? "active" : "inactive";
+
+    item.appendChild(statusIcon);
     item.appendChild(nameButton);
 
     if (!service.special) {
@@ -119,8 +143,22 @@ function renderViewer() {
 
   viewerTitleEl.textContent = selected.name;
   viewerSubtitleEl.textContent = `${selected.containerName} (${selected.composeService})`;
-  externalLinkEl.href = selected.url;
-  externalLinkEl.classList.remove("hidden");
+  if (selected.id === BLOCKCHAIN_MENU_ITEM.id) {
+    externalLinkEl.classList.add("hidden");
+  } else {
+    externalLinkEl.href = selected.url;
+    externalLinkEl.classList.remove("hidden");
+  }
+
+  // TON Blockchain page must always be available, even when genesis/validators are down.
+  if (selected.id === BLOCKCHAIN_MENU_ITEM.id) {
+    if (frameEl.getAttribute("src") !== selected.url) {
+      frameEl.setAttribute("src", selected.url);
+    }
+    placeholderEl.style.display = "none";
+    frameEl.classList.add("show");
+    return;
+  }
 
   if (!selected.endpointUp) {
     frameEl.classList.remove("show");

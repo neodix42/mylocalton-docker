@@ -12,8 +12,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MyRestController {
 
   private static final Pattern VALIDATOR_INDEX_PATTERN = Pattern.compile("^validator-(\\d+)$");
+  private static final int MAX_VALIDATORS = 5;
 
   @GetMapping("/services")
   public ResponseEntity<Map<String, Object>> getServices() {
@@ -73,6 +74,235 @@ public class MyRestController {
     response.put("nodes", nodes);
 
     return ResponseEntity.ok(response);
+  }
+
+  @PostMapping("/blockchain-nodes/add-validator")
+  public ResponseEntity<Map<String, Object>> addValidatorNode() {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    try {
+      List<Container> containers = getAllContainers();
+      if (!isNodeRunning("genesis", containers)) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Genesis must be running before adding validators");
+      }
+
+      int runningValidators = countRunningValidators(containers);
+      int nextValidatorIndex = runningValidators + 1;
+
+      if (nextValidatorIndex > MAX_VALIDATORS) {
+        return buildErrorResponse(
+            HttpStatus.BAD_REQUEST, "Maximum number of validators reached (" + MAX_VALIDATORS + ")");
+      }
+
+      String validatorName = "validator-" + nextValidatorIndex;
+      String validatorProfile = "validators-" + nextValidatorIndex;
+
+      runComposeCommand(
+          getComposeProjectDir(), validatorProfile, List.of("up", "-d", "--no-deps", validatorName));
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("message", "Validator added: " + validatorName);
+      response.put("validator", validatorName);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to add validator node", e);
+      return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to add validator: " + e.getMessage());
+    }
+  }
+
+  @PostMapping("/blockchain-nodes/{nodeId}/remove-validator")
+  public ResponseEntity<Map<String, Object>> removeValidatorNode(@PathVariable("nodeId") String nodeId) {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    if ("genesis".equals(nodeId)) {
+      try {
+        runComposeCommand(getComposeProjectDir(), null, List.of("stop", nodeId));
+
+        List<Container> containers = getAllContainers();
+        Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, nodeId);
+        if (containerOptional.isPresent()) {
+          try {
+            if (isContainerRunning(containerOptional.get().getId())) {
+              dockerClient.stopContainerCmd(containerOptional.get().getId()).withTimeout(10).exec();
+            }
+          } catch (Exception stopFallbackError) {
+            log.debug("Genesis fallback stop was not required or container changed", stopFallbackError);
+          }
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("message", "Genesis stopped");
+        response.put("nodeId", nodeId);
+        return ResponseEntity.ok(response);
+      } catch (Exception e) {
+        log.error("Failed to stop genesis", e);
+        return buildErrorResponse(
+            HttpStatus.INTERNAL_SERVER_ERROR, "Failed to stop genesis: " + e.getMessage());
+      }
+    }
+
+    Matcher validatorMatcher = VALIDATOR_INDEX_PATTERN.matcher(nodeId);
+    if (!validatorMatcher.matches()) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Only validator nodes can be removed");
+    }
+
+    int validatorIndex;
+    try {
+      validatorIndex = Integer.parseInt(validatorMatcher.group(1));
+    } catch (Exception e) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid validator id: " + nodeId);
+    }
+
+    if (validatorIndex < 1 || validatorIndex > MAX_VALIDATORS) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Validator id out of range: " + nodeId);
+    }
+
+    String profile = "validators-" + validatorIndex;
+
+    try {
+      runComposeCommand(getComposeProjectDir(), profile, List.of("stop", nodeId));
+
+      // Fallback direct stop if compose command did not stop an existing running container.
+      List<Container> containers = getAllContainers();
+      Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, nodeId);
+      if (containerOptional.isPresent()) {
+        try {
+          if (isContainerRunning(containerOptional.get().getId())) {
+            dockerClient.stopContainerCmd(containerOptional.get().getId()).withTimeout(10).exec();
+          }
+        } catch (Exception stopFallbackError) {
+          log.debug("Validator fallback stop was not required or container changed: {}", nodeId, stopFallbackError);
+        }
+      }
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("message", "Validator stopped: " + nodeId);
+      response.put("validator", nodeId);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to remove validator {}", nodeId, e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Failed to stop validator " + nodeId + ": " + e.getMessage());
+    }
+  }
+
+  @PostMapping("/blockchain-nodes/{nodeId}/start-validator")
+  public ResponseEntity<Map<String, Object>> startValidatorNode(@PathVariable("nodeId") String nodeId) {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    if ("genesis".equals(nodeId)) {
+      try {
+        runComposeCommand(getComposeProjectDir(), null, List.of("up", "-d", "--no-deps", nodeId));
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("message", "Genesis started");
+        response.put("nodeId", nodeId);
+        return ResponseEntity.ok(response);
+      } catch (Exception e) {
+        log.error("Failed to start genesis", e);
+        return buildErrorResponse(
+            HttpStatus.INTERNAL_SERVER_ERROR, "Failed to start genesis: " + e.getMessage());
+      }
+    }
+
+    Matcher validatorMatcher = VALIDATOR_INDEX_PATTERN.matcher(nodeId);
+    if (!validatorMatcher.matches()) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Only validator nodes can be started");
+    }
+
+    int validatorIndex;
+    try {
+      validatorIndex = Integer.parseInt(validatorMatcher.group(1));
+    } catch (Exception e) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid validator id: " + nodeId);
+    }
+
+    if (validatorIndex < 1 || validatorIndex > MAX_VALIDATORS) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Validator id out of range: " + nodeId);
+    }
+
+    String profile = "validators-" + validatorIndex;
+
+    try {
+      runComposeCommand(getComposeProjectDir(), profile, List.of("up", "-d", "--no-deps", nodeId));
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("message", "Validator started: " + nodeId);
+      response.put("validator", nodeId);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to start validator {}", nodeId, e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Failed to start validator " + nodeId + ": " + e.getMessage());
+    }
+  }
+
+  @GetMapping("/blockchain-nodes/{nodeId}/logs")
+  public ResponseEntity<Map<String, Object>> getBlockchainNodeLogs(@PathVariable("nodeId") String nodeId) {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    if (!isSupportedBlockchainNodeId(nodeId)) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Unsupported blockchain node id: " + nodeId);
+    }
+
+    List<Container> containers = getAllContainers();
+    Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, nodeId);
+    if (containerOptional.isEmpty()) {
+      return buildErrorResponse(HttpStatus.NOT_FOUND, "Container not created: " + nodeId);
+    }
+
+    try {
+      String logs = getContainerLogs(containerOptional.get().getId(), 100);
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("nodeId", nodeId);
+      response.put("logs", logs);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to fetch logs for node {}", nodeId, e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Failed to fetch logs for " + nodeId + ": " + e.getMessage());
+    }
+  }
+
+  @PostMapping("/blockchain-nodes/{nodeId}/restart")
+  public ResponseEntity<Map<String, Object>> restartBlockchainNode(@PathVariable("nodeId") String nodeId) {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    if (!isSupportedBlockchainNodeId(nodeId)) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, "Unsupported blockchain node id: " + nodeId);
+    }
+
+    try {
+      restartBlockchainNodeViaCompose(nodeId);
+
+      List<Container> refreshedContainers = getAllContainers();
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("message", "Node restarted: " + nodeId);
+      response.put("node", createBlockchainNodeResponse(nodeId, refreshedContainers));
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to restart blockchain node {}", nodeId, e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR, "Failed to restart node " + nodeId + ": " + e.getMessage());
+    }
   }
 
   @PostMapping("/services/{serviceId}/start")
@@ -150,36 +380,66 @@ public class MyRestController {
   }
 
   private void startMissingServiceViaCompose(ManagedService service) {
-    String projectDir = getComposeProjectDir();
+    runComposeCommand(getComposeProjectDir(), null, List.of("up", "-d", service.getComposeService()));
+  }
+
+  private void runComposeCommand(
+      String projectDir, String profile, List<String> composeArgs) {
+    runComposeCommand(projectDir, profile, composeArgs, Map.of());
+  }
+
+  private void runComposeCommand(
+      String projectDir, String profile, List<String> composeArgs, Map<String, String> envOverrides) {
     String composeFile = projectDir + "/docker-compose.yaml";
+    String projectName = getComposeProjectName();
 
-    List<List<String>> commands =
-        List.of(
-            List.of("docker", "compose", "-f", composeFile, "up", "-d", service.getComposeService()),
-            List.of("docker-compose", "-f", composeFile, "up", "-d", service.getComposeService()));
-
-    List<String> errors = new ArrayList<>();
-    for (List<String> command : commands) {
-      try {
-        runCommand(command, projectDir);
-        return;
-      } catch (Exception e) {
-        errors.add(e.getMessage());
-        log.warn("Failed command {}", String.join(" ", command));
-      }
+    List<String> command =
+        new ArrayList<>(List.of("docker", "compose", "-p", projectName, "-f", composeFile));
+    if (profile != null && !profile.isBlank()) {
+      command.add("--profile");
+      command.add(profile);
     }
+    command.addAll(composeArgs);
 
-    throw new IllegalStateException(
-        "Unable to start service "
-            + service.getComposeService()
-            + " via docker compose. "
-            + String.join(" | ", errors));
+    try {
+      runCommand(command, projectDir, envOverrides);
+    } catch (Exception e) {
+      throw new IllegalStateException(
+          "Compose command failed: "
+              + String.join(" ", composeArgs)
+              + ", profile="
+              + (profile == null ? "<none>" : profile)
+              + ", project="
+              + projectName
+              + ". "
+              + e.getMessage());
+    }
   }
 
   private void runCommand(List<String> command, String workDir) throws Exception {
+    runCommand(command, workDir, Map.of());
+  }
+
+  private void runCommand(List<String> command, String workDir, Map<String, String> envOverrides)
+      throws Exception {
+    String output = runCommandCapture(command, workDir, envOverrides);
+    if (output != null && !output.isBlank()) {
+      log.info("Command output: {}", output);
+    }
+  }
+
+  private String runCommandCapture(List<String> command, String workDir) throws Exception {
+    return runCommandCapture(command, workDir, Map.of());
+  }
+
+  private String runCommandCapture(
+      List<String> command, String workDir, Map<String, String> envOverrides) throws Exception {
     ProcessBuilder processBuilder = new ProcessBuilder(command);
     processBuilder.directory(new File(workDir));
     processBuilder.redirectErrorStream(true);
+    if (envOverrides != null && !envOverrides.isEmpty()) {
+      processBuilder.environment().putAll(envOverrides);
+    }
 
     Process process = processBuilder.start();
     String output;
@@ -197,16 +457,21 @@ public class MyRestController {
               + String.join(" ", command)
               + (output == null || output.isBlank() ? "" : "\n" + output));
     }
-
-    if (output != null && !output.isBlank()) {
-      log.info("Command output: {}", output);
-    }
+    return output;
   }
 
   private String getComposeProjectDir() {
     String envValue = System.getenv("COMPOSE_PROJECT_DIR");
     if (envValue == null || envValue.isBlank()) {
       return "/workspace";
+    }
+    return envValue;
+  }
+
+  private String getComposeProjectName() {
+    String envValue = System.getenv("COMPOSE_PROJECT_NAME");
+    if (envValue == null || envValue.isBlank()) {
+      return "mylocaltondocker";
     }
     return envValue;
   }
@@ -226,6 +491,78 @@ public class MyRestController {
     return dockerClient.listContainersCmd().withShowAll(true).exec();
   }
 
+  private boolean isNodeRunning(String nodeName, List<Container> containers) {
+    Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, nodeName);
+    return containerOptional.isPresent() && isContainerRunning(containerOptional.get().getId());
+  }
+
+  private int countRunningValidators(List<Container> containers) {
+    int runningCount = 0;
+    for (Container container : containers) {
+      String containerName = extractManagedName(container);
+      Matcher matcher = VALIDATOR_INDEX_PATTERN.matcher(containerName);
+      if (!matcher.matches()) {
+        continue;
+      }
+      if (isContainerRunning(container.getId())) {
+        runningCount++;
+      }
+    }
+    return runningCount;
+  }
+
+  private void restartBlockchainNodeViaCompose(String nodeId) {
+    Map<String, String> envOverrides = new LinkedHashMap<>();
+    String profile = null;
+
+    if ("genesis".equals(nodeId)) {
+      envOverrides.put("GENESIS_VERBOSITY", "3");
+    } else {
+      Integer validatorIndex = extractValidatorIndex(nodeId);
+      if (validatorIndex == null || validatorIndex < 1 || validatorIndex > MAX_VALIDATORS) {
+        throw new IllegalArgumentException("Unsupported validator id: " + nodeId);
+      }
+      profile = "validators-" + validatorIndex;
+      envOverrides.put("VALIDATOR_VERBOSITY", "3");
+    }
+
+    runComposeCommand(
+        getComposeProjectDir(),
+        profile,
+        List.of("up", "-d", "--force-recreate", "--no-deps", nodeId),
+        envOverrides);
+  }
+
+  private boolean isSupportedBlockchainNodeId(String nodeId) {
+    if ("genesis".equals(nodeId)) {
+      return true;
+    }
+
+    Matcher validatorMatcher = VALIDATOR_INDEX_PATTERN.matcher(nodeId);
+    if (!validatorMatcher.matches()) {
+      return false;
+    }
+
+    try {
+      int validatorIndex = Integer.parseInt(validatorMatcher.group(1));
+      return validatorIndex >= 1 && validatorIndex <= MAX_VALIDATORS;
+    } catch (NumberFormatException e) {
+      return false;
+    }
+  }
+
+  private String getContainerLogs(String containerId, int tailLines) throws Exception {
+    int safeTailLines = Math.max(1, tailLines);
+    String logs =
+        runCommandCapture(
+            List.of("docker", "logs", "--tail", String.valueOf(safeTailLines), containerId),
+            getComposeProjectDir());
+    if (logs == null || logs.isBlank()) {
+      return "No logs available.";
+    }
+    return logs;
+  }
+
   private List<String> getExpectedBlockchainNodes(List<Container> containers) {
     Set<String> nodeNames = new LinkedHashSet<>();
     nodeNames.add("genesis");
@@ -242,7 +579,46 @@ public class MyRestController {
       }
     }
 
-    return List.copyOf(nodeNames);
+    return nodeNames.stream().sorted(this::compareNodeNames).toList();
+  }
+
+  private int compareNodeNames(String left, String right) {
+    if ("genesis".equals(left) && "genesis".equals(right)) {
+      return 0;
+    }
+    if ("genesis".equals(left)) {
+      return -1;
+    }
+    if ("genesis".equals(right)) {
+      return 1;
+    }
+
+    Integer leftValidatorIndex = extractValidatorIndex(left);
+    Integer rightValidatorIndex = extractValidatorIndex(right);
+
+    if (leftValidatorIndex != null && rightValidatorIndex != null) {
+      return Integer.compare(leftValidatorIndex, rightValidatorIndex);
+    }
+    if (leftValidatorIndex != null) {
+      return -1;
+    }
+    if (rightValidatorIndex != null) {
+      return 1;
+    }
+
+    return left.compareTo(right);
+  }
+
+  private Integer extractValidatorIndex(String nodeName) {
+    Matcher matcher = VALIDATOR_INDEX_PATTERN.matcher(nodeName);
+    if (!matcher.matches()) {
+      return null;
+    }
+    try {
+      return Integer.parseInt(matcher.group(1));
+    } catch (NumberFormatException e) {
+      return null;
+    }
   }
 
   private int getConfiguredValidatorsCount() {
@@ -263,7 +639,7 @@ public class MyRestController {
         }
       }
     }
-    return Math.min(Math.max(maxValidators, 0), 5);
+    return Math.min(Math.max(maxValidators, 0), MAX_VALIDATORS);
   }
 
   private Map<String, Object> createBlockchainNodeResponse(
