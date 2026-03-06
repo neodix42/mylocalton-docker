@@ -6,7 +6,7 @@ To facilitate the development process it also includes services like
 [TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
 Time Machine, Admin Portal, Faucet, Config Update and Random Data Generator.
 
-<img alt="MyLocalTon Docker demo" src='./demo.png'>
+<img alt="MyLocalTon Docker demo" src='./demo.mp4'>
 
 ## Prerequisites
 
@@ -118,7 +118,8 @@ The default parameters for this local TON blockchain are the same as in the Main
 </ul>
 </td>
 <td>
-This service provides a web UI to monitor and start/stop MyLocalTon services from one place.
+This is the face of MyLocalTon Docker.
+This service provides a web UI to monitor and start/stop MyLocalTon services, as well as TON nodes from one place.
 </td>
 </tr>
 <tr>
@@ -129,7 +130,6 @@ This service provides a web UI to monitor and start/stop MyLocalTon services fro
 </ul>
 </td>
 <td>
-This is the face of MyLocalTon Docker. 
 Here you can take the snapshots of your TON blockchain and navigate between them as you like,
 or you can use it simply to stop and start the blockchain, as well as to customize and start it from scratch. 
 </td>

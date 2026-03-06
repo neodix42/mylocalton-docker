@@ -71,6 +71,11 @@ form {
     z-index: 1;
 }
 
+#generateWalletForm {
+    width: min(95vw, 1300px);
+    max-width: 1300px;
+}
+
 /* Labels should be stacked above inputs */
 label {
     display: block; /* Place labels on their own line */
@@ -136,6 +141,101 @@ button:disabled {
     margin-top: 10px;
     text-align: left;
     white-space:pre-wrap;
+}
+
+.wallet-result {
+    white-space: normal;
+}
+
+.wallet-result-row {
+    display: block;
+    margin: 0 0 12px;
+    min-width: 0;
+}
+
+.wallet-result-label {
+    display: block;
+    font-weight: 700;
+    white-space: nowrap;
+    margin: 0 0 6px;
+}
+
+.wallet-result-value {
+    min-width: 0;
+}
+
+.wallet-result-value-content {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+}
+
+.wallet-result .wallet-result-input {
+    white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: left;
+    font-family: "Consolas", "Monaco", monospace;
+    font-size: 0.92rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #c7d2e0;
+    border-radius: 6px;
+    background: #f7f9fc;
+    color: #1b1f24;
+}
+
+.wallet-result .copy-value-btn {
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    border: 1px solid #c7d2e0 !important;
+    border-radius: 4px;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    flex: 0 0 28px !important;
+    margin-left: 0;
+    transition: background-color 0.15s ease;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    color: #007bff;
+}
+
+.wallet-result .copy-value-btn svg {
+    width: 12px !important;
+    height: 12px !important;
+    fill: currentColor !important;
+    display: block;
+}
+
+.copy-value-btn:hover {
+    background: rgba(0, 123, 255, 0.12);
+    transform: none;
+    box-shadow: none;
+}
+
+.copy-value-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.3);
+}
+
+.copy-value-btn.copied svg {
+    fill: #0a9f2e;
+}
+
+.copy-value-spacer {
+    width: 28px;
+    flex: 0 0 28px;
 }
 
 .message.success {
