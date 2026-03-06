@@ -1,5 +1,6 @@
 const nodesBodyEl = document.getElementById("nodes-body");
 const statusBannerEl = document.getElementById("status-banner");
+const validatorBuildInfoEl = document.getElementById("validator-build-info");
 const addNodeBtnEl = document.getElementById("add-node-btn");
 const startAllBtnEl = document.getElementById("start-all-btn");
 const stopAllBtnEl = document.getElementById("stop-all-btn");
@@ -64,6 +65,27 @@ async function fetchBlockchainNodes() {
       return;
     }
     showBanner(error.message, false);
+  }
+}
+
+async function fetchGenesisBuildInfo() {
+  try {
+    validatorBuildInfoEl.textContent = "validator-engine build information: loading...";
+    const response = await fetch("/api/admin/blockchain-nodes/genesis/build-info");
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Unable to load validator-engine build information");
+    }
+
+    const buildInfoText = (data.buildInfo || "").trim();
+    if (buildInfoText) {
+      validatorBuildInfoEl.textContent = buildInfoText;
+      return;
+    }
+
+    validatorBuildInfoEl.textContent = "validator-engine build information: unavailable.";
+  } catch (_error) {
+    validatorBuildInfoEl.textContent = "validator-engine build information: unavailable.";
   }
 }
 
@@ -687,6 +709,7 @@ async function executeStartOver() {
       showBanner(data.message || "Start over finished", true);
     }
     await fetchBlockchainNodes();
+    await fetchGenesisBuildInfo();
   } catch (error) {
     showBanner(error.message || "Start over failed", false);
   } finally {
@@ -860,6 +883,7 @@ function init() {
     }
   });
   setLogsModalControls();
+  fetchGenesisBuildInfo();
   fetchBlockchainNodes();
   setInterval(fetchBlockchainNodes, 10000);
 }

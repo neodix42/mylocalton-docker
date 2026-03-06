@@ -51,6 +51,15 @@ header p {
   color: var(--muted);
 }
 
+.build-info-line {
+  margin: -6px 0 14px;
+  color: #334155;
+  font-size: 12px;
+  font-family: "Consolas", "Monaco", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .add-node-btn,
 .bulk-node-btn {
   border: none;

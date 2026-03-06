@@ -179,6 +179,47 @@ public class MyRestController {
     return ResponseEntity.ok(response);
   }
 
+  @GetMapping("/blockchain-nodes/genesis/build-info")
+  public ResponseEntity<Map<String, Object>> getGenesisBuildInfo() {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    try {
+      List<Container> containers = getAllContainers();
+      Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, "genesis");
+      String buildInfo;
+
+      if (containerOptional.isEmpty()) {
+        buildInfo = "validator-engine build information: genesis container is not created.";
+      } else {
+        Container genesisContainer = containerOptional.get();
+        if (!isContainerRunning(genesisContainer.getId())) {
+          buildInfo = "validator-engine build information: genesis container is not running.";
+        } else {
+          String commandOutput =
+              runCommandCapture(
+                  List.of("docker", "exec", genesisContainer.getId(), "validator-engine", "-V"),
+                  getComposeProjectDir());
+          buildInfo =
+              commandOutput == null || commandOutput.isBlank()
+                  ? "validator-engine build information: unavailable."
+                  : commandOutput.trim();
+        }
+      }
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("buildInfo", buildInfo);
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to fetch genesis validator-engine build information", e);
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "Failed to fetch validator-engine build information: " + e.getMessage());
+    }
+  }
+
   @PostMapping("/blockchain-nodes/add-validator")
   public ResponseEntity<Map<String, Object>> addValidatorNode() {
     if (dockerClient == null) {
