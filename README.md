@@ -6,7 +6,7 @@ To facilitate the development process it also includes services like
 [TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
 Time Machine, Admin Portal, Faucet, Config Update and Random Data Generator.
 
-<img alt="MyLocalTon Docker demo" src='./demo.mp4'>
+<img alt="MyLocalTon Docker demo" src='./demo.gif'>
 
 ## Prerequisites
 
