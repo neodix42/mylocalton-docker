@@ -39,6 +39,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class MyRestController {
 
   private static final Pattern VALIDATOR_INDEX_PATTERN = Pattern.compile("^validator-(\\d+)$");
+  private static final Pattern LITE_CLIENT_SEQNO_PATTERN =
+      Pattern.compile("\\(-1,8000000000000000,(\\d+)\\)");
+  private static final Pattern LITE_CLIENT_SYNCED_AGO_PATTERN =
+      Pattern.compile("created at \\d+ \\(([^)]+ ago)\\)");
   private static final int MAX_VALIDATORS = 5;
   private static final List<TonCenterV3Component> TON_CENTER_V3_COMPONENTS =
       List.of(
@@ -217,6 +221,47 @@ public class MyRestController {
       return buildErrorResponse(
           HttpStatus.INTERNAL_SERVER_ERROR,
           "Failed to fetch validator-engine build information: " + e.getMessage());
+    }
+  }
+
+  @GetMapping("/blockchain-nodes/genesis/latest-seqno")
+  public ResponseEntity<Map<String, Object>> getGenesisLatestSeqno() {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("success", true);
+
+    try {
+      List<Container> containers = getAllContainers();
+      Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, "genesis");
+      if (containerOptional.isEmpty()) {
+        response.put("available", false);
+        return ResponseEntity.ok(response);
+      }
+
+      Container genesisContainer = containerOptional.get();
+      if (!isContainerRunning(genesisContainer.getId())) {
+        response.put("available", false);
+        return ResponseEntity.ok(response);
+      }
+
+      ParsedSeqnoSync parsed = fetchLatestSeqnoWithRetry(genesisContainer.getId());
+      if (parsed == null) {
+        response.put("available", false);
+        return ResponseEntity.ok(response);
+      }
+
+      response.put("available", true);
+      response.put("seqno", parsed.seqno());
+      response.put("syncedAgo", parsed.syncedAgo());
+      response.put("subtitle", "Latest seqno " + parsed.seqno() + ", synced " + parsed.syncedAgo());
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.warn("Failed to fetch latest seqno from genesis: {}", e.getMessage());
+      response.put("available", false);
+      return ResponseEntity.ok(response);
     }
   }
 
@@ -768,6 +813,20 @@ public class MyRestController {
 
   private String runCommandCapture(
       List<String> command, String workDir, Map<String, String> envOverrides) throws Exception {
+    CommandResult result = runCommandCaptureAllowFailure(command, workDir, envOverrides);
+    if (result.exitCode() != 0) {
+      throw new IllegalStateException(
+          "command failed ("
+              + result.exitCode()
+              + "): "
+              + String.join(" ", command)
+              + (result.output() == null || result.output().isBlank() ? "" : "\n" + result.output()));
+    }
+    return result.output();
+  }
+
+  private CommandResult runCommandCaptureAllowFailure(
+      List<String> command, String workDir, Map<String, String> envOverrides) throws Exception {
     ProcessBuilder processBuilder = new ProcessBuilder(command);
     processBuilder.directory(new File(workDir));
     processBuilder.redirectErrorStream(true);
@@ -783,15 +842,7 @@ public class MyRestController {
     }
 
     int exitCode = process.waitFor();
-    if (exitCode != 0) {
-      throw new IllegalStateException(
-          "command failed ("
-              + exitCode
-              + "): "
-              + String.join(" ", command)
-              + (output == null || output.isBlank() ? "" : "\n" + output));
-    }
-    return output;
+    return new CommandResult(exitCode, output);
   }
 
   private String getComposeProjectDir() {
@@ -1338,6 +1389,10 @@ public class MyRestController {
   private record TonCenterV3Component(
       String displayName, String composeService, String containerName, boolean optionalIfMissing) {}
 
+  private record ParsedSeqnoSync(String seqno, String syncedAgo) {}
+
+  private record CommandResult(int exitCode, String output) {}
+
   private void restartBlockchainNodeViaCompose(String nodeId) {
     Map<String, String> envOverrides = new LinkedHashMap<>();
     String profile = null;
@@ -1388,6 +1443,65 @@ public class MyRestController {
       return "No logs available.";
     }
     return logs;
+  }
+
+  private ParsedSeqnoSync fetchLatestSeqnoWithRetry(String containerId) throws Exception {
+    String firstOutput = runLiteClientLast(containerId, 3);
+    ParsedSeqnoSync parsed = parseLiteClientSeqno(firstOutput);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    String secondOutput = runLiteClientLast(containerId, 5);
+    return parseLiteClientSeqno(secondOutput);
+  }
+
+  private String runLiteClientLast(String containerId, int timeoutSeconds) throws Exception {
+    CommandResult result =
+        runCommandCaptureAllowFailure(
+            List.of(
+                "docker",
+                "exec",
+                containerId,
+                "/usr/local/bin/lite-client",
+                "-a",
+                "127.0.0.1:40004",
+                "-p",
+                "/var/ton-work/db/liteserver.pub",
+                "-t",
+                String.valueOf(timeoutSeconds),
+                "-c",
+                "last"),
+            getComposeProjectDir(),
+            Map.of());
+
+    if (result.exitCode() != 0) {
+      log.debug("lite-client returned non-zero exit code: {}", result.exitCode());
+    }
+    return result.output();
+  }
+
+  private ParsedSeqnoSync parseLiteClientSeqno(String output) {
+    if (output == null || output.isBlank()) {
+      return null;
+    }
+
+    String seqno = null;
+    Matcher seqnoMatcher = LITE_CLIENT_SEQNO_PATTERN.matcher(output);
+    while (seqnoMatcher.find()) {
+      seqno = seqnoMatcher.group(1);
+    }
+
+    String syncedAgo = null;
+    Matcher syncedAgoMatcher = LITE_CLIENT_SYNCED_AGO_PATTERN.matcher(output);
+    while (syncedAgoMatcher.find()) {
+      syncedAgo = syncedAgoMatcher.group(1);
+    }
+
+    if (seqno == null || syncedAgo == null) {
+      return null;
+    }
+    return new ParsedSeqnoSync(seqno, syncedAgo);
   }
 
   private List<String> getExpectedBlockchainNodes(List<Container> containers) {

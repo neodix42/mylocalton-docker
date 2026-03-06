@@ -48,7 +48,11 @@ const state = {
   services: [],
   selectedServiceId: null,
   refreshHandle: null,
+  seqnoRefreshHandle: null,
   blockchainActive: false,
+  blockchainGenesisRunning: false,
+  blockchainSeqnoSubtitle: null,
+  seqnoFetchInProgress: false,
   serviceActionInProgress: {},
 };
 
@@ -72,13 +76,19 @@ async function fetchServices() {
     }
 
     state.blockchainActive = false;
+    state.blockchainGenesisRunning = false;
     if (blockchainNodesResponse.ok) {
       try {
         const blockchainData = await blockchainNodesResponse.json();
         const nodes = blockchainData.nodes || [];
         state.blockchainActive = nodes.some((node) => node.running);
+        state.blockchainGenesisRunning = nodes.some((node) => node.id === "genesis" && node.running);
       } catch (_ignored) {
       }
+    }
+
+    if (!state.blockchainGenesisRunning) {
+      state.blockchainSeqnoSubtitle = null;
     }
 
     state.services = [
@@ -91,8 +101,43 @@ async function fetchServices() {
 
     renderServices();
     renderViewer();
+    void fetchTonBlockchainSeqnoSubtitle();
   } catch (error) {
     showBanner(error.message, false);
+  }
+}
+
+async function fetchTonBlockchainSeqnoSubtitle() {
+  if (
+    !state.blockchainGenesisRunning
+    || state.seqnoFetchInProgress
+  ) {
+    return;
+  }
+
+  try {
+    state.seqnoFetchInProgress = true;
+    const response = await fetch("/api/admin/blockchain-nodes/genesis/latest-seqno");
+    const data = await response.json();
+    if (!response.ok || !data.success || !data.available || !data.subtitle) {
+      if (state.blockchainSeqnoSubtitle !== null) {
+        state.blockchainSeqnoSubtitle = null;
+        renderServices();
+      }
+      return;
+    }
+
+    if (state.blockchainSeqnoSubtitle !== data.subtitle) {
+      state.blockchainSeqnoSubtitle = data.subtitle;
+      renderServices();
+    }
+  } catch (_error) {
+    if (state.blockchainSeqnoSubtitle !== null) {
+      state.blockchainSeqnoSubtitle = null;
+      renderServices();
+    }
+  } finally {
+    state.seqnoFetchInProgress = false;
   }
 }
 
@@ -128,6 +173,13 @@ function renderServices() {
 
     item.appendChild(statusIcon);
     item.appendChild(nameButton);
+
+    if (service.id === BLOCKCHAIN_MENU_ITEM.id && state.blockchainSeqnoSubtitle) {
+      const subtitle = document.createElement("div");
+      subtitle.className = "service-subtitle";
+      subtitle.textContent = state.blockchainSeqnoSubtitle;
+      item.appendChild(subtitle);
+    }
 
     if (!service.special) {
       const controls = document.createElement("div");
@@ -308,6 +360,7 @@ function showBanner(message, ok) {
 function init() {
   fetchServices();
   state.refreshHandle = setInterval(fetchServices, 10000);
+  state.seqnoRefreshHandle = setInterval(fetchTonBlockchainSeqnoSubtitle, 3000);
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || typeof data !== "object") {
