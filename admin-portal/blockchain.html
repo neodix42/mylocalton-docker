@@ -11,7 +11,7 @@
   <header class="header-row">
     <div>
       <h1>Local TON Blockchain</h1>
-      <p>TON is a fully decentralized layer-1 blockchain designed by Telegram to onboard billions of users.</p>
+      <p>Genesis validator and other nodes.</p>
     </div>
     <div class="header-actions">
       <button class="bulk-node-btn start-all-btn" id="start-all-btn" type="button">Start all nodes</button>
@@ -39,10 +39,14 @@
 </div>
 
 <div aria-hidden="true" class="logs-modal" id="logs-modal">
-  <div aria-labelledby="logs-modal-title" aria-modal="true" class="logs-modal-card" role="dialog">
+  <div aria-labelledby="logs-modal-title" aria-modal="true" class="logs-modal-card" id="logs-modal-card" role="dialog">
     <div class="logs-modal-header">
       <h2 id="logs-modal-title">Service logs</h2>
-      <button class="logs-modal-close" id="logs-modal-close" type="button">Close</button>
+      <div class="logs-modal-actions">
+        <button class="logs-modal-action" id="logs-modal-load-earlier" type="button">Load earlier logs</button>
+        <button class="logs-modal-action" id="logs-modal-maximize" type="button">Maximize</button>
+        <button class="logs-modal-close" id="logs-modal-close" type="button">Close</button>
+      </div>
     </div>
     <pre class="logs-modal-content" id="logs-modal-content">No logs loaded.</pre>
   </div>

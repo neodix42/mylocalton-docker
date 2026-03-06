@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -349,7 +350,8 @@ public class MyRestController {
   }
 
   @GetMapping("/blockchain-nodes/{nodeId}/logs")
-  public ResponseEntity<Map<String, Object>> getBlockchainNodeLogs(@PathVariable("nodeId") String nodeId) {
+  public ResponseEntity<Map<String, Object>> getBlockchainNodeLogs(
+      @PathVariable("nodeId") String nodeId, @RequestParam(value = "lines", required = false) Integer lines) {
     if (dockerClient == null) {
       return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
     }
@@ -365,11 +367,13 @@ public class MyRestController {
     }
 
     try {
-      String logs = getContainerLogs(containerOptional.get().getId(), 100);
+      int linesToLoad = lines == null ? 100 : Math.max(1, Math.min(lines, 10000));
+      String logs = getContainerLogs(containerOptional.get().getId(), linesToLoad);
 
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("success", true);
       response.put("nodeId", nodeId);
+      response.put("lines", linesToLoad);
       response.put("logs", logs);
       return ResponseEntity.ok(response);
     } catch (Exception e) {

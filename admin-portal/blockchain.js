@@ -16,15 +16,25 @@ const startOverConfigBodyEl = document.getElementById("start-over-config-body");
 const startOverConfigConfirmBtnEl = document.getElementById("start-over-config-confirm-btn");
 const startOverConfigCancelBtnEl = document.getElementById("start-over-config-cancel-btn");
 const logsModalEl = document.getElementById("logs-modal");
+const logsModalCardEl = document.getElementById("logs-modal-card");
 const logsModalTitleEl = document.getElementById("logs-modal-title");
 const logsModalContentEl = document.getElementById("logs-modal-content");
+const logsModalLoadEarlierEl = document.getElementById("logs-modal-load-earlier");
+const logsModalMaximizeEl = document.getElementById("logs-modal-maximize");
 const logsModalCloseEl = document.getElementById("logs-modal-close");
 const PARENT_BANNER_SOURCE = "ton-blockchain-panel";
+const LOGS_PAGE_SIZE = 100;
+const LOGS_MAX_LINES = 10000;
 
 const state = {
   nodes: [],
   addInProgress: false,
   logsNodeId: null,
+  logsNodeName: "",
+  logsTailLines: LOGS_PAGE_SIZE,
+  logsLoading: false,
+  logsMaximized: false,
+  logsBackdropPointerDown: false,
   restartInProgressNodeId: null,
   bulkActionInProgress: false,
   bulkActionType: null,
@@ -431,20 +441,63 @@ async function stopAllNodes() {
 }
 
 async function openLogs(nodeId, nodeName) {
-  try {
-    state.logsNodeId = nodeId;
-    showLogsModal(nodeName, "Loading logs...");
+  state.logsNodeId = nodeId;
+  state.logsNodeName = nodeName;
+  state.logsTailLines = LOGS_PAGE_SIZE;
+  state.logsMaximized = false;
+  logsModalCardEl.classList.remove("maximized");
+  showLogsModal(nodeName, "Loading logs...");
+  await fetchLogsForCurrentNode(false);
+}
 
-    const response = await fetch(`/api/admin/blockchain-nodes/${encodeURIComponent(nodeId)}/logs`);
+async function loadEarlierLogs() {
+  if (!state.logsNodeId || state.logsLoading) {
+    return;
+  }
+
+  const nextTail = Math.min(state.logsTailLines + LOGS_PAGE_SIZE, LOGS_MAX_LINES);
+  if (nextTail === state.logsTailLines) {
+    return;
+  }
+
+  state.logsTailLines = nextTail;
+  await fetchLogsForCurrentNode(true);
+}
+
+async function fetchLogsForCurrentNode(loadingEarlier) {
+  if (!state.logsNodeId) {
+    return;
+  }
+
+  try {
+    state.logsLoading = true;
+    setLogsModalControls();
+    if (loadingEarlier) {
+      logsModalLoadEarlierEl.textContent = "Loading...";
+    } else {
+      logsModalContentEl.textContent = "Loading logs...";
+    }
+
+    const response = await fetch(
+      `/api/admin/blockchain-nodes/${encodeURIComponent(state.logsNodeId)}/logs?lines=${state.logsTailLines}`,
+    );
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      throw new Error(data.message || `Failed to load logs for ${nodeId}`);
+      throw new Error(data.message || `Failed to load logs for ${state.logsNodeId}`);
     }
 
     logsModalContentEl.textContent = data.logs || "No logs available.";
+    if (!loadingEarlier) {
+      logsModalContentEl.scrollTop = logsModalContentEl.scrollHeight;
+    } else {
+      logsModalContentEl.scrollTop = 0;
+    }
   } catch (error) {
     logsModalContentEl.textContent = error.message;
+  } finally {
+    state.logsLoading = false;
+    setLogsModalControls();
   }
 }
 
@@ -645,12 +698,43 @@ function showLogsModal(nodeName, content) {
   logsModalContentEl.textContent = content;
   logsModalEl.classList.add("show");
   logsModalEl.setAttribute("aria-hidden", "false");
+  setLogsModalControls();
 }
 
 function closeLogsModal() {
   state.logsNodeId = null;
+  state.logsNodeName = "";
+  state.logsTailLines = LOGS_PAGE_SIZE;
+  state.logsLoading = false;
+  state.logsMaximized = false;
+  state.logsBackdropPointerDown = false;
+  logsModalCardEl.classList.remove("maximized");
   logsModalEl.classList.remove("show");
   logsModalEl.setAttribute("aria-hidden", "true");
+  logsModalContentEl.textContent = "No logs loaded.";
+  setLogsModalControls();
+}
+
+function toggleLogsModalMaximize() {
+  if (!logsModalEl.classList.contains("show")) {
+    return;
+  }
+
+  state.logsMaximized = !state.logsMaximized;
+  logsModalCardEl.classList.toggle("maximized", state.logsMaximized);
+  setLogsModalControls();
+}
+
+function setLogsModalControls() {
+  const hasActiveNode = Boolean(state.logsNodeId);
+  const atMaxTail = state.logsTailLines >= LOGS_MAX_LINES;
+
+  logsModalLoadEarlierEl.disabled = !hasActiveNode || state.logsLoading || atMaxTail;
+  logsModalLoadEarlierEl.textContent = state.logsLoading ? "Loading..." : "Load earlier logs";
+  logsModalLoadEarlierEl.title = atMaxTail ? "Log line limit reached" : "Load 100 more lines from the past";
+
+  logsModalMaximizeEl.disabled = !logsModalEl.classList.contains("show");
+  logsModalMaximizeEl.textContent = state.logsMaximized ? "Restore" : "Maximize";
 }
 
 function showBanner(message, ok) {
@@ -713,9 +797,16 @@ function init() {
       closeStartOverConfigModal();
     }
   });
+  logsModalLoadEarlierEl.addEventListener("click", loadEarlierLogs);
+  logsModalMaximizeEl.addEventListener("click", toggleLogsModalMaximize);
   logsModalCloseEl.addEventListener("click", closeLogsModal);
-  logsModalEl.addEventListener("click", (event) => {
-    if (event.target === logsModalEl) {
+  logsModalEl.addEventListener("pointerdown", (event) => {
+    state.logsBackdropPointerDown = event.target === logsModalEl;
+  });
+  logsModalEl.addEventListener("pointerup", (event) => {
+    const shouldClose = state.logsBackdropPointerDown && event.target === logsModalEl;
+    state.logsBackdropPointerDown = false;
+    if (shouldClose) {
       closeLogsModal();
     }
   });
@@ -743,6 +834,7 @@ function init() {
       closeLogsModal();
     }
   });
+  setLogsModalControls();
   fetchBlockchainNodes();
   setInterval(fetchBlockchainNodes, 10000);
 }

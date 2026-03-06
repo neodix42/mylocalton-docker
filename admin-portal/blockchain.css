@@ -308,14 +308,27 @@ header p {
 }
 
 .logs-modal-card {
-  width: min(980px, 100%);
-  max-height: 85vh;
+  width: min(980px, calc(100vw - 32px));
+  height: min(720px, 85vh);
+  min-width: 640px;
+  min-height: 320px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
+  resize: both;
+}
+
+.logs-modal-card.maximized {
+  width: calc(100vw - 32px) !important;
+  height: calc(100vh - 32px) !important;
+  max-width: calc(100vw - 32px) !important;
+  max-height: calc(100vh - 32px) !important;
+  resize: none !important;
 }
 
 .logs-modal-header {
@@ -331,19 +344,46 @@ header p {
 .logs-modal-header h2 {
   margin: 0;
   font-size: 17px;
+  flex: 1;
 }
 
+.logs-modal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs-modal-action,
 .logs-modal-close {
   border: none;
   border-radius: 8px;
   padding: 7px 10px;
   cursor: pointer;
   font-weight: 700;
+  font-size: 12px;
+}
+
+.logs-modal-action {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.logs-modal-action:hover:not(:disabled) {
+  background: #bfdbfe;
+}
+
+.logs-modal-action:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.logs-modal-close {
   background: #cbd5e1;
   color: #1f2937;
 }
 
-.logs-modal-close:hover {
+.logs-modal-close:hover:not(:disabled) {
   background: #94a3b8;
 }
 
@@ -485,6 +525,15 @@ header p {
 
   .logs-modal {
     padding: 8px;
+  }
+
+  .logs-modal-card {
+    min-width: 0;
+    width: 100%;
+    height: calc(100vh - 16px);
+    max-width: 100%;
+    max-height: calc(100vh - 16px);
+    resize: none;
   }
 
   .confirm-modal {
