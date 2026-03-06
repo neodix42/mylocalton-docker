@@ -390,6 +390,14 @@ public class MyRestController {
 
     if ("genesis".equals(nodeId)) {
       try {
+        if (startExistingContainerIfPresent(nodeId)) {
+          Map<String, Object> response = new LinkedHashMap<>();
+          response.put("success", true);
+          response.put("message", "Genesis started");
+          response.put("nodeId", nodeId);
+          return ResponseEntity.ok(response);
+        }
+
         runComposeCommand(getComposeProjectDir(), null, List.of("up", "-d", "--no-deps", nodeId));
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -423,6 +431,14 @@ public class MyRestController {
     String profile = "validators-" + validatorIndex;
 
     try {
+      if (startExistingContainerIfPresent(nodeId)) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("message", "Validator started: " + nodeId);
+        response.put("validator", nodeId);
+        return ResponseEntity.ok(response);
+      }
+
       runComposeCommand(getComposeProjectDir(), profile, List.of("up", "-d", "--no-deps", nodeId));
 
       Map<String, Object> response = new LinkedHashMap<>();
@@ -1026,6 +1042,20 @@ public class MyRestController {
     return containerOptional.isPresent() && isContainerRunning(containerOptional.get().getId());
   }
 
+  private boolean startExistingContainerIfPresent(String nodeName) {
+    List<Container> containers = getAllContainers();
+    Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, nodeName);
+    if (containerOptional.isEmpty()) {
+      return false;
+    }
+
+    Container container = containerOptional.get();
+    if (!isContainerRunning(container.getId())) {
+      dockerClient.startContainerCmd(container.getId()).exec();
+    }
+    return true;
+  }
+
   private int countRunningValidators(List<Container> containers) {
     int runningCount = 0;
     for (Container container : containers) {
@@ -1408,11 +1438,28 @@ public class MyRestController {
       envOverrides.put("VALIDATOR_VERBOSITY", "3");
     }
 
+    removeExistingContainerIfPresent(nodeId);
+
     runComposeCommand(
         getComposeProjectDir(),
         profile,
-        List.of("up", "-d", "--force-recreate", "--no-deps", nodeId),
+        List.of("up", "-d", "--no-deps", nodeId),
         envOverrides);
+  }
+
+  private void removeExistingContainerIfPresent(String nodeId) {
+    List<Container> containers = getAllContainers();
+    Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, nodeId);
+    if (containerOptional.isEmpty()) {
+      return;
+    }
+
+    String containerId = containerOptional.get().getId();
+    try {
+      dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to remove existing container " + nodeId + ": " + e.getMessage(), e);
+    }
   }
 
   private boolean isSupportedBlockchainNodeId(String nodeId) {
