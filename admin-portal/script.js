@@ -43,6 +43,7 @@ const CLICKABLE_SUBTITLE_LINKS = [
   "https://toncenter.com/api/v2/",
   "https://toncenter.com/api/v3/index.html",
 ];
+const BOTTOM_MENU_SERVICE_IDS = new Set(["data-generator", "faucet"]);
 
 const state = {
   services: [],
@@ -91,10 +92,10 @@ async function fetchServices() {
       state.blockchainSeqnoSubtitle = null;
     }
 
-    state.services = [
+    state.services = orderServicesForMenu([
       { ...BLOCKCHAIN_MENU_ITEM, endpointUp: state.blockchainActive },
       ...(data.services || []),
-    ];
+    ]);
     if (!state.selectedServiceId && state.services.length > 0) {
       state.selectedServiceId = state.services[0].id;
     }
@@ -105,6 +106,26 @@ async function fetchServices() {
   } catch (error) {
     showBanner(error.message, false);
   }
+}
+
+function orderServicesForMenu(services) {
+  const top = [];
+  const middle = [];
+  const bottom = [];
+
+  services.forEach((service) => {
+    if (service.id === BLOCKCHAIN_MENU_ITEM.id) {
+      top.push(service);
+      return;
+    }
+    if (BOTTOM_MENU_SERVICE_IDS.has(service.id)) {
+      bottom.push(service);
+      return;
+    }
+    middle.push(service);
+  });
+
+  return [...top, ...middle, ...bottom];
 }
 
 async function fetchTonBlockchainSeqnoSubtitle() {
