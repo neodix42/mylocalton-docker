@@ -455,6 +455,60 @@ header p {
   z-index: 1;
 }
 
+.start-over-config-name-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.start-over-config-info-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.start-over-config-info-icon {
+  border: 1px solid #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  padding: 0;
+  cursor: help;
+}
+
+.start-over-config-info-tooltip {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 280px;
+  max-width: 520px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-line;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-in-out;
+  z-index: 20;
+}
+
+.start-over-config-info-wrap:hover .start-over-config-info-tooltip,
+.start-over-config-info-wrap:focus-within .start-over-config-info-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
 .start-over-config-value-input {
   width: 100%;
   border: 1px solid #cbd5e1;

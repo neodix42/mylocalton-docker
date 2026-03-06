@@ -75,6 +75,7 @@ public class MyRestController {
           "ton-db-val5");
   private static final List<String> START_OVER_ENV_LINES =
       List.of(
+          "TON_BRANCH=latest",
           "NEXT_BLOCK_GENERATION_DELAY=2",
           "HEALTHCHECK_INTERVAL=15s",
           "EXTERNAL_IP=",
@@ -137,6 +138,7 @@ public class MyRestController {
           "SPAM_SPLIT_HOPS=7",
           "SPAM_DURATION_MINUTES=300");
   private static final Map<String, String> START_OVER_ENV_DEFAULTS = createStartOverEnvDefaults();
+  private static final Map<String, String> START_OVER_ENV_DESCRIPTIONS = createStartOverEnvDescriptions();
 
   @GetMapping("/services")
   public ResponseEntity<Map<String, Object>> getServices() {
@@ -448,6 +450,11 @@ public class MyRestController {
         variable.put("name", entry.getKey());
         String envValue = envValues.get(entry.getKey());
         variable.put("value", envValue == null || envValue.isBlank() ? entry.getValue() : envValue);
+        variable.put(
+            "description",
+            START_OVER_ENV_DESCRIPTIONS.getOrDefault(
+                entry.getKey(),
+                "Read about this parameter here: https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters"));
         variables.add(variable);
       }
 
@@ -1148,6 +1155,143 @@ public class MyRestController {
       defaults.put(key, value);
     }
     return defaults;
+  }
+
+  private static Map<String, String> createStartOverEnvDescriptions() {
+    Map<String, String> descriptions = new LinkedHashMap<>();
+
+    descriptions.put(
+        "TON_BRANCH",
+        "By default MyLocalTon is built based on the latest TON blockchain code base master branch.\n"
+            + "You can set it to testnet in order to run MyLocalTon based on TON testnet code base.\n"
+            + "You can set any other branch too, but check if this branch exists in the main repo ton-blockchain/ton.");
+    descriptions.put("NEXT_BLOCK_GENERATION_DELAY", "Delay between blocks generation.");
+    descriptions.put("HEALTHCHECK_INTERVAL", "Healthcheck interval for service containers.");
+    descriptions.put(
+        "EXTERNAL_IP",
+        "Used to generate external.global.config.json that allows remote users to connect to lite-server via public IP.");
+    descriptions.put("VALIDATION_PERIOD", "Validation period.");
+    descriptions.put(
+        "MASTERCHAIN_ONLY", "If true, only the masterchain (-1 workchain) is generated.");
+    descriptions.put(
+        "GENESIS_VERBOSITY",
+        "Verbosity level for genesis validator-engine. Allowed values: 0, 1, 2, 3, 4.");
+    descriptions.put(
+        "VALIDATOR_VERBOSITY",
+        "Verbosity level for validator validator-engine. Allowed values: 0, 1, 2, 3, 4.");
+    descriptions.put(
+        "EMBEDDED_FILE_HTTP_SERVER", "Enable embedded HTTP file server inside blockchain containers.");
+    descriptions.put("EMBEDDED_FILE_HTTP_SERVER_PORT", "Port for embedded HTTP file server.");
+    descriptions.put(
+        "CUSTOM_PARAMETERS", "Used to specify validator command line parameters.");
+    descriptions.put(
+        "CUSTOM_CONFIG_SMC_URL",
+        "URL to a plain-text config-code.fif smart-contract that overrides default TON blockchain configuration during genesis creation.");
+    descriptions.put("VERSION_CAPABILITIES", "Blockchain version capabilities.");
+    descriptions.put(
+        "GLOBAL_ID", "Negative value means a test instance of the blockchain.");
+    descriptions.put("MAX_VALIDATORS", "Maximum number of validators in this blockchain.");
+    descriptions.put(
+        "MAX_MAIN_VALIDATORS", "Maximum number of main validators in this blockchain.");
+    descriptions.put("MIN_VALIDATORS", "Minimum number of validators in this blockchain.");
+    descriptions.put("MIN_STAKE", "Minimum validator stake in TON coins.");
+    descriptions.put("MAX_STAKE", "Maximum validator stake in TON coins.");
+    descriptions.put(
+        "MAX_FACTOR",
+        "Ratio between max and min stake used to cap effective stake.");
+    descriptions.put(
+        "MIN_TOTAL_STAKE", "Minimum total stake required for all validators.");
+    descriptions.put(
+        "ELECTION_START_BEFORE",
+        "Election starts X minutes before validation round ends.");
+    descriptions.put(
+        "ELECTION_END_BEFORE",
+        "Election ends X minutes before validation round ends.");
+    descriptions.put(
+        "ELECTION_STAKE_FROZEN",
+        "Period of time validator stake is frozen after selection.");
+    descriptions.put(
+        "ORIGINAL_VALIDATOR_SET_VALID_FOR",
+        "Period of time original validator set is valid.");
+    descriptions.put(
+        "ACTUAL_MIN_SPLIT",
+        "Config 12: actual number of shardchains basechain can be split to.");
+    descriptions.put(
+        "MIN_SPLIT",
+        "Config 12: initial and minimum number of shardchains basechain can be split to.");
+    descriptions.put(
+        "MAX_SPLIT", "Config 12: maximum number of shardchains basechain can be split to.");
+    descriptions.put("CELL_PRICE", "Cell price in non-masterchain (nano coins).");
+    descriptions.put("CELL_PRICE_MC", "Cell price in masterchain (nano coins).");
+    descriptions.put("GAS_PRICE", "Gas price in non-masterchain (nano coins).");
+    descriptions.put("GAS_PRICE_MC", "Gas price in masterchain (nano coins).");
+    descriptions.put(
+        "SIMPLE_FAUCET_INITIAL_BALANCE",
+        "Initial balance for common faucet based on Wallet V3R2 (faucet.pk).");
+    descriptions.put(
+        "HIGHLOAD_FAUCET_INITIAL_BALANCE",
+        "Initial balance for highload faucet based on Highload Wallet V2 (faucet-highload.pk).");
+    descriptions.put(
+        "DATA_FAUCET_INITIAL_BALANCE",
+        "Initial balance for data highload faucet (data-highload.pk) used by the data container.");
+    descriptions.put(
+        "VALIDATOR_0_INITIAL_BALANCE",
+        "Initial genesis validator wallet balance in TON coins (validator.pk).");
+    descriptions.put(
+        "VALIDATOR_1_INITIAL_BALANCE",
+        "Initial optional validator-1 wallet balance in TON coins (validator-1.pk).");
+    descriptions.put(
+        "VALIDATOR_2_INITIAL_BALANCE",
+        "Initial optional validator-2 wallet balance in TON coins (validator-2.pk).");
+    descriptions.put(
+        "VALIDATOR_3_INITIAL_BALANCE",
+        "Initial optional validator-3 wallet balance in TON coins (validator-3.pk).");
+    descriptions.put(
+        "VALIDATOR_4_INITIAL_BALANCE",
+        "Initial optional validator-4 wallet balance in TON coins (validator-4.pk).");
+    descriptions.put(
+        "VALIDATOR_5_INITIAL_BALANCE",
+        "Initial optional validator-5 wallet balance in TON coins (validator-5.pk).");
+    descriptions.put("BIT_PRICE_PER_SECOND", "Bit price per second in nano coins.");
+    descriptions.put("CELL_PRICE_PER_SECOND", "Cell price per second in nano coins.");
+    descriptions.put(
+        "BIT_PRICE_PER_SECOND_MC", "Bit price per second in nano coins in masterchain.");
+    descriptions.put(
+        "CELL_PRICE_PER_SECOND_MC", "Cell price per second in nano coins in masterchain.");
+    descriptions.put(
+        "CRITICAL_PARAM_MIN_WINS", "Config voting: minimum wins required for critical parameters.");
+    descriptions.put(
+        "CRITICAL_PARAM_MAX_LOSSES",
+        "Config voting: maximum losses allowed for critical parameters.");
+    descriptions.put("PROTO_VERSION", "TON protocol version.");
+    descriptions.put(
+        "VALIDATORS_MASTERCHAIN_NUM", "Maximum number of validators per masterchain.");
+    descriptions.put(
+        "VALIDATORS_PER_SHARD",
+        "Maximum number of validators that can validate a single shard.");
+    descriptions.put(
+        "BLOCK_LIMIT_MULTIPLIER",
+        "Multiplier applied to block size and gas limit parameters below.");
+    descriptions.put("BLOCK_SIZE_UNDERLOAD_KB", "Block size underload limit.");
+    descriptions.put("BLOCK_SIZE_SOFT_KB", "Block size soft limit.");
+    descriptions.put("BLOCK_SIZE_HARD_KB", "Block size hard limit.");
+    descriptions.put("BLOCK_GAS_LIMIT_UNDERLOAD", "Block gas underload limit.");
+    descriptions.put("BLOCK_GAS_LIMIT_SOFT", "Block gas soft limit.");
+    descriptions.put("BLOCK_GAS_LIMIT_HARD", "Block gas hard limit.");
+    descriptions.put(
+        "SPAM_RUN", "Enable network spam traffic generation (~250 TPS load).");
+    descriptions.put("SPAM_CHAINS", "Number of parallel chains in retranslator.fc.");
+    descriptions.put("SPAM_HOPS", "Number of hops to perform in retranslator.fc.");
+    descriptions.put("SPAM_SPLIT_HOPS", "Number of splits in retranslator.fc.");
+    descriptions.put("SPAM_DURATION_MINUTES", "Duration of spam process after start.");
+
+    for (String envKey : START_OVER_ENV_DEFAULTS.keySet()) {
+      descriptions.putIfAbsent(
+          envKey,
+          "Read about this parameter here: https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters");
+    }
+
+    return descriptions;
   }
 
   private record TonCenterV3Component(

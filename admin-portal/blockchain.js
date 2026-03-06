@@ -597,7 +597,32 @@ function renderStartOverConfigRows(variables) {
     const row = document.createElement("tr");
 
     const nameCell = document.createElement("td");
-    nameCell.textContent = variable.name;
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "start-over-config-name-wrap";
+
+    const nameLabel = document.createElement("span");
+    nameLabel.textContent = variable.name;
+    nameWrap.appendChild(nameLabel);
+
+    const infoWrap = document.createElement("span");
+    infoWrap.className = "start-over-config-info-wrap";
+
+    const infoIcon = document.createElement("button");
+    infoIcon.className = "start-over-config-info-icon";
+    infoIcon.type = "button";
+    infoIcon.setAttribute("tabindex", "0");
+    infoIcon.setAttribute("aria-label", `Info for ${variable.name}`);
+    infoIcon.textContent = "i";
+    infoWrap.appendChild(infoIcon);
+
+    const tooltip = document.createElement("span");
+    tooltip.className = "start-over-config-info-tooltip";
+    tooltip.textContent = variable.description
+      || "Read about this parameter here: https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters";
+    infoWrap.appendChild(tooltip);
+
+    nameWrap.appendChild(infoWrap);
+    nameCell.appendChild(nameWrap);
 
     const valueCell = document.createElement("td");
     const input = document.createElement("input");
