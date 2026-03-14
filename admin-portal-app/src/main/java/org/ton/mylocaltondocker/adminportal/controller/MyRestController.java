@@ -1734,15 +1734,28 @@ public class MyRestController {
   }
 
   private boolean isEndpointHealthy(ManagedService service, int hostPort) {
-    List<String> hosts = List.of("host.docker.internal", "127.0.0.1");
-
-    for (String host : hosts) {
-      String url = "http://" + host + ":" + hostPort + service.getHealthPath();
+    for (String url : buildEndpointCandidateUrls(service, hostPort)) {
       if (checkSingleLinkHealth(url)) {
         return true;
       }
     }
     return false;
+  }
+
+  private List<String> buildEndpointCandidateUrls(ManagedService service, int hostPort) {
+    Set<String> urls = new LinkedHashSet<>();
+    String healthPath = service.getHealthPath();
+
+    // Prefer Docker network reachability between compose siblings.
+    urls.add("http://" + service.getComposeService() + ":" + service.getContainerPort() + healthPath);
+    urls.add("http://" + service.getContainerName() + ":" + service.getContainerPort() + healthPath);
+
+    // Keep host-oriented probing as a fallback (for local runs/non-compose environments).
+    urls.add("http://host.docker.internal:" + hostPort + healthPath);
+    urls.add("http://127.0.0.1:" + hostPort + healthPath);
+    urls.add("http://localhost:" + hostPort + healthPath);
+
+    return new ArrayList<>(urls);
   }
 
   private boolean checkSingleLinkHealth(String urlString) {
