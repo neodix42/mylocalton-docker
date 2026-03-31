@@ -53,7 +53,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v4.2.1-testnet
 
       - name: Build and push faucet
         id: docker_build_2
@@ -67,7 +67,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-faucet:v4.2.1-testnet
 
       - name: Build and push data
         id: docker_build_3
@@ -81,7 +81,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-data:v4.2.1-testnet
 
       - name: Build and push blockchain-explorer
         id: docker_build_4
@@ -95,7 +95,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-explorer:v4.2.1-testnet
 
       - name: Build and push time-machine
         id: docker_build_5
@@ -109,7 +109,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-time-machine:v4.2.1-testnet
 
       - name: Build and push lite-server
         id: docker_build_6
@@ -123,7 +123,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-lite-server:v4.2.1-testnet
 
       - name: Build and push config-update
         id: docker_build_7
@@ -137,7 +137,7 @@ jobs:
             TON_BRANCH=testnet
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-update:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-update:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-config-update:v4.2.1-testnet
 
       - name: Build and push admin-portal
         id: docker_build_8
@@ -149,4 +149,4 @@ jobs:
           file: ./admin-portal/Dockerfile
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-admin-portal:testnet
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-admin-portal:v4.2.0-testnet
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-admin-portal:v4.2.1-testnet
