@@ -92,7 +92,7 @@ Adjust parameters in `.env` file or edit `docker-compose.yaml` for relevant chan
 <td>genesis</td>
 <td>
 <ul><li><b>EXTERNAL_IP</b> - used to generate <b>external.global.config.json</b> that allows remote users to connect to lite-server via  public IP. Default <b>empty</b>, i.e. no <b>external.global.config.json</b> will be generated;</li> 
-<li><b>NEXT_BLOCK_GENERATION_DELAY</b> - used to set blocks generation rate per second. Default value 2 (seconds), that means 1  block in 2 seconds. Can also be set to less than a second, e.g. 0.5; </li>
+<li><b>NEXT_BLOCK_GENERATION_DELAY</b> - (deprecated) used to set blocks generation rate per second. Default value 2 (seconds), that means 1  block in 2 seconds. Can also be set to less than a second, e.g. 0.5; </li>
 <li><b>VALIDATION_PERIOD</b> - set validation period in seconds, default <b>1200 (20 min)</b>; </li>
 <li><b>MASTERCHAIN_ONLY</b> - set to <b>true</b> if you want to have only masterchain, i.e. without workchains, default <b>false</b>; </li>
 <li><b>DHT_PORT</b> - set port (udp) for dht server, default port <b>40004</b>, optional.</li>
