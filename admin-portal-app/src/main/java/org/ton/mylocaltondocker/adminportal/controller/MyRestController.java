@@ -126,6 +126,10 @@ public class MyRestController {
           "CELL_PRICE_PER_SECOND_MC=500000",
           "CRITICAL_PARAM_MIN_WINS=4",
           "CRITICAL_PARAM_MAX_LOSSES=2",
+          "SIMPLEX_TARGET_RATE_MS=300",
+          "SIMPLEX_SLOTS_PER_LEADER_WINDOW=4",
+          "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS=400",
+          "SIMPLEX_MAX_LEADER_WINDOW_DESYNC=700",
           "PROTO_VERSION=5",
           "VALIDATORS_MASTERCHAIN_NUM=1",
           "VALIDATORS_PER_SHARD=1",
@@ -264,6 +268,18 @@ public class MyRestController {
     descriptions.put(
         "CRITICAL_PARAM_MAX_LOSSES",
         "Config voting: maximum losses allowed for critical parameters.");
+    descriptions.put(
+        "SIMPLEX_TARGET_RATE_MS",
+        "Simplex target rate in milliseconds.");
+    descriptions.put(
+        "SIMPLEX_SLOTS_PER_LEADER_WINDOW",
+        "Simplex slots per leader window.");
+    descriptions.put(
+        "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS",
+        "Simplex first block timeout in milliseconds.");
+    descriptions.put(
+        "SIMPLEX_MAX_LEADER_WINDOW_DESYNC",
+        "Simplex config max leader window desync.");
     descriptions.put("PROTO_VERSION", "TON protocol version.");
     descriptions.put(
         "VALIDATORS_MASTERCHAIN_NUM", "Maximum number of validators per masterchain.");

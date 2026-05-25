@@ -290,6 +290,10 @@ config.param_proposals_setup!
 // deposit bit_pps cell_pps
 GR$100 1 500 config.complaint_prices!
 
+SIMPLEX_TARGET_RATE_MS SIMPLEX_SLOTS_PER_LEADER_WINDOW SIMPLEX_FIRST_BLOCK_TIMEOUT_MS SIMPLEX_MAX_LEADER_WINDOW_DESYNC make-simplex-params // masterchain
+SIMPLEX_TARGET_RATE_MS SIMPLEX_SLOTS_PER_LEADER_WINDOW SIMPLEX_FIRST_BLOCK_TIMEOUT_MS SIMPLEX_MAX_LEADER_WINDOW_DESYNC make-simplex-params // basechain
+config.new_consensus_params_all!
+
 "validator-keys.pub" file>B
 { dup Blen } { 32 B| swap dup ."Validator public key = " Bx. cr 17 add-validator } while drop
 ORIGINAL_VALIDATOR_SET_VALID_FOR =: orig_vset_valid_for  // original validator set valid 2 min
