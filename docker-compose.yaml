@@ -22,6 +22,7 @@ services:
       - "40003:40003/udp" # dht-server
       - 40002:40002       # validator-console
       - "40001:40001/udp" # validator public port
+      - "41001:41001/udp" # validator public QUIC port
       - 8888:8888         # for embedded http-file-server
     volumes:
       - shared-data:/usr/share/data
@@ -549,7 +550,7 @@ services:
   event-classifier:
     container_name: index-event-classifier
     profiles: [indexer]
-    image: toncenter/ton-indexer-classifier:v1.2.1
+    image: toncenter/ton-indexer-classifier:v1.2.8
     depends_on:
       postgres:
         condition: service_healthy
@@ -572,7 +573,7 @@ services:
   index-api:
     container_name: index-api
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-api:v1.2.5
+    image: toncenter/ton-indexer-api:v1.2.8
     depends_on:
       - index-worker
     command: -prefork -threads ${TON_INDEXER_WORKERS:-2}
@@ -590,7 +591,7 @@ services:
   run-migrations:
     container_name: run-migrations
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-worker:v1.2.5
+    image: toncenter/ton-indexer-worker:v1.2.8
     depends_on:
       postgres:
         condition: service_healthy
@@ -605,7 +606,7 @@ services:
   index-worker:
     container_name: index-worker
     profiles: [indexer, indexer-minimal]
-    image: toncenter/ton-indexer-worker:v1.2.5
+    image: toncenter/ton-indexer-worker:v1.2.8
     depends_on:
       postgres:
         condition: service_healthy
