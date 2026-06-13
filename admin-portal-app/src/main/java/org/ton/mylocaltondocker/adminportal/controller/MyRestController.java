@@ -199,8 +199,8 @@ public class MyRestController {
     descriptions.put(
         "MAX_MAIN_VALIDATORS", "Maximum number of main validators in this blockchain.");
     descriptions.put("MIN_VALIDATORS", "Minimum number of validators in this blockchain.");
-    descriptions.put("MIN_STAKE", "Minimum validator stake in TON coins.");
-    descriptions.put("MAX_STAKE", "Maximum validator stake in TON coins.");
+    descriptions.put("MIN_STAKE", "Minimum validator stake in grams.");
+    descriptions.put("MAX_STAKE", "Maximum validator stake in grams.");
     descriptions.put(
         "MAX_FACTOR",
         "Ratio between max and min stake used to cap effective stake.");
@@ -226,10 +226,10 @@ public class MyRestController {
         "Config 12: initial and minimum number of shardchains basechain can be split to.");
     descriptions.put(
         "MAX_SPLIT", "Config 12: maximum number of shardchains basechain can be split to.");
-    descriptions.put("CELL_PRICE", "Cell price in non-masterchain (nano coins).");
-    descriptions.put("CELL_PRICE_MC", "Cell price in masterchain (nano coins).");
-    descriptions.put("GAS_PRICE", "Gas price in non-masterchain (nano coins).");
-    descriptions.put("GAS_PRICE_MC", "Gas price in masterchain (nano coins).");
+    descriptions.put("CELL_PRICE", "Cell price in non-masterchain (nanograms).");
+    descriptions.put("CELL_PRICE_MC", "Cell price in masterchain (nanograms).");
+    descriptions.put("GAS_PRICE", "Gas price in non-masterchain (nanograms).");
+    descriptions.put("GAS_PRICE_MC", "Gas price in masterchain (nanograms).");
     descriptions.put(
         "SIMPLE_FAUCET_INITIAL_BALANCE",
         "Initial balance for common faucet based on Wallet V3R2 (faucet.pk).");
@@ -241,28 +241,28 @@ public class MyRestController {
         "Initial balance for data highload faucet (data-highload.pk) used by the data container.");
     descriptions.put(
         "VALIDATOR_0_INITIAL_BALANCE",
-        "Initial genesis validator wallet balance in TON coins (validator.pk).");
+        "Initial genesis validator wallet balance in grams (validator.pk).");
     descriptions.put(
         "VALIDATOR_1_INITIAL_BALANCE",
-        "Initial optional validator-1 wallet balance in TON coins (validator-1.pk).");
+        "Initial optional validator-1 wallet balance in grams (validator-1.pk).");
     descriptions.put(
         "VALIDATOR_2_INITIAL_BALANCE",
-        "Initial optional validator-2 wallet balance in TON coins (validator-2.pk).");
+        "Initial optional validator-2 wallet balance in grams (validator-2.pk).");
     descriptions.put(
         "VALIDATOR_3_INITIAL_BALANCE",
-        "Initial optional validator-3 wallet balance in TON coins (validator-3.pk).");
+        "Initial optional validator-3 wallet balance in grams (validator-3.pk).");
     descriptions.put(
         "VALIDATOR_4_INITIAL_BALANCE",
-        "Initial optional validator-4 wallet balance in TON coins (validator-4.pk).");
+        "Initial optional validator-4 wallet balance in grams (validator-4.pk).");
     descriptions.put(
         "VALIDATOR_5_INITIAL_BALANCE",
-        "Initial optional validator-5 wallet balance in TON coins (validator-5.pk).");
-    descriptions.put("BIT_PRICE_PER_SECOND", "Bit price per second in nano coins.");
-    descriptions.put("CELL_PRICE_PER_SECOND", "Cell price per second in nano coins.");
+        "Initial optional validator-5 wallet balance in grams (validator-5.pk).");
+    descriptions.put("BIT_PRICE_PER_SECOND", "Bit price per second in nanograms.");
+    descriptions.put("CELL_PRICE_PER_SECOND", "Cell price per second in nanograms.");
     descriptions.put(
-        "BIT_PRICE_PER_SECOND_MC", "Bit price per second in nano coins in masterchain.");
+        "BIT_PRICE_PER_SECOND_MC", "Bit price per second in nanograms in masterchain.");
     descriptions.put(
-        "CELL_PRICE_PER_SECOND_MC", "Cell price per second in nano coins in masterchain.");
+        "CELL_PRICE_PER_SECOND_MC", "Cell price per second in nanograms in masterchain.");
     descriptions.put(
         "CRITICAL_PARAM_MIN_WINS", "Config voting: minimum wins required for critical parameters.");
     descriptions.put(

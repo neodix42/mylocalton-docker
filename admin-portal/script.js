@@ -26,7 +26,7 @@ const SERVICE_DESCRIPTIONS = {
   "ton-blockchain":
     "TON is a fully decentralized layer-1 blockchain designed by Telegram to onboard billions of users.",
   faucet:
-    "This service allows generating a new wallet and top it up with test toncoins.",
+    "This service allows generating a new wallet and top it up with test grams.",
   "blockchain-explorer": "Native TON blockchain explorer",
   "time-machine":
     "This service allows taking the snapshots of your local TON blockchain and navigating between them as you like.",

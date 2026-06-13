@@ -194,7 +194,7 @@ services:
       - RECAPTCHA_SECRET   # google reCaptcha v2
       - MASTERCHAIN_ONLY=${FAUCET_MASTERCHAIN_ONLY:-false}   # default false, if true generates new addresses only in masterchain (-1)
       - FAUCET_REQUEST_EXPIRATION_PERIOD #  default 86400 seconds (24h)
-      - FAUCET_SINGLE_GIVEAWAY    # default 10 toncoins
+      - FAUCET_SINGLE_GIVEAWAY    # default 10 grams
     healthcheck:
       test: curl -sS http://127.0.0.1:88|| echo 1
     networks:

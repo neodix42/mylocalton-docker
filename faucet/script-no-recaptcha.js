@@ -110,7 +110,7 @@ function renderGeneratedWalletResult(messageElement, data) {
 document.getElementById("submit-btn").addEventListener("click", function () {
     const userAddress = document.getElementById("userAddress1").value;
     const messageElement = document.getElementById("message1");
-    fetch("/requestTons", {
+    fetch("/requestGrams", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",

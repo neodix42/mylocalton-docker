@@ -17,14 +17,14 @@ public class MyUtils {
   }
 
   /**
-   * returns if balance has changed by tolerateNanoCoins either side within timeoutSeconds,
+   * returns if balance has changed by tolerateNanograms either side within timeoutSeconds,
    * otherwise throws an error.
    *
    * @param timeoutSeconds timeout in seconds
-   * @param tolerateNanoCoins tolerate value
+   * @param tolerateNanograms tolerate value
    */
   public void waitForBalanceChangeWithTolerance(
-      Tonlib tonlib, Address address, int timeoutSeconds, BigInteger tolerateNanoCoins) {
+      Tonlib tonlib, Address address, int timeoutSeconds, BigInteger tolerateNanograms) {
 
     BigInteger initialBalance = getBalance(tonlib, address);
     long diff;
@@ -39,7 +39,7 @@ public class MyUtils {
       diff =
           Math.max(currentBalance.longValue(), initialBalance.longValue())
               - Math.min(currentBalance.longValue(), initialBalance.longValue());
-    } while (diff < tolerateNanoCoins.longValue());
+    } while (diff < tolerateNanograms.longValue());
   }
 
   public Contract deploy(Tonlib tonlib, BigInteger topUpAmount) {

@@ -806,14 +806,14 @@ public class ConfigUpdateService {
 
   private Cell buildConfigParam17Cell(ConfigParams17 config) {
     return CellBuilder.beginCell()
-        .storeCoins(sanitizeCoins(config.getMinStake()))
-        .storeCoins(sanitizeCoins(config.getMaxStake()))
-        .storeCoins(sanitizeCoins(config.getMinTotalStake()))
+        .storeCoins(sanitizeGrams(config.getMinStake()))
+        .storeCoins(sanitizeGrams(config.getMaxStake()))
+        .storeCoins(sanitizeGrams(config.getMinTotalStake()))
         .storeUint(normalizeUnsignedLong(config.getMaxStakeFactor(), 32), 32)
         .endCell();
   }
 
-  private BigInteger sanitizeCoins(BigInteger value) {
+  private BigInteger sanitizeGrams(BigInteger value) {
     if (value == null || value.signum() < 0) {
       return BigInteger.ZERO;
     }
@@ -1250,7 +1250,7 @@ public class ConfigUpdateService {
           .storeUint(normalizeUnsignedBigInteger(v1.getOracleAddress(), 256), 256)
           .storeDict(dict)
           .storeUint(normalizeUnsignedLong(v1.getStateFlags(), 8), 8)
-          .storeCoins(sanitizeCoins(v1.getBurnBridgeFee()))
+          .storeCoins(sanitizeGrams(v1.getBurnBridgeFee()))
           .endCell();
     }
 
@@ -1271,12 +1271,12 @@ public class ConfigUpdateService {
             : prices;
 
     return CellBuilder.beginCell()
-        .storeCoins(sanitizeCoins(resolved.getBridgeBurnFee()))
-        .storeCoins(sanitizeCoins(resolved.getBridgeMintFee()))
-        .storeCoins(sanitizeCoins(resolved.getWalletMinTonsForStorage()))
-        .storeCoins(sanitizeCoins(resolved.getWalletGasConsumption()))
-        .storeCoins(sanitizeCoins(resolved.getMinterMinTonsForStorage()))
-        .storeCoins(sanitizeCoins(resolved.getDiscoverGasConsumption()))
+        .storeCoins(sanitizeGrams(resolved.getBridgeBurnFee()))
+        .storeCoins(sanitizeGrams(resolved.getBridgeMintFee()))
+        .storeCoins(sanitizeGrams(resolved.getWalletMinTonsForStorage()))
+        .storeCoins(sanitizeGrams(resolved.getWalletGasConsumption()))
+        .storeCoins(sanitizeGrams(resolved.getMinterMinTonsForStorage()))
+        .storeCoins(sanitizeGrams(resolved.getDiscoverGasConsumption()))
         .endCell();
   }
 

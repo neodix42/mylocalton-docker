@@ -37,10 +37,10 @@ public class MyRestController {
       isNull(System.getenv("FAUCET_USE_RECAPTCHA"))
           || Boolean.parseBoolean(System.getenv("FAUCET_USE_RECAPTCHA").strip());
 
-  @PostMapping("/requestTons")
+  @PostMapping("/requestGrams")
   public Map<String, Object> executeJavaCode(
       @RequestBody Map<String, String> request, HttpServletRequest httpServletRequest) {
-    System.out.println("running /requestTons");
+    System.out.println("running /requestGrams");
 
     String sessionId = httpServletRequest.getSession().getId();
     sessionBuckets.computeIfAbsent(
