@@ -5,6 +5,7 @@ up to 6 validators.
 To facilitate the development process it also includes services like
 [TON-HTTP-API V2](https://github.com/toncenter/ton-http-api), [TON Indexer V3](https://github.com/toncenter/ton-indexer),
 Time Machine, Admin Portal, Faucet, Config Update and Random Data Generator.
+Session Stats can also be enabled to visualize validator-engine session logs.
 
 <img alt="MyLocalTon Docker demo" src='./demo.gif'>
 
@@ -52,6 +53,7 @@ By default, the following services will be available on start:
 | Faucet              | http://127.0.0.1:88                                                                      |
 | Data generation     | http://127.0.0.1:99/                                                                     |
 | Indexer API v3      | http://127.0.0.1:8081/                                                                   |
+| Session Stats       | http://127.0.0.1:18000/                                                                  |
 
 ### Deploying optional services
 
@@ -76,6 +78,7 @@ Available profiles:
   validators.
 - `indexer`: deploys TON Center API v3
 - `indexer-minimal`: deploys API v3 without a trace classifier
+- `session-stats`: deploys Session Stats on port 18000
 
 ### Containers' description and startup parameters
 
@@ -272,7 +275,8 @@ In the Mainnet it is accessible via <a href="https://toncenter.com/api/v3/index.
 | TON-HTTP-API V3     | http://127.0.0.1:8081/                                                                   |
 | Blockchain explorer | http://127.0.0.1:8080/last                                                               |
 | Config update       | http://127.0.0.1:8084/                                                                   |
-| Faucet              | http://127.0.0.1:88                                                                      |
+| Faucet              | http://127.0.0.1:88/                                                                     |
+| Session stats       | http://127.0.0.1:18000/                                                                  |
 | Traffic generation  | http://127.0.0.1:99/                                                                     |
 | HTTP file server    | http://127.0.0.1:8000/                                                                   |
 | Lite-server         | `lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -c last` |

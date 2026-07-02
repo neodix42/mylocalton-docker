@@ -21,6 +21,15 @@ public enum ManagedService {
       "/last"),
   TIME_MACHINE(
       "time-machine", "Time Machine", "time-machine", "time-machine", 8083, 8083, "/", "/"),
+  SESSION_STATS(
+      "session-stats",
+      "Session Stats",
+      "session-stats",
+      "session-stats",
+      18000,
+      18000,
+      "/",
+      "/api/chart-config"),
   CONFIG_UPDATE(
       "config-update", "Config Update", "config-update", "config-update", 8084, 8084, "/", "/"),
   TON_CENTER_V2(

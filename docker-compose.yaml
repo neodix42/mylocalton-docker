@@ -312,6 +312,51 @@ services:
       main:
         ipv4_address: 172.28.1.23
 
+  session-stats:
+    container_name: session-stats
+    profiles: [session-stats]
+    image: ${SESSION_STATS_IMAGE:-ghcr.io/neodix42/ton-session-stats:latest}
+    ports:
+      - ${SESSION_STATS_HTTP_PORT:-18000}:18000
+    volumes:
+      - ${HOST_FS_ROOT:-/}:/hostfs:ro
+      - ${DOCKER_VOLUMES_HOST_DIR:-/var/lib/docker/volumes}:/docker-volumes:ro
+      - session-stats-data:/data
+    restart: unless-stopped
+    depends_on:
+      genesis:
+        condition: service_healthy
+    environment:
+      PORT: 18000
+      GUNICORN_WORKERS: ${SESSION_STATS_GUNICORN_WORKERS:-4}
+      SESSION_STATS_TITLE: ${SESSION_STATS_TITLE:-TON session stats}
+      SESSION_STATS_DB_FILE: /data/session-stats.sqlite
+      SESSION_STATS_FRONTEND_BUILD_DIR: /app/frontend/build
+      HOST_FS_ROOT: ${HOST_FS_ROOT:-/}
+      DOCKER_VOLUMES_ROOT: /docker-volumes
+      TON_WORK_HOST_DIR: ${TON_WORK_HOST_DIR:-}
+      TON_WORK_DOCKER_VOLUME: ${TON_WORK_DOCKER_VOLUME:-}
+      SESSION_STATS_DIR_HOST_DIR: ${SESSION_STATS_DIR_HOST_DIR:-}
+      SESSION_STATS_ARCHIVE_DIR: ${SESSION_STATS_ARCHIVE_DIR:-}
+      SESSION_STATS_FILENAME: ${SESSION_STATS_FILENAME:-log.session-stats}
+      SESSION_STATS_SELF: ${SESSION_STATS_SELF:-local-validator}
+      SESSION_STATS_IMPORT_INTERVAL_SECONDS: ${SESSION_STATS_IMPORT_INTERVAL_SECONDS:-60}
+      SESSION_STATS_IMPORT_LAG_SECONDS: ${SESSION_STATS_IMPORT_LAG_SECONDS:-15}
+      SESSION_STATS_IMPORT_LOOKBACK_SECONDS: ${SESSION_STATS_IMPORT_LOOKBACK_SECONDS:-1800}
+      SESSION_STATS_PRIVATE_NET: ${SESSION_STATS_PRIVATE_NET:-false}
+      SESSION_STATS_VALIDATE_ACTUAL_WORK_TIME: ${SESSION_STATS_VALIDATE_ACTUAL_WORK_TIME:-true}
+      SESSION_STATS_WORK_TIME_STATS_BY_SOURCE: ${SESSION_STATS_WORK_TIME_STATS_BY_SOURCE:-true}
+      SESSION_STATS_WORK_TIME_STATS_BY_SOURCE_LIST: ${SESSION_STATS_WORK_TIME_STATS_BY_SOURCE_LIST:-}
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18000/api/chart-config', timeout=3).read()" || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      main:
+        ipv4_address: 172.28.1.28
+
   file-server:
     container_name: file-server
     image: python:bullseye
@@ -657,6 +702,7 @@ services:
 
 volumes:
   shared-data:
+  session-stats-data:
   postgres_data:
   ton_index_workdir:
   event_cache:

@@ -68,6 +68,7 @@ public class MyRestController {
   private static final List<String> KNOWN_VOLUME_KEYS =
       List.of(
           "shared-data",
+          "session-stats-data",
           "postgres_data",
           "ton_index_workdir",
           "event_cache",

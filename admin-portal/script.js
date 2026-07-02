@@ -37,6 +37,8 @@ const SERVICE_DESCRIPTIONS = {
   "blockchain-explorer": "Native TON blockchain explorer",
   "time-machine":
     "This service allows taking the snapshots of your local TON blockchain and navigating between them as you like.",
+  "session-stats":
+    "This service visualizes validator-engine session stats from active TON work directories or Docker volumes.",
   "config-update":
     "This service allows you to change TON blockchain system parameters in real-time.",
   "ton-center-v2":
