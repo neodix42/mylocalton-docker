@@ -65,6 +65,10 @@ body {
   overflow-y: auto;
   display: grid;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .service-item {
@@ -211,6 +215,81 @@ body {
 .control-btn.stop.loading::before {
   border-color: rgba(239, 68, 68, 0.25);
   border-top-color: #ef4444;
+}
+
+.spam-panel {
+  border-top: 1px solid var(--sidebar-border);
+  padding: 14px;
+}
+
+.spam-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #f8fafc;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.spam-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.spam-form {
+  margin-top: 12px;
+  display: grid;
+  gap: 9px;
+}
+
+.spam-form[hidden] {
+  display: none;
+}
+
+.spam-form label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.spam-form input {
+  width: 100%;
+  border: 1px solid #435268;
+  border-radius: 6px;
+  background: #111827;
+  color: #f8fafc;
+  padding: 7px 8px;
+  font: inherit;
+  text-align: right;
+}
+
+.spam-run-btn {
+  margin-top: 2px;
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.spam-run-btn:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.spam-run-btn:disabled {
+  background: var(--disabled);
+  cursor: not-allowed;
 }
 
 @keyframes control-spin {

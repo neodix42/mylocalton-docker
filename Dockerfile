@@ -11,6 +11,7 @@ RUN mkdir -p /scripts/web  \
 
 COPY --chmod=744 docker/scripts/start-genesis.sh /scripts
 COPY --chmod=744 docker/scripts/post-genesis.sh /scripts
+COPY --chmod=744 docker/scripts/run-spam.sh /scripts
 COPY --chmod=744 docker/scripts/retranslator.fc /scripts
 COPY --chmod=744 docker/scripts/create-msg.fif.template /scripts
 COPY --chmod=744 docker/scripts/start-validator.sh /scripts

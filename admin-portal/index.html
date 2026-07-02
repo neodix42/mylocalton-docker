@@ -14,6 +14,31 @@
       <p>Admin Portal</p>
     </div>
     <div class="service-list" id="service-list"></div>
+    <div class="spam-panel">
+      <label class="spam-toggle">
+        <input id="spam-toggle" type="checkbox">
+        <span>Run spam</span>
+      </label>
+      <div class="spam-form" id="spam-form" hidden>
+        <label>
+          <span>SPAM_CHAINS</span>
+          <input id="spam-chains" inputmode="numeric" min="1" max="255" type="number" value="10">
+        </label>
+        <label>
+          <span>SPAM_HOPS</span>
+          <input id="spam-hops" inputmode="numeric" min="1" max="65535" type="number" value="65535">
+        </label>
+        <label>
+          <span>SPAM_SPLIT_HOPS</span>
+          <input id="spam-split-hops" inputmode="numeric" min="0" max="255" type="number" value="7">
+        </label>
+        <label>
+          <span>SPAM_DURATION_MINUTES</span>
+          <input id="spam-duration-minutes" inputmode="numeric" min="1" max="525600" type="number" value="300">
+        </label>
+        <button class="spam-run-btn" id="spam-run-btn" type="button">Run</button>
+      </div>
+    </div>
   </aside>
 
   <main class="viewer">

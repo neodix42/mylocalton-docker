@@ -5,6 +5,13 @@ const statusBannerEl = document.getElementById("status-banner");
 const placeholderEl = document.getElementById("viewer-placeholder");
 const frameEl = document.getElementById("service-frame");
 const externalLinkEl = document.getElementById("open-external");
+const spamToggleEl = document.getElementById("spam-toggle");
+const spamFormEl = document.getElementById("spam-form");
+const spamRunBtnEl = document.getElementById("spam-run-btn");
+const spamChainsInputEl = document.getElementById("spam-chains");
+const spamHopsInputEl = document.getElementById("spam-hops");
+const spamSplitHopsInputEl = document.getElementById("spam-split-hops");
+const spamDurationMinutesInputEl = document.getElementById("spam-duration-minutes");
 
 const BLOCKCHAIN_MENU_ITEM = {
   id: "ton-blockchain",
@@ -55,6 +62,7 @@ const state = {
   blockchainSeqnoSubtitle: null,
   seqnoFetchInProgress: false,
   serviceActionInProgress: {},
+  spamRunInProgress: false,
 };
 
 const BLOCKCHAIN_IFRAME_SOURCE = "ton-blockchain-panel";
@@ -101,6 +109,7 @@ async function fetchServices() {
     }
 
     renderServices();
+    renderSpamControls();
     renderViewer();
     void fetchTonBlockchainSeqnoSubtitle();
   } catch (error) {
@@ -249,6 +258,20 @@ function renderServices() {
   });
 }
 
+function renderSpamControls() {
+  if (!spamToggleEl || !spamFormEl || !spamRunBtnEl) {
+    return;
+  }
+
+  spamFormEl.hidden = !spamToggleEl.checked;
+  const disabled = !state.blockchainGenesisRunning || state.spamRunInProgress;
+  spamRunBtnEl.disabled = disabled;
+  spamRunBtnEl.textContent = state.spamRunInProgress ? "Running..." : "Run";
+  spamRunBtnEl.title = state.blockchainGenesisRunning
+    ? ""
+    : "Genesis must be running";
+}
+
 function renderViewer() {
   const selected = state.services.find((service) => service.id === state.selectedServiceId);
 
@@ -368,6 +391,42 @@ async function controlService(serviceId, action) {
   }
 }
 
+function readSpamParameters() {
+  return {
+    SPAM_CHAINS: spamChainsInputEl.value.trim(),
+    SPAM_HOPS: spamHopsInputEl.value.trim(),
+    SPAM_SPLIT_HOPS: spamSplitHopsInputEl.value.trim(),
+    SPAM_DURATION_MINUTES: spamDurationMinutesInputEl.value.trim(),
+  };
+}
+
+async function runSpam() {
+  try {
+    state.spamRunInProgress = true;
+    renderSpamControls();
+
+    const response = await fetch("/api/admin/blockchain-nodes/genesis/spam", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(readSpamParameters()),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to start spam");
+    }
+
+    showBanner(data.message || "Spam started", true);
+  } catch (error) {
+    showBanner(error.message, false);
+  } finally {
+    state.spamRunInProgress = false;
+    renderSpamControls();
+  }
+}
+
 function showBanner(message, ok) {
   statusBannerEl.textContent = message;
   statusBannerEl.className = "status-banner show";
@@ -382,6 +441,8 @@ function init() {
   fetchServices();
   state.refreshHandle = setInterval(fetchServices, 10000);
   state.seqnoRefreshHandle = setInterval(fetchTonBlockchainSeqnoSubtitle, 3000);
+  spamToggleEl.addEventListener("change", renderSpamControls);
+  spamRunBtnEl.addEventListener("click", runSpam);
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || typeof data !== "object") {

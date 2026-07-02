@@ -147,6 +147,7 @@ public class MyRestController {
           "SPAM_DURATION_MINUTES=300");
   private static final Map<String, String> START_OVER_ENV_DEFAULTS = createStartOverEnvDefaults();
   private static final Map<String, String> START_OVER_ENV_DESCRIPTIONS = createStartOverEnvDescriptions();
+  private static final Map<String, SpamParameterSpec> SPAM_PARAMETER_SPECS = createSpamParameterSpecs();
 
   private static Map<String, String> createStartOverEnvDefaults() {
     Map<String, String> defaults = new LinkedHashMap<>();
@@ -160,6 +161,15 @@ public class MyRestController {
       defaults.put(key, value);
     }
     return defaults;
+  }
+
+  private static Map<String, SpamParameterSpec> createSpamParameterSpecs() {
+    Map<String, SpamParameterSpec> specs = new LinkedHashMap<>();
+    specs.put("SPAM_CHAINS", new SpamParameterSpec("10", 1, 255));
+    specs.put("SPAM_HOPS", new SpamParameterSpec("65535", 1, 65535));
+    specs.put("SPAM_SPLIT_HOPS", new SpamParameterSpec("7", 0, 255));
+    specs.put("SPAM_DURATION_MINUTES", new SpamParameterSpec("300", 1, 525600));
+    return specs;
   }
 
   private static Map<String, String> createStartOverEnvDescriptions() {
@@ -429,6 +439,54 @@ public class MyRestController {
       log.warn("Failed to fetch latest seqno from genesis: {}", e.getMessage());
       response.put("available", false);
       return ResponseEntity.ok(response);
+    }
+  }
+
+  @PostMapping("/blockchain-nodes/genesis/spam")
+  public ResponseEntity<Map<String, Object>> runGenesisSpam(
+      @RequestBody(required = false) Map<String, String> inputValues) {
+    if (dockerClient == null) {
+      return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, "Docker client is not initialized yet");
+    }
+
+    Map<String, String> spamParameters;
+    try {
+      spamParameters = mergeSpamParameterValues(inputValues);
+    } catch (IllegalArgumentException e) {
+      return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    try {
+      List<Container> containers = getAllContainers();
+      Optional<Container> containerOptional = AdminPortalUtils.findContainerByName(containers, "genesis");
+      if (containerOptional.isEmpty()) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Genesis container is not created");
+      }
+
+      Container genesisContainer = containerOptional.get();
+      if (!isContainerRunning(genesisContainer.getId())) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Genesis container must be running before spam can start");
+      }
+
+      List<String> command = new ArrayList<>(List.of("docker", "exec"));
+      for (Map.Entry<String, String> entry : spamParameters.entrySet()) {
+        command.add("-e");
+        command.add(entry.getKey() + "=" + entry.getValue());
+      }
+      command.add(genesisContainer.getId());
+      command.add("/scripts/run-spam.sh");
+
+      String output = runCommandCapture(command, getComposeProjectDir());
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("success", true);
+      response.put("message", "Spam started");
+      response.put("parameters", spamParameters);
+      response.put("output", abbreviateOutput(output, 4000));
+      return ResponseEntity.ok(response);
+    } catch (Exception e) {
+      log.error("Failed to start spam on genesis", e);
+      return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to start spam: " + e.getMessage());
     }
   }
 
@@ -1117,6 +1175,48 @@ public class MyRestController {
       values.put(key, value == null ? defaultValue : value);
     }
     return values;
+  }
+
+  private Map<String, String> mergeSpamParameterValues(Map<String, String> inputValues) {
+    Map<String, String> values = new LinkedHashMap<>();
+    for (Map.Entry<String, SpamParameterSpec> entry : SPAM_PARAMETER_SPECS.entrySet()) {
+      String key = entry.getKey();
+      SpamParameterSpec spec = entry.getValue();
+      String inputValue = inputValues == null ? null : inputValues.get(key);
+      String value = inputValue == null || inputValue.isBlank() ? spec.defaultValue() : inputValue.trim();
+      long parsedValue = parseSpamParameter(key, value, spec);
+      values.put(key, String.valueOf(parsedValue));
+    }
+    return values;
+  }
+
+  private long parseSpamParameter(String key, String value, SpamParameterSpec spec) {
+    if (!value.matches("\\d+")) {
+      throw new IllegalArgumentException(key + " must be an integer");
+    }
+
+    long parsed;
+    try {
+      parsed = Long.parseLong(value);
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException(key + " is too large", e);
+    }
+
+    if (parsed < spec.min() || parsed > spec.max()) {
+      throw new IllegalArgumentException(
+          key + " must be between " + spec.min() + " and " + spec.max());
+    }
+    return parsed;
+  }
+
+  private String abbreviateOutput(String output, int maxLength) {
+    if (output == null || output.isBlank()) {
+      return "";
+    }
+    if (output.length() <= maxLength) {
+      return output.trim();
+    }
+    return output.substring(output.length() - maxLength).trim();
   }
 
   private List<String> resolveServicesForStartOverRelaunch(String projectDir) {
@@ -1818,6 +1918,8 @@ public class MyRestController {
 
   private record TonCenterV3Component(
       String displayName, String composeService, String containerName, boolean optionalIfMissing) {}
+
+  private record SpamParameterSpec(String defaultValue, long min, long max) {}
 
   private record ParsedSeqnoSync(String seqno, String syncedAgo) {}
 

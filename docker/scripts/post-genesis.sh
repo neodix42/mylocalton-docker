@@ -36,63 +36,14 @@ chmod +x new-highload-wallet-v2.fif
 
 echo "----------------------------------------------- Starting spam ------------------------------------------"
 # start spam
+SPAM_RUN=${SPAM_RUN:-0}
 echo SPAM_RUN=$SPAM_RUN
-if [ $SPAM_RUN -eq 0 ]; then
+if [[ ! "$SPAM_RUN" =~ ^[0-9]+$ ]] || [ "$SPAM_RUN" -eq 0 ]; then
   echo Spam not enabled
   echo "finished post-genesis.sh"
   exit
 fi
 
-echo Starting spam...
-cd /scripts
-echo SPAM_CHAINS=$SPAM_CHAINS
-
-MSG_TEMPLATE=create-msg.fif
-cp create-msg.fif.template $MSG_TEMPLATE
-
-SPAM_CHAINS=${SPAM_CHAINS:-10}
-echo SPAM_CHAINS=$SPAM_CHAINS
-sed -i "s/SPAM_CHAINS/$SPAM_CHAINS/g" $MSG_TEMPLATE
-
-SPAM_HOPS=${SPAM_HOPS:-65535}
-echo SPAM_HOPS=$SPAM_HOPS
-sed -i "s/SPAM_HOPS/$SPAM_HOPS/g" $MSG_TEMPLATE
-
-SPAM_SPLIT_HOPS=${SPAM_SPLIT_HOPS:-7}
-echo SPAM_SPLIT_HOPS=$SPAM_SPLIT_HOPS
-sed -i "s/SPAM_SPLIT_HOPS/$SPAM_SPLIT_HOPS/g" $MSG_TEMPLATE
-
-SPAM_DURATION_MINUTES=${SPAM_DURATION_MINUTES:-300}
-echo SPAM_DURATION_MINUTES=$SPAM_DURATION_MINUTES
-sed -i "s/SPAM_DURATION_MINUTES/$SPAM_DURATION_MINUTES/g" $MSG_TEMPLATE
-
-echo Compile retranslator.fc smart-contract
-func -o retranslator.fif -SPA /usr/share/ton/smartcont/stdlib.fc retranslator.fc
-
-# create retranslator address and deploy query
-chmod +x ./create-msg.fif
-./create-msg.fif
-
-RETRANSLATOR_ADDR=0:$(xxd -p -c 32 wallet-retranslator.addr | head -n1)
-MASTER_ADDR=-1:$(xxd -p -c 32 /usr/share/ton/smartcont/main-wallet.addr | head -n1)
-
-echo $RETRANSLATOR_ADDR
-echo $MASTER_ADDR
-
-echo Topping up retranslator wallet...
-cd /usr/share/ton/smartcont/
-chmod +x wallet.fif
-
-#Run the command using the current seqno
-echo ./wallet.fif main-wallet $RETRANSLATOR_ADDR 2 33333333 -n
-./wallet.fif main-wallet $RETRANSLATOR_ADDR 2 33333333 -n
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/wallet-query.boc"
-sleep 15
-
-#get balance
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "getaccount $RETRANSLATOR_ADDR"
-
-#start spam
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /scripts/query-retranslator.boc"
+/scripts/run-spam.sh
 
 echo "finished post-genesis.sh"
