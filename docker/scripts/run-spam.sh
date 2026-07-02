@@ -5,8 +5,8 @@ SPAM_CHAINS=${SPAM_CHAINS:-10}
 SPAM_HOPS=${SPAM_HOPS:-65535}
 SPAM_SPLIT_HOPS=${SPAM_SPLIT_HOPS:-7}
 SPAM_DURATION_MINUTES=${SPAM_DURATION_MINUTES:-300}
-SPAM_TOPUP_TIMEOUT_SECONDS=${SPAM_TOPUP_TIMEOUT_SECONDS:-180}
-SPAM_FORCE_RUN=${SPAM_FORCE_RUN:-0}
+SPAM_TOPUP_TIMEOUT_SECONDS=${SPAM_TOPUP_TIMEOUT_SECONDS:-600}
+SPAM_LOCK_TIMEOUT_SECONDS=900
 
 validate_uint_range() {
   local name=$1
@@ -30,7 +30,6 @@ validate_uint_range SPAM_HOPS "$SPAM_HOPS" 1 65535
 validate_uint_range SPAM_SPLIT_HOPS "$SPAM_SPLIT_HOPS" 0 255
 validate_uint_range SPAM_DURATION_MINUTES "$SPAM_DURATION_MINUTES" 1 525600
 validate_uint_range SPAM_TOPUP_TIMEOUT_SECONDS "$SPAM_TOPUP_TIMEOUT_SECONDS" 1 3600
-validate_uint_range SPAM_FORCE_RUN "$SPAM_FORCE_RUN" 0 1
 
 export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont:/scripts
 
@@ -52,91 +51,6 @@ get_account_state() {
 
 account_is_present() {
   printf '%s\n' "$1" | grep -q "account state is (account"
-}
-
-account_is_active() {
-  printf '%s\n' "$1" | grep -q "state:(account_active"
-}
-
-read_retranslator_addr() {
-  local run_dir=$1
-  local addr_hash
-
-  [ -f "$run_dir/wallet-retranslator.addr" ] || return 1
-  addr_hash=$(xxd -p -c 32 "$run_dir/wallet-retranslator.addr" | head -n1)
-  [ -n "$addr_hash" ] || return 1
-  printf '0:%s\n' "$addr_hash"
-}
-
-read_run_duration_minutes() {
-  local run_dir=$1
-  local duration
-
-  if [ -f "$run_dir/spam.env" ]; then
-    duration=$(sed -n 's/^SPAM_DURATION_MINUTES=\([0-9][0-9]*\)$/\1/p' "$run_dir/spam.env" | head -n1)
-    if [ -n "$duration" ]; then
-      printf '%s\n' "$duration"
-      return 0
-    fi
-  fi
-
-  if [ -f "$run_dir/create-msg.fif" ]; then
-    sed -n 's/.*now 60 \([0-9][0-9]*\) \* + 32 u.*/\1/p' "$run_dir/create-msg.fif" | head -n1
-  fi
-}
-
-read_run_started_at() {
-  local run_dir=$1
-  local started_at
-
-  if [ -f "$run_dir/spam.env" ]; then
-    started_at=$(sed -n 's/^SPAM_STARTED_AT=\([0-9][0-9]*\)$/\1/p' "$run_dir/spam.env" | head -n1)
-    if [ -n "$started_at" ]; then
-      printf '%s\n' "$started_at"
-      return 0
-    fi
-  fi
-
-  stat -c %Y "$run_dir/query-retranslator.boc" 2>/dev/null || stat -c %Y "$run_dir" 2>/dev/null
-}
-
-read_run_stop_at() {
-  local run_dir=$1
-  local duration_minutes
-  local started_at
-
-  duration_minutes=$(read_run_duration_minutes "$run_dir" | head -n1)
-  started_at=$(read_run_started_at "$run_dir" | head -n1)
-
-  if [[ "$duration_minutes" =~ ^[0-9]+$ ]] && [[ "$started_at" =~ ^[0-9]+$ ]]; then
-    printf '%s\n' $((started_at + duration_minutes * 60))
-  fi
-}
-
-find_running_spam() {
-  local now
-  local run_dir
-  local addr
-  local account_state
-  local stop_at
-
-  now=$(date +%s)
-  for run_dir in "$SPAM_WORK_DIR"/run.*; do
-    [ -d "$run_dir" ] || continue
-    addr=$(read_retranslator_addr "$run_dir") || continue
-    account_state=$(get_account_state "$addr")
-    account_is_active "$account_state" || continue
-
-    stop_at=$(read_run_stop_at "$run_dir" | head -n1)
-    if [[ "$stop_at" =~ ^[0-9]+$ ]] && (( now >= stop_at )); then
-      continue
-    fi
-
-    printf '%s\t%s\t%s\n' "$run_dir" "$addr" "$stop_at"
-    return 0
-  done
-
-  return 1
 }
 
 wait_for_account_present() {
@@ -168,6 +82,46 @@ wait_for_account_present() {
   done
 }
 
+cleanup_spam_lock() {
+  if [ -n "${SPAM_LOCK_DIR:-}" ] && [ -d "$SPAM_LOCK_DIR" ]; then
+    rm -f "$SPAM_LOCK_DIR/pid"
+    rmdir "$SPAM_LOCK_DIR" 2>/dev/null || true
+  fi
+}
+
+acquire_spam_lock() {
+  local lock_dir="$SPAM_WORK_DIR/run.lock"
+  local deadline
+  local lock_pid
+  local now
+
+  deadline=$(($(date +%s) + SPAM_LOCK_TIMEOUT_SECONDS))
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    if [ -f "$lock_dir/pid" ]; then
+      lock_pid=$(cat "$lock_dir/pid" 2>/dev/null || true)
+      if [[ "$lock_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
+        rm -f "$lock_dir/pid"
+        rmdir "$lock_dir" 2>/dev/null || true
+        continue
+      fi
+    else
+      rmdir "$lock_dir" 2>/dev/null && continue
+    fi
+
+    now=$(date +%s)
+    if (( now >= deadline )); then
+      echo "Timed out waiting for spam launch lock" >&2
+      exit 6
+    fi
+
+    sleep 1
+  done
+
+  SPAM_LOCK_DIR=$lock_dir
+  echo "$$" > "$SPAM_LOCK_DIR/pid"
+  trap cleanup_spam_lock EXIT
+}
+
 if [ ! -f "$MAIN_WALLET_BASE.pk" ] || [ ! -f "$MAIN_WALLET_BASE.addr" ]; then
   echo "Main wallet files are missing in /var/ton-work/db; spam cannot be started" >&2
   exit 3
@@ -179,20 +133,7 @@ if [ ! -f "$LITESERVER_PUB" ]; then
 fi
 
 mkdir -p "$SPAM_WORK_DIR"
-
-if [ "$SPAM_FORCE_RUN" != "1" ]; then
-  running_spam=$(find_running_spam || true)
-  if [ -n "$running_spam" ]; then
-    IFS=$'\t' read -r RUN_DIR RETRANSLATOR_ADDR SPAM_STOP_AT <<< "$running_spam"
-    echo "Spam already running"
-    echo "SPAM_RUN_DIR=$RUN_DIR"
-    echo "RETRANSLATOR_ADDR=$RETRANSLATOR_ADDR"
-    if [ -n "${SPAM_STOP_AT:-}" ]; then
-      echo "SPAM_STOP_AT=$SPAM_STOP_AT"
-    fi
-    exit 0
-  fi
-fi
+acquire_spam_lock
 
 RUN_DIR=$(mktemp -d "$SPAM_WORK_DIR/run.XXXXXX")
 
