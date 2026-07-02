@@ -53,6 +53,51 @@ account_is_present() {
   printf '%s\n' "$1" | grep -q "account state is (account"
 }
 
+extract_seqno() {
+  sed -n 's/.*result:[[:space:]]*\[[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -n1
+}
+
+read_wallet_seqno() {
+  local addr=$1
+  local output
+  local seqno
+
+  output=$(run_lite_client "runmethod $addr seqno" 2>&1)
+  seqno=$(printf '%s\n' "$output" | extract_seqno)
+  if [ -z "$seqno" ]; then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$seqno"
+}
+
+wait_for_wallet_seqno_advance() {
+  local addr=$1
+  local previous_seqno=$2
+  local timeout_seconds=$3
+  local deadline
+  local now
+  local current_seqno
+
+  deadline=$(($(date +%s) + timeout_seconds))
+  while true; do
+    current_seqno=$(read_wallet_seqno "$addr" 2>/dev/null || true)
+    if [[ "$current_seqno" =~ ^[0-9]+$ ]] && (( current_seqno > previous_seqno )); then
+      echo "Master wallet seqno advanced to $current_seqno"
+      return 0
+    fi
+
+    now=$(date +%s)
+    if (( now >= deadline )); then
+      echo "Master wallet seqno did not advance within ${timeout_seconds}s" >&2
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 wait_for_account_present() {
   local addr=$1
   local timeout_seconds=$2
@@ -89,14 +134,27 @@ cleanup_spam_lock() {
   fi
 }
 
+release_spam_lock() {
+  cleanup_spam_lock
+  trap - EXIT
+  unset SPAM_LOCK_DIR
+  echo "Spam launch lock released"
+}
+
 acquire_spam_lock() {
   local lock_dir="$SPAM_WORK_DIR/run.lock"
   local deadline
   local lock_pid
   local now
+  local printed_waiting=0
 
   deadline=$(($(date +%s) + SPAM_LOCK_TIMEOUT_SECONDS))
   while ! mkdir "$lock_dir" 2>/dev/null; do
+    if [ "$printed_waiting" -eq 0 ]; then
+      echo "Waiting for spam launch lock..."
+      printed_waiting=1
+    fi
+
     if [ -f "$lock_dir/pid" ]; then
       lock_pid=$(cat "$lock_dir/pid" 2>/dev/null || true)
       if [[ "$lock_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
@@ -119,6 +177,7 @@ acquire_spam_lock() {
 
   SPAM_LOCK_DIR=$lock_dir
   echo "$$" > "$SPAM_LOCK_DIR/pid"
+  echo "Spam launch lock acquired"
   trap cleanup_spam_lock EXIT
 }
 
@@ -182,9 +241,7 @@ SEQNO_OUTPUT=$(
   run_lite_client "runmethod $MASTER_ADDR seqno" 2>&1
 )
 MASTER_SEQNO=$(
-  printf '%s\n' "$SEQNO_OUTPUT" |
-    sed -n 's/.*result:[[:space:]]*\[[[:space:]]*\([0-9][0-9]*\).*/\1/p' |
-    tail -n1
+  printf '%s\n' "$SEQNO_OUTPUT" | extract_seqno
 )
 
 if [ -z "$MASTER_SEQNO" ]; then
@@ -203,6 +260,8 @@ echo "Topping up retranslator wallet..."
 )
 
 run_lite_client "sendfile $RUN_DIR/wallet-query.boc"
+wait_for_wallet_seqno_advance "$MASTER_ADDR" "$MASTER_SEQNO" 120
+release_spam_lock
 
 echo "Waiting for retranslator wallet top-up..."
 wait_for_account_present "$RETRANSLATOR_ADDR" "$SPAM_TOPUP_TIMEOUT_SECONDS"

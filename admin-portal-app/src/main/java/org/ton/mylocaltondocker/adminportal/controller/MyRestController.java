@@ -468,20 +468,26 @@ public class MyRestController {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, "Genesis container must be running before spam can start");
       }
 
-      List<String> command = new ArrayList<>(List.of("docker", "exec"));
+      String logPath = "/var/ton-work/db/spam/logs/admin-portal-spam-" + System.currentTimeMillis() + ".log";
+      List<String> command = new ArrayList<>(List.of("docker", "exec", "-d"));
       for (Map.Entry<String, String> entry : spamParameters.entrySet()) {
         command.add("-e");
         command.add(entry.getKey() + "=" + entry.getValue());
       }
+      command.add("-e");
+      command.add("SPAM_PORTAL_LOG=" + logPath);
       command.add(genesisContainer.getId());
-      command.add("/scripts/run-spam.sh");
+      command.add("/bin/bash");
+      command.add("-lc");
+      command.add("mkdir -p /var/ton-work/db/spam/logs && exec /scripts/run-spam.sh >> \"$SPAM_PORTAL_LOG\" 2>&1");
 
       String output = runCommandCapture(command, getComposeProjectDir());
 
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("success", true);
-      response.put("message", "Spam started");
+      response.put("message", "Spam launch started");
       response.put("parameters", spamParameters);
+      response.put("logPath", logPath);
       response.put("output", abbreviateOutput(output, 4000));
       return ResponseEntity.ok(response);
     } catch (Exception e) {
