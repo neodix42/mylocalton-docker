@@ -480,13 +480,15 @@ public class MyRestController {
 
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("success", true);
-      response.put("message", "Spam started");
+      response.put("message", resolveSpamSuccessMessage(output));
       response.put("parameters", spamParameters);
       response.put("output", abbreviateOutput(output, 4000));
       return ResponseEntity.ok(response);
     } catch (Exception e) {
       log.error("Failed to start spam on genesis", e);
-      return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to start spam: " + e.getMessage());
+      return buildErrorResponse(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "Failed to start spam: " + abbreviateOutput(e.getMessage(), 4000));
     }
   }
 
@@ -1217,6 +1219,19 @@ public class MyRestController {
       return output.trim();
     }
     return output.substring(output.length() - maxLength).trim();
+  }
+
+  private String resolveSpamSuccessMessage(String output) {
+    if (output == null || output.isBlank()) {
+      return "Spam started";
+    }
+
+    for (String line : output.split("\\R")) {
+      if ("Spam already running".equals(line.trim())) {
+        return "Spam already running";
+      }
+    }
+    return "Spam started";
   }
 
   private List<String> resolveServicesForStartOverRelaunch(String projectDir) {
