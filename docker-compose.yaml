@@ -647,6 +647,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    ulimits:
+      nofile: 1000000
     environment:
       <<: *index-common
       TON_WORKER_BINARY: ton-index-postgres-migrate
@@ -662,6 +664,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    ulimits:
+      nofile: 1000000
     volumes:
       - ton-db-val0:/tondb
       - ton_index_workdir:/ton_index_workdir
