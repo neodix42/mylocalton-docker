@@ -14,7 +14,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        MLT_IMAGE: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     restart: unless-stopped
     ports:
@@ -116,6 +116,7 @@ services:
       dockerfile: ./explorer/Dockerfile
       args:
         MLT_EXPLORER_IMAGE: ${MLT_EXPLORER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-explorer}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     restart: unless-stopped
     environment:
@@ -147,6 +148,7 @@ services:
       dockerfile: ./lite-server/Dockerfile
       args:
         MLT_LITE_SERVER_IMAGE: ${MLT_LITE_SERVER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-lite-server}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     restart: unless-stopped
     environment:
@@ -178,6 +180,7 @@ services:
       dockerfile: ./faucet/Dockerfile
       args:
         MLT_FAUCET_IMAGE: ${MLT_FAUCET_IMAGE:-ghcr.io/neodix42/mylocalton-docker-faucet}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 88:88
@@ -210,6 +213,7 @@ services:
       dockerfile: ./data/Dockerfile
       args:
         MLT_DATA_IMAGE: ${MLT_DATA_IMAGE:-ghcr.io/neodix42/mylocalton-docker-data}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 99:99
@@ -237,6 +241,7 @@ services:
       dockerfile: ./config-update/Dockerfile
       args:
         MLT_CONFIG_UPDATE_IMAGE: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 8084:8084
@@ -265,6 +270,7 @@ services:
       dockerfile: ./admin-portal/Dockerfile
       args:
         MLT_ADMIN_PORTAL_IMAGE: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 8085:8085
@@ -294,6 +300,7 @@ services:
       dockerfile: ./time-machine/Dockerfile
       args:
         MLT_TIME_MACHINE_IMAGE: ${MLT_TIME_MACHINE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-time-machine}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 8083:8083
