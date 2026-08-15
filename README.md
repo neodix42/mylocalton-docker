@@ -104,7 +104,19 @@ Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested so
 docker compose --profile native-load-generator up --build native-load-generator
 ```
 
-The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only keys from the genesis database volume. It never runs inside the validator container. `NATIVE_LOAD_START_NONCE=0` is correct for fresh genesis accounts; set it to the current common source nonce when repeating a run. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, while `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. The laptop defaults are deliberately conservative; increase both on bare metal. Metrics are printed as JSON once per configured report interval; `admit_tps` is lite-server admission rate, not confirmed on-chain TPS.
+The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only load keys from the dedicated `native-load-wallets` volume. It never runs inside the validator container and cannot read the validator database or validator keys. Account nonces are discovered from proof-checked canonical state by default. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, while `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. The laptop defaults are deliberately conservative. Metrics are printed as JSON once per configured report interval and distinguish offered, mempool-stored, rejected, and proof-checked masterchain-anchored transfers.
+
+For a 48-vCPU/256-GB same-host saturation run, use `.env.physical` explicitly. It leaves optional profiles disabled so an ordinary `up` cannot accidentally start load. The configured run has a 60-second ramp, 60-second warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile (42 minutes of configured phases, plus initial nonce discovery):
+
+```bash
+docker compose --env-file .env.physical up -d genesis
+docker compose --env-file .env.physical --profile session-stats up -d session-stats
+docker compose --env-file .env.physical --profile native-load-generator up --build native-load-generator
+```
+
+The physical profile binds management, liteserver, UI, and file endpoints to `127.0.0.1`; change only the endpoint needed by a remote firewalled load host. Set `TON_DB_VAL0_HOST_DIR` to an existing absolute directory on the dedicated NVMe before genesis creation. Leaving it empty keeps the portable `ton-db-val0` named volume. When using a host bind with session-stats, set `TON_WORK_HOST_DIR` to the same path and clear `TON_WORK_DOCKER_VOLUME`. Source count, native wallet volume, shard layout, consensus timing, and block limits are genesis inputs: changing them for an existing network does not retrofit its zero state, so recreate the test network volumes before comparing a new profile.
+
+Build and publish the matching TON image before rebuilding this service; the entrypoint rejects an older image that lacks the saturation-generator CLI. For final numbers, pin an immutable image digest and prefer a server-CPU build (`PORTABLE=0`, `TON_ARCH=native`) over the portable multi-architecture image.
 
 ### Containers' description and startup parameters
 
