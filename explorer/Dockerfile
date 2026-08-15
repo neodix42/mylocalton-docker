@@ -1,5 +1,5 @@
 ARG TON_BRANCH=latest
-ARG TON_IMAGE=ghcr.io/ton-blockchain/ton
+ARG TON_IMAGE=ghcr.io/corton-nommander/ton
 FROM ${TON_IMAGE}:${TON_BRANCH}
 
 RUN mkdir -p /scripts

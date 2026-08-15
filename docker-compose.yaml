@@ -13,8 +13,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      pull: true
       args:
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     restart: unless-stopped
     ports:
@@ -125,6 +126,7 @@ services:
       - NATIVE_SPAM_TMP_DIR
       - NATIVE_SPAM_CONFIRM_PARALLELISM
       - NATIVE_SPAM_CONFIRM_POLL_SECONDS
+      - NATIVE_SPAM_CONFIRM_MODE
       - NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS
       - NATIVE_TPS_INTERVAL_SECONDS
       - NATIVE_TPS_WORKCHAIN
@@ -155,9 +157,10 @@ services:
     build:
       context: .
       dockerfile: ./explorer/Dockerfile
+      pull: true
       args:
         MLT_EXPLORER_IMAGE: ${MLT_EXPLORER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-explorer}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     restart: unless-stopped
     environment:
@@ -187,9 +190,10 @@ services:
     build:
       context: .
       dockerfile: ./lite-server/Dockerfile
+      pull: true
       args:
         MLT_LITE_SERVER_IMAGE: ${MLT_LITE_SERVER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-lite-server}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     restart: unless-stopped
     environment:
@@ -219,9 +223,10 @@ services:
     build:
       context: .
       dockerfile: ./faucet/Dockerfile
+      pull: true
       args:
         MLT_FAUCET_IMAGE: ${MLT_FAUCET_IMAGE:-ghcr.io/neodix42/mylocalton-docker-faucet}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 88:88
@@ -252,9 +257,10 @@ services:
     build:
       context: .
       dockerfile: ./data/Dockerfile
+      pull: true
       args:
         MLT_DATA_IMAGE: ${MLT_DATA_IMAGE:-ghcr.io/neodix42/mylocalton-docker-data}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 99:99
@@ -280,9 +286,10 @@ services:
     build:
       context: .
       dockerfile: ./config-update/Dockerfile
+      pull: true
       args:
         MLT_CONFIG_UPDATE_IMAGE: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 8084:8084
@@ -309,9 +316,10 @@ services:
     build:
       context: .
       dockerfile: ./admin-portal/Dockerfile
+      pull: true
       args:
         MLT_ADMIN_PORTAL_IMAGE: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 8085:8085
@@ -339,9 +347,10 @@ services:
     build:
       context: .
       dockerfile: ./time-machine/Dockerfile
+      pull: true
       args:
         MLT_TIME_MACHINE_IMAGE: ${MLT_TIME_MACHINE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-time-machine}
-        TON_IMAGE: ${TON_IMAGE:-ghcr.io/ton-blockchain/ton}
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
     ports:
       - 8083:8083

@@ -35,7 +35,7 @@ validate_decimal_amount() {
 generate_basechain_state() {
   local spam_run="${NATIVE_SPAM_RUN:-0}"
   local spam_sources="${NATIVE_SPAM_SOURCES:-64}"
-  local genesis_account_limit="${NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT:-300}"
+  local genesis_account_limit="${NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT:-}"
   local genesis_destinations="${NATIVE_SPAM_GENESIS_DESTINATIONS:-1}"
   local post_genesis_topups="${NATIVE_SPAM_POST_GENESIS_TOPUPS:-0}"
   local genesis_source_limit="${NATIVE_SPAM_GENESIS_SOURCE_LIMIT:-}"
@@ -64,6 +64,16 @@ generate_basechain_state() {
   if ! is_uint "$spam_sources"; then
     echo "NATIVE_SPAM_SOURCES must be an integer, got '$spam_sources'"
     exit 2
+  fi
+  if [ -z "$genesis_account_limit" ]; then
+    if is_positive_uint "$spam_run"; then
+      genesis_account_limit="$spam_sources"
+      if [ "$genesis_destinations" = "1" ]; then
+        genesis_account_limit=$((spam_sources * 2))
+      fi
+    else
+      genesis_account_limit=300
+    fi
   fi
   if ! is_uint "$genesis_account_limit"; then
     echo "NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT must be an integer, got '$genesis_account_limit'"

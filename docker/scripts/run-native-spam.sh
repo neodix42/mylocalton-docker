@@ -26,6 +26,7 @@ NATIVE_SPAM_KEEP_ARTIFACTS=${NATIVE_SPAM_KEEP_ARTIFACTS:-0}
 NATIVE_SPAM_TMP_DIR=${NATIVE_SPAM_TMP_DIR:-/dev/shm/native-spam}
 NATIVE_SPAM_CONFIRM_PARALLELISM=${NATIVE_SPAM_CONFIRM_PARALLELISM:-$NATIVE_SPAM_PARALLELISM}
 NATIVE_SPAM_CONFIRM_POLL_SECONDS=${NATIVE_SPAM_CONFIRM_POLL_SECONDS:-0.2}
+NATIVE_SPAM_CONFIRM_MODE=${NATIVE_SPAM_CONFIRM_MODE:-optimistic}
 NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS=${NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS:-5}
 
 export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont:/scripts
@@ -94,6 +95,15 @@ validate_topup_mode() {
   fi
 }
 
+validate_confirm_mode() {
+  local value=$1
+
+  if [[ "$value" != "optimistic" && "$value" != "poll" ]]; then
+    echo "NATIVE_SPAM_CONFIRM_MODE must be 'optimistic' or 'poll', got '$value'" >&2
+    exit 2
+  fi
+}
+
 validate_uint_range NATIVE_SPAM_SOURCES "$NATIVE_SPAM_SOURCES" 1 100000
 validate_uint_range NATIVE_SPAM_DURATION_SECONDS "$NATIVE_SPAM_DURATION_SECONDS" 1 31536000
 validate_uint_range NATIVE_SPAM_ROUNDS "$NATIVE_SPAM_ROUNDS" 0 4294967295
@@ -112,6 +122,7 @@ validate_bool NATIVE_SPAM_KEEP_ARTIFACTS "$NATIVE_SPAM_KEEP_ARTIFACTS"
 validate_positive_decimal NATIVE_SPAM_CONFIRM_POLL_SECONDS "$NATIVE_SPAM_CONFIRM_POLL_SECONDS"
 validate_mode "$NATIVE_SPAM_MODE"
 validate_topup_mode "$NATIVE_SPAM_TOPUP_MODE"
+validate_confirm_mode "$NATIVE_SPAM_CONFIRM_MODE"
 
 run_lite_client() {
   "$LITE_CLIENT" -a "$NATIVE_SPAM_LITESERVER_ADDR" -p "$LITESERVER_PUB" -t "$NATIVE_SPAM_LITE_TIMEOUT_SECONDS" -c "$1"
@@ -162,6 +173,10 @@ extract_last_lt() {
   sed -n 's/.*last transaction lt = \([0-9][0-9]*\).*/\1/p' | tail -n1
 }
 
+extract_native_nonce() {
+  sed -n 's/.*native account balance is .* nonce = \([0-9][0-9]*\).*/\1/p' | tail -n1
+}
+
 read_wallet_seqno() {
   local addr=$1
   local output
@@ -188,7 +203,10 @@ read_native_nonce() {
     return 1
   fi
 
-  nonce=$(printf '%s\n' "$output" | extract_last_lt)
+  nonce=$(printf '%s\n' "$output" | extract_native_nonce)
+  if [ -z "$nonce" ]; then
+    nonce=$(printf '%s\n' "$output" | extract_last_lt)
+  fi
   if [ -z "$nonce" ]; then
     printf '%s\n' "$output" >&2
     return 1
@@ -644,6 +662,13 @@ confirm_round() {
 print_progress() {
   local label=$1
   local elapsed
+  local confirmed_label="confirmed"
+  local confirmed_tps_label="confirmed_tps"
+
+  if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+    confirmed_label="accepted"
+    confirmed_tps_label="accepted_tps"
+  fi
 
   elapsed=$(( $(date +%s) - STARTED_AT ))
   if (( elapsed < 1 )); then
@@ -653,14 +678,16 @@ print_progress() {
     -v label="$label" \
     -v sent="$SENT_TRANSFERS" \
     -v confirmed="$CONFIRMED_TRANSFERS" \
+    -v confirmed_label="$confirmed_label" \
+    -v confirmed_tps_label="$confirmed_tps_label" \
     -v elapsed="$elapsed" \
     -v active="$ACTIVE_SENDS" \
     -v pending="$PENDING_TRANSFERS" \
     -v failed="$FAILED_SENDS" \
     -v unconfirmed="$UNCONFIRMED_TRANSFERS" \
     'BEGIN {
-      printf "%s: submitted=%d confirmed=%d submitted_tps=%.2f confirmed_tps=%.2f account_tx_tps=%.2f active_sends=%d pending_confirms=%d failed_sends=%d unconfirmed=%d\n",
-        label, sent, confirmed, sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed, active, pending, failed, unconfirmed
+      printf "%s: submitted=%d %s=%d submitted_tps=%.2f %s=%.2f account_tx_tps=%.2f active_sends=%d pending_confirms=%d failed_sends=%d unconfirmed=%d\n",
+        label, sent, confirmed_label, confirmed, sent / elapsed, confirmed_tps_label, confirmed / elapsed, (confirmed * 2) / elapsed, active, pending, failed, unconfirmed
     }'
 }
 
@@ -717,10 +744,17 @@ collect_completed_sends() {
     if [[ "$status" == "ok" ]]; then
       SENT_TRANSFERS=$((SENT_TRANSFERS + 1))
       SOURCE_SUBMITTED[$idx]=$((SOURCE_SUBMITTED[$idx] + 1))
-      SOURCE_STATE[$idx]="pending"
       SOURCE_SENT_AT[$idx]=$now
       SOURCE_UNCONFIRMED_RECORDED[$idx]=0
-      PENDING_TRANSFERS=$((PENDING_TRANSFERS + 1))
+      if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+        SOURCE_NONCES[$idx]=$((SOURCE_NONCES[$idx] + 1))
+        SOURCE_STATE[$idx]="ready"
+        SOURCE_READY_AT[$idx]=$now
+        CONFIRMED_TRANSFERS=$((CONFIRMED_TRANSFERS + 1))
+      else
+        SOURCE_STATE[$idx]="pending"
+        PENDING_TRANSFERS=$((PENDING_TRANSFERS + 1))
+      fi
     else
       FAILED_SENDS=$((FAILED_SENDS + 1))
       SOURCE_STATE[$idx]="ready"
@@ -755,6 +789,9 @@ poll_pending_batch() {
   local -a poll_pids=()
 
   if (( PENDING_TRANSFERS == 0 )); then
+    return 0
+  fi
+  if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
     return 0
   fi
 
@@ -898,12 +935,18 @@ run_round_spam() {
     for ((i = 0; i < NATIVE_SPAM_SOURCES; ++i)); do
       if [ "$(cat "$RUN_DIR/send-${ROUND}-${i}.status" 2>/dev/null || true)" = "ok" ]; then
         SENT_TRANSFERS=$((SENT_TRANSFERS + 1))
+        if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+          SOURCE_NONCES[$i]=$((SOURCE_NONCES[$i] + 1))
+          CONFIRMED_TRANSFERS=$((CONFIRMED_TRANSFERS + 1))
+        fi
       else
         FAILED_SENDS=$((FAILED_SENDS + 1))
       fi
     done
 
-    confirm_round "$ROUND"
+    if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "poll" ]]; then
+      confirm_round "$ROUND"
+    fi
     print_progress "Progress"
 
     ROUND=$((ROUND + 1))
@@ -954,6 +997,11 @@ echo "NATIVE_SPAM_GENESIS_DESTINATIONS=$NATIVE_SPAM_GENESIS_DESTINATIONS"
 echo "NATIVE_SPAM_PARALLELISM=$NATIVE_SPAM_PARALLELISM"
 echo "NATIVE_SPAM_CONFIRM_PARALLELISM=$NATIVE_SPAM_CONFIRM_PARALLELISM"
 echo "NATIVE_SPAM_CONFIRM_POLL_SECONDS=$NATIVE_SPAM_CONFIRM_POLL_SECONDS"
+echo "NATIVE_SPAM_CONFIRM_MODE=$NATIVE_SPAM_CONFIRM_MODE"
+if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+  echo "Optimistic mode: spammer confirmed counters mean liteserver accepted the external message."
+  echo "Use /scripts/show-native-tps.sh for on-chain native transfer TPS."
+fi
 echo "NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS=$NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS"
 echo "NATIVE_SPAM_FORCE_TOPUP=$NATIVE_SPAM_FORCE_TOPUP"
 echo "NATIVE_SPAM_KEEP_ARTIFACTS=$NATIVE_SPAM_KEEP_ARTIFACTS"
@@ -1011,6 +1059,7 @@ PENDING_TRANSFERS=0
   echo "NATIVE_SPAM_GENESIS_DESTINATIONS=$NATIVE_SPAM_GENESIS_DESTINATIONS"
   echo "NATIVE_SPAM_PARALLELISM=$NATIVE_SPAM_PARALLELISM"
   echo "NATIVE_SPAM_CONFIRM_PARALLELISM=$NATIVE_SPAM_CONFIRM_PARALLELISM"
+  echo "NATIVE_SPAM_CONFIRM_MODE=$NATIVE_SPAM_CONFIRM_MODE"
   echo "NATIVE_SPAM_KEEP_ARTIFACTS=$NATIVE_SPAM_KEEP_ARTIFACTS"
 } > "$RUN_DIR/native-spam.env"
 
@@ -1035,10 +1084,19 @@ else
   echo "Rounds: pipeline refill"
 fi
 echo "Submitted native transfers: $SENT_TRANSFERS"
-echo "Confirmed native transfers: $CONFIRMED_TRANSFERS"
+if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+  echo "Accepted native transfers: $CONFIRMED_TRANSFERS"
+else
+  echo "Confirmed native transfers: $CONFIRMED_TRANSFERS"
+fi
 echo "Failed send attempts: $FAILED_SENDS"
 echo "Unconfirmed transfers: $UNCONFIRMED_TRANSFERS"
-awk -v sent="$SENT_TRANSFERS" -v confirmed="$CONFIRMED_TRANSFERS" -v elapsed="$ELAPSED" \
-  'BEGIN { printf "Submitted native transfer TPS: %.2f\nConfirmed native transfer TPS: %.2f\nConfirmed account-transaction TPS: %.2f\n", sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed }'
+if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+  awk -v sent="$SENT_TRANSFERS" -v confirmed="$CONFIRMED_TRANSFERS" -v elapsed="$ELAPSED" \
+    'BEGIN { printf "Submitted native transfer TPS: %.2f\nAccepted native transfer TPS: %.2f\nAccepted account-transaction TPS: %.2f\n", sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed }'
+else
+  awk -v sent="$SENT_TRANSFERS" -v confirmed="$CONFIRMED_TRANSFERS" -v elapsed="$ELAPSED" \
+    'BEGIN { printf "Submitted native transfer TPS: %.2f\nConfirmed native transfer TPS: %.2f\nConfirmed account-transaction TPS: %.2f\n", sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed }'
+fi
 
 release_spam_lock
