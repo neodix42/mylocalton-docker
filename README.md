@@ -81,6 +81,21 @@ Available profiles:
 - `session-stats`: deploys Session Stats on port 18000
 - `native-load-generator`: sends native transfers from a separate container over persistent lite-server connections
 
+### Native session stats
+
+The `side` configuration uses `ghcr.io/neodix42/ton-session-stats:side`, reads
+`log.session-stats` from the genesis validator volume, and enables private-network and
+native-fast-path metrics. Start it alongside an already running genesis validator:
+
+```bash
+docker compose --profile session-stats up -d session-stats
+```
+
+Open <http://127.0.0.1:18000/>. Canonical TPS is calculated from consensus-selected
+blocks anchored by the masterchain; valid candidates that lose consensus are excluded.
+The dashboard also exposes accepted-block size, native transfers per block, external
+message outcomes, and collation/validation timings and throughput.
+
 ### Native high-rate load
 
 Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested source/destination accounts exist in the zero state, then start the load container against the already-running network:
