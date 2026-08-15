@@ -95,7 +95,11 @@ services:
       - SPAM_HOPS
       - SPAM_SPLIT_HOPS
       - SPAM_DURATION_MINUTES
-      - NATIVE_SPAM_RUN
+      # Provision native load accounts in genesis, but never run load inside the
+      # validator container.  The native-load-generator profile owns traffic.
+      - NATIVE_SPAM_RUN=0
+      - NATIVE_LOAD_SOURCES
+      - TON_NATIVE_EXECUTOR_THREADS
       - NATIVE_SPAM_MODE
       - NATIVE_SPAM_SOURCES
       - NATIVE_SPAM_DURATION_SECONDS
@@ -148,6 +152,41 @@ services:
     networks:
       main:
         ipv4_address: 172.28.1.10
+
+  native-load-generator:
+    container_name: native-load-generator
+    profiles: [native-load-generator]
+    image: mylocalton-native-load-generator:${TON_BRANCH:-latest}
+    build:
+      context: .
+      dockerfile: ./native-load-generator/Dockerfile
+      pull: true
+      args:
+        TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
+        TON_BRANCH: ${TON_BRANCH:-latest}
+    restart: "no"
+    volumes:
+      - shared-data:/usr/share/data:ro
+      - ton-db-val0:/network:ro
+    environment:
+      - NATIVE_LOAD_GLOBAL_CONFIG=/usr/share/data/global.config.json
+      - NATIVE_LOAD_WALLET_DIR=/network/native-spam/wallets
+      - NATIVE_LOAD_SOURCES
+      - NATIVE_LOAD_CONNECTIONS
+      - NATIVE_LOAD_SIGNERS
+      - NATIVE_LOAD_INFLIGHT
+      - NATIVE_LOAD_DURATION_SECONDS
+      - NATIVE_LOAD_AMOUNT
+      - NATIVE_LOAD_FEE
+      - NATIVE_LOAD_START_NONCE
+      - NATIVE_LOAD_QUERY_TIMEOUT_SECONDS
+      - NATIVE_LOAD_REPORT_INTERVAL_SECONDS
+    depends_on:
+      genesis:
+        condition: service_healthy
+    networks:
+      main:
+        ipv4_address: 172.28.1.29
 
   # MyLocalTon optional services
   blockchain-explorer:

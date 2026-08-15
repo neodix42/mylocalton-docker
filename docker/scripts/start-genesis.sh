@@ -34,7 +34,7 @@ validate_decimal_amount() {
 
 generate_basechain_state() {
   local spam_run="${NATIVE_SPAM_RUN:-0}"
-  local spam_sources="${NATIVE_SPAM_SOURCES:-64}"
+  local spam_sources="${NATIVE_LOAD_SOURCES:-${NATIVE_SPAM_SOURCES:-64}}"
   local genesis_account_limit="${NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT:-}"
   local genesis_destinations="${NATIVE_SPAM_GENESIS_DESTINATIONS:-1}"
   local post_genesis_topups="${NATIVE_SPAM_POST_GENESIS_TOPUPS:-0}"
@@ -55,7 +55,7 @@ generate_basechain_state() {
 
   if [ -n "${NATIVE_SPAM_GENESIS_SOURCES+x}" ]; then
     genesis_sources="$NATIVE_SPAM_GENESIS_SOURCES"
-  elif is_positive_uint "$spam_run"; then
+  elif is_positive_uint "${NATIVE_LOAD_SOURCES:-0}" || is_positive_uint "$spam_run"; then
     genesis_sources="$spam_sources"
   else
     genesis_sources=0
@@ -66,10 +66,10 @@ generate_basechain_state() {
     exit 2
   fi
   if [ -z "$genesis_account_limit" ]; then
-    if is_positive_uint "$spam_run"; then
-      genesis_account_limit="$spam_sources"
+    if is_positive_uint "$genesis_sources"; then
+      genesis_account_limit="$genesis_sources"
       if [ "$genesis_destinations" = "1" ]; then
-        genesis_account_limit=$((spam_sources * 2))
+        genesis_account_limit=$((genesis_sources * 2))
       fi
     else
       genesis_account_limit=300
@@ -438,15 +438,15 @@ else
   sed -i "s/VALIDATORS_MASTERCHAIN_NUM/$VALIDATORS_MASTERCHAIN_NUM/g" gen-zerostate.fif
 
 
-  BLOCK_SIZE_UNDERLOAD_KB=${BLOCK_SIZE_UNDERLOAD_KB:-256}
+  BLOCK_SIZE_UNDERLOAD_KB=${BLOCK_SIZE_UNDERLOAD_KB:-1024}
   echo BLOCK_SIZE_UNDERLOAD_KB=$BLOCK_SIZE_UNDERLOAD_KB
   sed -i "s/BLOCK_SIZE_UNDERLOAD_KB/$BLOCK_SIZE_UNDERLOAD_KB/g" gen-zerostate.fif
 
-  BLOCK_SIZE_SOFT_KB=${BLOCK_SIZE_SOFT_KB:-1024}
+  BLOCK_SIZE_SOFT_KB=${BLOCK_SIZE_SOFT_KB:-5120}
   echo BLOCK_SIZE_SOFT_KB=$BLOCK_SIZE_SOFT_KB
   sed -i "s/BLOCK_SIZE_SOFT_KB/$BLOCK_SIZE_SOFT_KB/g" gen-zerostate.fif
 
-  BLOCK_SIZE_HARD_KB=${BLOCK_SIZE_HARD_MB:-2048}
+  BLOCK_SIZE_HARD_KB=${BLOCK_SIZE_HARD_KB:-8192}
   echo BLOCK_SIZE_HARD_KB=$BLOCK_SIZE_HARD_KB
   sed -i "s/BLOCK_SIZE_HARD_KB/$BLOCK_SIZE_HARD_KB/g" gen-zerostate.fif
 

@@ -662,33 +662,40 @@ confirm_round() {
 print_progress() {
   local label=$1
   local elapsed
-  local confirmed_label="confirmed"
-  local confirmed_tps_label="confirmed_tps"
-
-  if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
-    confirmed_label="accepted"
-    confirmed_tps_label="accepted_tps"
-  fi
 
   elapsed=$(( $(date +%s) - STARTED_AT ))
   if (( elapsed < 1 )); then
     elapsed=1
   fi
-  awk \
-    -v label="$label" \
-    -v sent="$SENT_TRANSFERS" \
-    -v confirmed="$CONFIRMED_TRANSFERS" \
-    -v confirmed_label="$confirmed_label" \
-    -v confirmed_tps_label="$confirmed_tps_label" \
-    -v elapsed="$elapsed" \
-    -v active="$ACTIVE_SENDS" \
-    -v pending="$PENDING_TRANSFERS" \
-    -v failed="$FAILED_SENDS" \
-    -v unconfirmed="$UNCONFIRMED_TRANSFERS" \
-    'BEGIN {
-      printf "%s: submitted=%d %s=%d submitted_tps=%.2f %s=%.2f account_tx_tps=%.2f active_sends=%d pending_confirms=%d failed_sends=%d unconfirmed=%d\n",
-        label, sent, confirmed_label, confirmed, sent / elapsed, confirmed_tps_label, confirmed / elapsed, (confirmed * 2) / elapsed, active, pending, failed, unconfirmed
-    }'
+  if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
+    awk \
+      -v label="$label" \
+      -v sent="$SENT_TRANSFERS" \
+      -v accepted="$CONFIRMED_TRANSFERS" \
+      -v elapsed="$elapsed" \
+      -v active="$ACTIVE_SENDS" \
+      -v pending="$PENDING_TRANSFERS" \
+      -v failed="$FAILED_SENDS" \
+      -v unconfirmed="$UNCONFIRMED_TRANSFERS" \
+      'BEGIN {
+        printf "%s: submitted=%d liteserver_accepted=%d submitted_rate=%.2f liteserver_accepted_rate=%.2f onchain_native_tps=not_measured active_sends=%d pending_confirms=%d failed_sends=%d unconfirmed=%d\n",
+          label, sent, accepted, sent / elapsed, accepted / elapsed, active, pending, failed, unconfirmed
+      }'
+  else
+    awk \
+      -v label="$label" \
+      -v sent="$SENT_TRANSFERS" \
+      -v confirmed="$CONFIRMED_TRANSFERS" \
+      -v elapsed="$elapsed" \
+      -v active="$ACTIVE_SENDS" \
+      -v pending="$PENDING_TRANSFERS" \
+      -v failed="$FAILED_SENDS" \
+      -v unconfirmed="$UNCONFIRMED_TRANSFERS" \
+      'BEGIN {
+        printf "%s: submitted=%d onchain_confirmed=%d submitted_rate=%.2f onchain_native_tps=%.2f onchain_account_tx_tps=%.2f active_sends=%d pending_confirms=%d failed_sends=%d unconfirmed=%d\n",
+          label, sent, confirmed, sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed, active, pending, failed, unconfirmed
+      }'
+  fi
 }
 
 can_submit_source() {
@@ -999,8 +1006,8 @@ echo "NATIVE_SPAM_CONFIRM_PARALLELISM=$NATIVE_SPAM_CONFIRM_PARALLELISM"
 echo "NATIVE_SPAM_CONFIRM_POLL_SECONDS=$NATIVE_SPAM_CONFIRM_POLL_SECONDS"
 echo "NATIVE_SPAM_CONFIRM_MODE=$NATIVE_SPAM_CONFIRM_MODE"
 if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
-  echo "Optimistic mode: spammer confirmed counters mean liteserver accepted the external message."
-  echo "Use /scripts/show-native-tps.sh for on-chain native transfer TPS."
+  echo "Optimistic mode: spammer counters measure liteserver acceptance only."
+  echo "On-chain native transfer TPS must be measured with /scripts/show-native-tps.sh."
 fi
 echo "NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS=$NATIVE_SPAM_PROGRESS_INTERVAL_SECONDS"
 echo "NATIVE_SPAM_FORCE_TOPUP=$NATIVE_SPAM_FORCE_TOPUP"
@@ -1085,18 +1092,18 @@ else
 fi
 echo "Submitted native transfers: $SENT_TRANSFERS"
 if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
-  echo "Accepted native transfers: $CONFIRMED_TRANSFERS"
+  echo "Lite-server accepted native transfers: $CONFIRMED_TRANSFERS"
 else
-  echo "Confirmed native transfers: $CONFIRMED_TRANSFERS"
+  echo "On-chain confirmed native transfers: $CONFIRMED_TRANSFERS"
 fi
 echo "Failed send attempts: $FAILED_SENDS"
 echo "Unconfirmed transfers: $UNCONFIRMED_TRANSFERS"
 if [[ "$NATIVE_SPAM_CONFIRM_MODE" == "optimistic" ]]; then
   awk -v sent="$SENT_TRANSFERS" -v confirmed="$CONFIRMED_TRANSFERS" -v elapsed="$ELAPSED" \
-    'BEGIN { printf "Submitted native transfer TPS: %.2f\nAccepted native transfer TPS: %.2f\nAccepted account-transaction TPS: %.2f\n", sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed }'
+    'BEGIN { printf "Submitted native transfer rate: %.2f\nLite-server accepted native transfer rate: %.2f\nOn-chain native transfer TPS: not measured by optimistic mode; use /scripts/show-native-tps.sh\n", sent / elapsed, confirmed / elapsed }'
 else
   awk -v sent="$SENT_TRANSFERS" -v confirmed="$CONFIRMED_TRANSFERS" -v elapsed="$ELAPSED" \
-    'BEGIN { printf "Submitted native transfer TPS: %.2f\nConfirmed native transfer TPS: %.2f\nConfirmed account-transaction TPS: %.2f\n", sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed }'
+    'BEGIN { printf "Submitted native transfer rate: %.2f\nOn-chain confirmed native transfer TPS: %.2f\nOn-chain confirmed account-transaction TPS: %.2f\n", sent / elapsed, confirmed / elapsed, (confirmed * 2) / elapsed }'
 fi
 
 release_spam_lock

@@ -79,6 +79,17 @@ Available profiles:
 - `indexer`: deploys TON Center API v3
 - `indexer-minimal`: deploys API v3 without a trace classifier
 - `session-stats`: deploys Session Stats on port 18000
+- `native-load-generator`: sends native transfers from a separate container over persistent lite-server connections
+
+### Native high-rate load
+
+Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested source/destination accounts exist in the zero state, then start the load container against the already-running network:
+
+```bash
+docker compose --profile native-load-generator up --build native-load-generator
+```
+
+The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only keys from the genesis database volume. It never runs inside the validator container. `NATIVE_LOAD_START_NONCE=0` is correct for fresh genesis accounts; set it to the current common source nonce when repeating a run. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, while `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. The laptop defaults are deliberately conservative; increase both on bare metal. Metrics are printed as JSON once per configured report interval; `admit_tps` is lite-server admission rate, not confirmed on-chain TPS.
 
 ### Containers' description and startup parameters
 
