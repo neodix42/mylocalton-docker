@@ -16,6 +16,96 @@ fi
 export FIFTPATH=/usr/lib/fift:/usr/share/ton/smartcont/
 echo "pwd $(pwd)"
 
+is_uint() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+is_positive_uint() {
+  is_uint "$1" && [ "$1" -gt 0 ]
+}
+
+validate_decimal_amount() {
+  [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]]
+}
+
+generate_basechain_state() {
+  local spam_run="${NATIVE_SPAM_RUN:-0}"
+  local spam_sources="${NATIVE_SPAM_SOURCES:-64}"
+  local genesis_sources
+  local topup_amount="${NATIVE_SPAM_GENESIS_TOPUP_AMOUNT:-${NATIVE_SPAM_TOPUP_AMOUNT:-1}}"
+  local work_dir="${NATIVE_SPAM_WORK_DIR:-/var/ton-work/db/native-spam}"
+  local wallet_dir="${NATIVE_SPAM_WALLET_DIR:-$work_dir/wallets}"
+  local basechain_script="native-spam-basestate.fif"
+  local i
+  local base
+
+  if [ -n "${NATIVE_SPAM_GENESIS_SOURCES+x}" ]; then
+    genesis_sources="$NATIVE_SPAM_GENESIS_SOURCES"
+  elif is_positive_uint "$spam_run"; then
+    genesis_sources="$spam_sources"
+  else
+    genesis_sources=0
+  fi
+
+  if ! is_uint "$genesis_sources"; then
+    echo "NATIVE_SPAM_GENESIS_SOURCES must be an integer, got '$genesis_sources'"
+    exit 2
+  fi
+  if ! validate_decimal_amount "$topup_amount"; then
+    echo "NATIVE_SPAM_GENESIS_TOPUP_AMOUNT must be a decimal amount, got '$topup_amount'"
+    exit 2
+  fi
+
+  echo NATIVE_SPAM_GENESIS_SOURCES=$genesis_sources
+  echo NATIVE_SPAM_GENESIS_TOPUP_AMOUNT=$topup_amount
+  echo NATIVE_SPAM_WALLET_DIR=$wallet_dir
+
+  mkdir -p "$work_dir" "$wallet_dir"
+  {
+    echo "#!/usr/bin/create-state -s"
+    echo '"TonUtil.fif" include'
+    echo '"Asm.fif" include'
+    echo '"Lists.fif" include'
+    echo
+    echo "$GLOBAL_ID setglobalid   // negative value means a test instance of the blockchain"
+    echo "Basechain setworkchain"
+    echo
+    echo "// Native spam source accounts"
+  } > "$basechain_script"
+
+  for ((i = 0; i < genesis_sources; ++i)); do
+    base="$wallet_dir/source-$i"
+    if [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
+      fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1
+      test $? -eq 0 || { echo "Can't create native spam wallet $i"; exit 1; }
+    fi
+    printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$topup_amount" >> "$basechain_script"
+  done
+
+  {
+    echo
+    echo "create_state"
+    echo 'dup 31 boc+>B'
+    echo 'dup "basestate0.boc" tuck B>file'
+    echo '."(Initial basechain state saved to file " type .")" cr'
+    echo 'Bhashu dup =: basestate0_fhash'
+    echo '."file hash=" dup 64x. space 256 u>B dup B>base64url type cr'
+    echo '"basestate0.fhash" B>file'
+    echo 'hashu dup =: basestate0_rhash'
+    echo '."root hash=" dup 64x. space 256 u>B dup B>base64url type cr'
+    echo '"basestate0.rhash" B>file'
+  } >> "$basechain_script"
+
+  {
+    echo "NATIVE_SPAM_GENESIS_SOURCES=$genesis_sources"
+    echo "NATIVE_SPAM_GENESIS_TOPUP_AMOUNT=$topup_amount"
+    echo "NATIVE_SPAM_WALLET_DIR=$wallet_dir"
+  } > "$work_dir/genesis.env"
+
+  create-state "$basechain_script"
+  test $? -eq 0 || { echo "Can't generate basechain zero-state"; exit 1; }
+}
+
 initialized=0
 if [ -f "/var/ton-work/db/state/IDENTITY" ]; then
   echo
@@ -280,6 +370,8 @@ else
   sed -i "s/NEXT_BLOCK_GENERATION_DELAY/$TMP_VAR/g" gen-zerostate.fif
   # end setup genesis
   # ---------------------------------------------------------
+
+  generate_basechain_state
 
   create-state gen-zerostate.fif
   test $? -eq 0 || { echo "Can't generate zero-state"; exit 1; }

@@ -11,18 +11,11 @@ GLOBAL_ID setglobalid   // negative value means a test instance of the blockchai
 
 // Initial state of Workchain 0 (Basic workchain)
 
-0 mkemptyShardState
-
-// cr ."initial basechain state is:" cr dup <s csr. cr
-dup 31 boc+>B
-dup "basestate0.boc" tuck B>file
-."(Initial basechain state saved to file " type .")" cr
-Bhashu dup =: basestate0_fhash
-."file hash=" dup 64x. space 256 u>B dup B>base64url type cr
-"basestate0.fhash" B>file
-hashu dup =: basestate0_rhash
-."root hash=" dup 64x. space 256 u>B dup B>base64url type cr
-"basestate0.rhash" B>file
+"basestate0.rhash" file>B 256 B>u@ =: basestate0_rhash
+"basestate0.fhash" file>B 256 B>u@ =: basestate0_fhash
+."(Initial basechain state loaded from file basestate0.boc)" cr
+."file hash=" basestate0_fhash dup 64x. space 256 u>B B>base64url type cr
+."root hash=" basestate0_rhash dup 64x. space 256 u>B B>base64url type cr
 basestate0_rhash basestate0_fhash now ACTUAL_MIN_SPLIT MIN_SPLIT MAX_SPLIT 0 add-std-workchain
 MASTERCHAIN_ONLY
 

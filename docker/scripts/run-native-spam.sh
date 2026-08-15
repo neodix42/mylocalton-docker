@@ -12,6 +12,7 @@ NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS=${NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS:-120
 NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS=${NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS:-30}
 NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS=${NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS:-180}
 NATIVE_SPAM_FORCE_TOPUP=${NATIVE_SPAM_FORCE_TOPUP:-0}
+NATIVE_SPAM_TOPUP_MODE=${NATIVE_SPAM_TOPUP_MODE:-genesis}
 NATIVE_SPAM_WORK_DIR=${NATIVE_SPAM_WORK_DIR:-/var/ton-work/db/native-spam}
 NATIVE_SPAM_WALLET_DIR=${NATIVE_SPAM_WALLET_DIR:-$NATIVE_SPAM_WORK_DIR/wallets}
 NATIVE_SPAM_LOCK_TIMEOUT_SECONDS=${NATIVE_SPAM_LOCK_TIMEOUT_SECONDS:-300}
@@ -81,6 +82,15 @@ validate_mode() {
   fi
 }
 
+validate_topup_mode() {
+  local value=$1
+
+  if [[ "$value" != "genesis" && "$value" != "wallet" ]]; then
+    echo "NATIVE_SPAM_TOPUP_MODE must be 'genesis' or 'wallet', got '$value'" >&2
+    exit 2
+  fi
+}
+
 validate_uint_range NATIVE_SPAM_SOURCES "$NATIVE_SPAM_SOURCES" 1 100000
 validate_uint_range NATIVE_SPAM_DURATION_SECONDS "$NATIVE_SPAM_DURATION_SECONDS" 1 31536000
 validate_uint_range NATIVE_SPAM_ROUNDS "$NATIVE_SPAM_ROUNDS" 0 4294967295
@@ -96,6 +106,7 @@ validate_bool NATIVE_SPAM_FORCE_TOPUP "$NATIVE_SPAM_FORCE_TOPUP"
 validate_bool NATIVE_SPAM_KEEP_ARTIFACTS "$NATIVE_SPAM_KEEP_ARTIFACTS"
 validate_positive_decimal NATIVE_SPAM_CONFIRM_POLL_SECONDS "$NATIVE_SPAM_CONFIRM_POLL_SECONDS"
 validate_mode "$NATIVE_SPAM_MODE"
+validate_topup_mode "$NATIVE_SPAM_TOPUP_MODE"
 
 run_lite_client() {
   "$LITE_CLIENT" -a "$NATIVE_SPAM_LITESERVER_ADDR" -p "$LITESERVER_PUB" -t "$NATIVE_SPAM_LITE_TIMEOUT_SECONDS" -c "$1"
@@ -312,6 +323,13 @@ send_topup() {
     old_nonce=0
   fi
 
+  if [[ "$NATIVE_SPAM_TOPUP_MODE" == "genesis" ]]; then
+    echo "Native spam source $source_addr is not a funded native balance-only account." >&2
+    echo "Recreate the genesis state with NATIVE_SPAM_RUN=1 or NATIVE_SPAM_GENESIS_SOURCES >= NATIVE_SPAM_SOURCES." >&2
+    echo "Keep NATIVE_SPAM_FORCE_TOPUP=0 for genesis-funded native spam sources." >&2
+    return 1
+  fi
+
   master_seqno=$(read_wallet_seqno "$MASTER_ADDR")
   if [[ "$NATIVE_SPAM_KEEP_ARTIFACTS" == "1" ]]; then
     fift_log="$query_base.fift.log"
@@ -321,12 +339,19 @@ send_topup() {
     "$MAIN_WALLET_BASE" "$source_addr" "$MASTER_SUBWALLET_ID" "$master_seqno" "$NATIVE_SPAM_TOPUP_AMOUNT" \
     -n -t 120 "$query_base" > "$fift_log" 2>&1
 
-  send_boc_file "$query_base.boc" "$send_log"
+  if ! send_boc_file "$query_base.boc" "$send_log"; then
+    echo "Native spam wallet-contract top-up was rejected for $source_addr." >&2
+    echo "The native fast path expects funded balance-only source accounts in zerostate; set NATIVE_SPAM_TOPUP_MODE=genesis." >&2
+    return 1
+  fi
   if [[ "$NATIVE_SPAM_KEEP_ARTIFACTS" == "0" ]]; then
     rm -f "$query_base.boc"
   fi
   wait_for_wallet_seqno_advance "$MASTER_ADDR" "$master_seqno" "$NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS"
-  wait_for_native_nonce_advance "$source_addr" "$old_nonce" "$NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS"
+  if ! wait_for_native_nonce_advance "$source_addr" "$old_nonce" "$NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS"; then
+    echo "Native spam source $source_addr was not created by wallet-contract top-up within ${NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS}s." >&2
+    return 1
+  fi
 }
 
 send_native_transfer_artifact() {
@@ -723,6 +748,7 @@ echo "NATIVE_SPAM_ROUNDS=$NATIVE_SPAM_ROUNDS"
 echo "NATIVE_SPAM_AMOUNT=$NATIVE_SPAM_AMOUNT"
 echo "NATIVE_SPAM_FEE=$NATIVE_SPAM_FEE"
 echo "NATIVE_SPAM_TOPUP_AMOUNT=$NATIVE_SPAM_TOPUP_AMOUNT"
+echo "NATIVE_SPAM_TOPUP_MODE=$NATIVE_SPAM_TOPUP_MODE"
 echo "NATIVE_SPAM_PARALLELISM=$NATIVE_SPAM_PARALLELISM"
 echo "NATIVE_SPAM_CONFIRM_PARALLELISM=$NATIVE_SPAM_CONFIRM_PARALLELISM"
 echo "NATIVE_SPAM_CONFIRM_POLL_SECONDS=$NATIVE_SPAM_CONFIRM_POLL_SECONDS"
@@ -769,6 +795,7 @@ PENDING_TRANSFERS=0
   echo "NATIVE_SPAM_AMOUNT=$NATIVE_SPAM_AMOUNT"
   echo "NATIVE_SPAM_FEE=$NATIVE_SPAM_FEE"
   echo "NATIVE_SPAM_TOPUP_AMOUNT=$NATIVE_SPAM_TOPUP_AMOUNT"
+  echo "NATIVE_SPAM_TOPUP_MODE=$NATIVE_SPAM_TOPUP_MODE"
   echo "NATIVE_SPAM_PARALLELISM=$NATIVE_SPAM_PARALLELISM"
   echo "NATIVE_SPAM_CONFIRM_PARALLELISM=$NATIVE_SPAM_CONFIRM_PARALLELISM"
   echo "NATIVE_SPAM_KEEP_ARTIFACTS=$NATIVE_SPAM_KEEP_ARTIFACTS"
