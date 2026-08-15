@@ -155,12 +155,32 @@ lookup_block_by_seqno() {
 count_native_transactions() {
   local block_id=$1
   local output
+  local compact_transfers
   local debits
   local credits
 
   output=$(run_lite_client "dumpblock $block_id" "$NATIVE_TPS_PRINT_LIMIT" 2>&1)
-  debits=$(printf '%s\n' "$output" | grep -c "trans_native_transfer_debit" || true)
-  credits=$(printf '%s\n' "$output" | grep -c "trans_native_transfer_credit" || true)
+  compact_transfers=$(
+    printf '%s\n' "$output" | awk '
+      /native_transfer_batch/ {
+        for (i = 1; i <= NF; ++i) {
+          if ($i ~ /^transfers=/) {
+            split($i, kv, "=")
+            if (kv[2] ~ /^[0-9]+$/) {
+              print kv[2]
+              exit
+            }
+          }
+        }
+      }'
+  )
+  if [ -n "$compact_transfers" ]; then
+    debits=$compact_transfers
+    credits=$compact_transfers
+  else
+    debits=$(printf '%s\n' "$output" | grep -c "trans_native_transfer_debit" || true)
+    credits=$(printf '%s\n' "$output" | grep -c "trans_native_transfer_credit" || true)
+  fi
   printf '%s\t%s\n' "$debits" "$credits"
 }
 
@@ -216,7 +236,7 @@ print_header() {
   echo "NATIVE_TPS_PRINT_LIMIT=$NATIVE_TPS_PRINT_LIMIT"
   echo "NATIVE_TPS_BACKFILL_BLOCKS=$NATIVE_TPS_BACKFILL_BLOCKS"
   echo "NATIVE_TPS_MAX_BLOCKS_PER_INTERVAL=$NATIVE_TPS_MAX_BLOCKS_PER_INTERVAL"
-  echo "Counting native account transactions as debit+credit descriptors."
+  echo "Counting compact native batches when present, otherwise debit+credit descriptors."
   echo "Native transfer TPS is counted by debit descriptors; account-transaction TPS is debit+credit."
 }
 
