@@ -1,7 +1,29 @@
 #!/bin/bash
-echo "started post-genesis.sh, waiting for genesis to start, sleeping 3min..."
+echo "started post-genesis.sh, waiting for genesis to produce the first block..."
 
-sleep 180
+wait_for_masterchain() {
+  local attempt=0
+  local seqno
+
+  while [ "$attempt" -lt 120 ]; do
+    seqno=$(/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "last" 2>&1 \
+      | sed -n 's/.*last masterchain block is (-1,8000000000000000,\([0-9][0-9]*\)).*/\1/p' \
+      | tail -n 1)
+
+    if [ -n "$seqno" ] && [ "$seqno" -gt 0 ]; then
+      echo "genesis is producing blocks, masterchain seqno=$seqno"
+      return 0
+    fi
+
+    attempt=$((attempt + 1))
+    sleep 5
+  done
+
+  echo "genesis did not produce a masterchain block in time"
+  return 1
+}
+
+wait_for_masterchain || exit 1
 cp /usr/local/bin/fift /usr/bin/
 cp /usr/local/bin/func /usr/bin/
 cd /usr/share/ton/smartcont
@@ -38,12 +60,18 @@ echo "----------------------------------------------- Starting spam ------------
 # start spam
 SPAM_RUN=${SPAM_RUN:-0}
 echo SPAM_RUN=$SPAM_RUN
-if [[ ! "$SPAM_RUN" =~ ^[0-9]+$ ]] || [ "$SPAM_RUN" -eq 0 ]; then
-  echo Spam not enabled
-  echo "finished post-genesis.sh"
-  exit
+if [[ "$SPAM_RUN" =~ ^[0-9]+$ ]] && [ "$SPAM_RUN" -gt 0 ]; then
+  /scripts/run-spam.sh
+else
+  echo "Retranslator spam not enabled"
 fi
 
-/scripts/run-spam.sh
+NATIVE_SPAM_RUN=${NATIVE_SPAM_RUN:-0}
+echo NATIVE_SPAM_RUN=$NATIVE_SPAM_RUN
+if [[ "$NATIVE_SPAM_RUN" =~ ^[0-9]+$ ]] && [ "$NATIVE_SPAM_RUN" -gt 0 ]; then
+  /scripts/run-native-spam.sh
+else
+  echo "Native spam not enabled"
+fi
 
 echo "finished post-genesis.sh"

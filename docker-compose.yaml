@@ -93,6 +93,18 @@ services:
       - SPAM_HOPS
       - SPAM_SPLIT_HOPS
       - SPAM_DURATION_MINUTES
+      - NATIVE_SPAM_RUN
+      - NATIVE_SPAM_SOURCES
+      - NATIVE_SPAM_DURATION_SECONDS
+      - NATIVE_SPAM_ROUNDS
+      - NATIVE_SPAM_AMOUNT
+      - NATIVE_SPAM_FEE
+      - NATIVE_SPAM_TOPUP_AMOUNT
+      - NATIVE_SPAM_PARALLELISM
+      - NATIVE_SPAM_TRANSFER_TIMEOUT_SECONDS
+      - NATIVE_SPAM_CONFIRM_TIMEOUT_SECONDS
+      - NATIVE_SPAM_TOPUP_TIMEOUT_SECONDS
+      - NATIVE_SPAM_FORCE_TOPUP
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL}

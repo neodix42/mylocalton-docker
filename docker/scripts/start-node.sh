@@ -2,7 +2,9 @@
 
 echo starting cron
 
-printenv > /etc/container_env
+printenv | while IFS='=' read -r name value; do
+  printf 'export %s=%q\n' "$name" "$value"
+done > /etc/container_env
 
 service cron start &
 
