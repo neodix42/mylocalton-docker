@@ -28,33 +28,45 @@ cp /usr/local/bin/fift /usr/bin/
 cp /usr/local/bin/func /usr/bin/
 cd /usr/share/ton/smartcont
 
-echo "------------------------------------ Faucet wallet (basechain) ------------------------------------"
-# Faucet wallet (basechain)
-echo top up 0:1da77f0269bbbb76c862ea424b257df63bd1acb0d4eb681b68c9aadfbf553b93
-chmod +x wallet.fif
-./wallet.fif main-wallet 0QAdp38Cabu7dshi6kJLJX32O9GssNTraBtoyarfv1U7k9PA 0 1000000
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/wallet-query.boc"
-sleep 15
+NATIVE_SPAM_RUN=${NATIVE_SPAM_RUN:-0}
+BASECHAIN_CONTRACT_FAUCETS=${BASECHAIN_CONTRACT_FAUCETS:-}
+if [ -z "$BASECHAIN_CONTRACT_FAUCETS" ]; then
+  BASECHAIN_CONTRACT_FAUCETS=1
+  if [[ "$NATIVE_SPAM_RUN" =~ ^[0-9]+$ ]] && [ "$NATIVE_SPAM_RUN" -gt 0 ]; then
+    BASECHAIN_CONTRACT_FAUCETS=0
+  fi
+fi
 
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "getaccount 0QAdp38Cabu7dshi6kJLJX32O9GssNTraBtoyarfv1U7k9PA"
+if [ "$BASECHAIN_CONTRACT_FAUCETS" = "1" ]; then
+  echo "------------------------------------ Faucet wallet (basechain) ------------------------------------"
+  # Faucet wallet (basechain)
+  echo top up 0:1da77f0269bbbb76c862ea424b257df63bd1acb0d4eb681b68c9aadfbf553b93
+  chmod +x wallet.fif
+  ./wallet.fif main-wallet 0QAdp38Cabu7dshi6kJLJX32O9GssNTraBtoyarfv1U7k9PA 0 1000000
+  /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/wallet-query.boc"
+  sleep 15
 
-chmod +x new-wallet-v3.fif
-./new-wallet-v3.fif 0 42 faucet-basechain
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/faucet-basechain-query.boc"
+  /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "getaccount 0QAdp38Cabu7dshi6kJLJX32O9GssNTraBtoyarfv1U7k9PA"
 
+  chmod +x new-wallet-v3.fif
+  ./new-wallet-v3.fif 0 42 faucet-basechain
+  /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/faucet-basechain-query.boc"
 
-echo "------------------------------------ Faucet Highload V2 (basechain) ------------------------------------"
-# Faucet Highload V2 (basechain)
-echo top up 0:d07625ea432039dc94dc019025f971bbeba0f7a1d9aaf6abfa94df70e60bca8f
+  echo "------------------------------------ Faucet Highload V2 (basechain) ------------------------------------"
+  # Faucet Highload V2 (basechain)
+  echo top up 0:d07625ea432039dc94dc019025f971bbeba0f7a1d9aaf6abfa94df70e60bca8f
 
-./wallet.fif main-wallet 0QDQdiXqQyA53JTcAZAl-XG766D3odmq9qv6lN9w5gvKjza1 1 1000000
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/wallet-query.boc"
-sleep 15
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "getaccount 0QDQdiXqQyA53JTcAZAl-XG766D3odmq9qv6lN9w5gvKjza1"
+  ./wallet.fif main-wallet 0QDQdiXqQyA53JTcAZAl-XG766D3odmq9qv6lN9w5gvKjza1 1 1000000
+  /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/wallet-query.boc"
+  sleep 15
+  /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "getaccount 0QDQdiXqQyA53JTcAZAl-XG766D3odmq9qv6lN9w5gvKjza1"
 
-chmod +x new-highload-wallet-v2.fif
-./new-highload-wallet-v2.fif 0 42 faucet-highload-basechain
-/usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/faucet-highload-basechain42-query.boc"
+  chmod +x new-highload-wallet-v2.fif
+  ./new-highload-wallet-v2.fif 0 42 faucet-highload-basechain
+  /usr/local/bin/lite-client -a 127.0.0.1:40004 -b E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY= -t 3 -c "sendfile /usr/share/ton/smartcont/faucet-highload-basechain42-query.boc"
+else
+  echo "Skipping legacy basechain faucet wallets; native basechain accepts native transfers only"
+fi
 
 echo "----------------------------------------------- Starting spam ------------------------------------------"
 # start spam
@@ -66,7 +78,6 @@ else
   echo "Retranslator spam not enabled"
 fi
 
-NATIVE_SPAM_RUN=${NATIVE_SPAM_RUN:-0}
 echo NATIVE_SPAM_RUN=$NATIVE_SPAM_RUN
 if [[ "$NATIVE_SPAM_RUN" =~ ^[0-9]+$ ]] && [ "$NATIVE_SPAM_RUN" -gt 0 ]; then
   /scripts/run-native-spam.sh

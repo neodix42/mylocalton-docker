@@ -24,6 +24,10 @@ is_positive_uint() {
   is_uint "$1" && [ "$1" -gt 0 ]
 }
 
+is_bool() {
+  [ "$1" = "0" ] || [ "$1" = "1" ]
+}
+
 validate_decimal_amount() {
   [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]]
 }
@@ -31,8 +35,18 @@ validate_decimal_amount() {
 generate_basechain_state() {
   local spam_run="${NATIVE_SPAM_RUN:-0}"
   local spam_sources="${NATIVE_SPAM_SOURCES:-64}"
+  local genesis_account_limit="${NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT:-300}"
+  local genesis_destinations="${NATIVE_SPAM_GENESIS_DESTINATIONS:-1}"
+  local post_genesis_topups="${NATIVE_SPAM_POST_GENESIS_TOPUPS:-0}"
+  local genesis_source_limit="${NATIVE_SPAM_GENESIS_SOURCE_LIMIT:-}"
   local genesis_sources
-  local topup_amount="${NATIVE_SPAM_GENESIS_TOPUP_AMOUNT:-${NATIVE_SPAM_TOPUP_AMOUNT:-1}}"
+  local topup_amount="${NATIVE_SPAM_TOPUP_AMOUNT:-1}"
+  local topup_fee="${NATIVE_SPAM_FEE:-0}"
+  local source_balance
+  local dest_balance="${NATIVE_SPAM_GENESIS_DEST_BALANCE:-0.000000001}"
+  local effective_spam_sources
+  local topup_mode
+  local topups_per_source=0
   local work_dir="${NATIVE_SPAM_WORK_DIR:-/var/ton-work/db/native-spam}"
   local wallet_dir="${NATIVE_SPAM_WALLET_DIR:-$work_dir/wallets}"
   local basechain_script="native-spam-basestate.fif"
@@ -47,17 +61,91 @@ generate_basechain_state() {
     genesis_sources=0
   fi
 
+  if ! is_uint "$spam_sources"; then
+    echo "NATIVE_SPAM_SOURCES must be an integer, got '$spam_sources'"
+    exit 2
+  fi
+  if ! is_uint "$genesis_account_limit"; then
+    echo "NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT must be an integer, got '$genesis_account_limit'"
+    exit 2
+  fi
+  if ! is_bool "$genesis_destinations"; then
+    echo "NATIVE_SPAM_GENESIS_DESTINATIONS must be 0 or 1, got '$genesis_destinations'"
+    exit 2
+  fi
+  if ! is_bool "$post_genesis_topups"; then
+    echo "NATIVE_SPAM_POST_GENESIS_TOPUPS must be 0 or 1, got '$post_genesis_topups'"
+    exit 2
+  fi
   if ! is_uint "$genesis_sources"; then
     echo "NATIVE_SPAM_GENESIS_SOURCES must be an integer, got '$genesis_sources'"
     exit 2
   fi
   if ! validate_decimal_amount "$topup_amount"; then
-    echo "NATIVE_SPAM_GENESIS_TOPUP_AMOUNT must be a decimal amount, got '$topup_amount'"
+    echo "NATIVE_SPAM_TOPUP_AMOUNT must be a decimal amount, got '$topup_amount'"
+    exit 2
+  fi
+  if ! validate_decimal_amount "$topup_fee"; then
+    echo "NATIVE_SPAM_FEE must be a decimal amount, got '$topup_fee'"
+    exit 2
+  fi
+  if ! validate_decimal_amount "$dest_balance"; then
+    echo "NATIVE_SPAM_GENESIS_DEST_BALANCE must be a decimal amount, got '$dest_balance'"
+    exit 2
+  fi
+  if [ -z "$genesis_source_limit" ]; then
+    genesis_source_limit="$genesis_account_limit"
+    if [ "$genesis_destinations" = "1" ]; then
+      genesis_source_limit=$((genesis_account_limit / 2))
+    fi
+  fi
+  if ! is_uint "$genesis_source_limit"; then
+    echo "NATIVE_SPAM_GENESIS_SOURCE_LIMIT must be an integer, got '$genesis_source_limit'"
+    exit 2
+  fi
+  if [ "$genesis_sources" -gt "$spam_sources" ]; then
+    genesis_sources="$spam_sources"
+  fi
+  if [ "$genesis_sources" -gt "$genesis_source_limit" ]; then
+    genesis_sources="$genesis_source_limit"
+  fi
+  if [ "$genesis_destinations" = "1" ] && [ "$((genesis_sources * 2))" -gt "$genesis_account_limit" ]; then
+    genesis_sources=$((genesis_account_limit / 2))
+  elif [ "$genesis_sources" -gt "$genesis_account_limit" ]; then
+    genesis_sources="$genesis_account_limit"
+  fi
+  effective_spam_sources="$genesis_sources"
+  topup_mode="genesis"
+  if [ "$post_genesis_topups" = "1" ]; then
+    effective_spam_sources="$spam_sources"
+    topup_mode="native"
+  fi
+  if [ "$post_genesis_topups" = "1" ] && [ "$genesis_sources" -gt 0 ] && [ "$spam_sources" -gt "$genesis_sources" ]; then
+    topups_per_source=$(((spam_sources - genesis_sources + genesis_sources - 1) / genesis_sources))
+  fi
+  if [ -n "${NATIVE_SPAM_GENESIS_SOURCE_BALANCE+x}" ]; then
+    source_balance="$NATIVE_SPAM_GENESIS_SOURCE_BALANCE"
+  elif [ -n "${NATIVE_SPAM_GENESIS_TOPUP_AMOUNT+x}" ]; then
+    source_balance="$NATIVE_SPAM_GENESIS_TOPUP_AMOUNT"
+  else
+    source_balance=$(awk -v amount="$topup_amount" -v fee="$topup_fee" -v topups="$topups_per_source" \
+      'BEGIN { printf "%.9f", amount * (topups + 1) + fee * topups }')
+  fi
+  if ! validate_decimal_amount "$source_balance"; then
+    echo "NATIVE_SPAM_GENESIS_SOURCE_BALANCE must be a decimal amount, got '$source_balance'"
     exit 2
   fi
 
+  echo NATIVE_SPAM_SOURCES=$spam_sources
+  echo NATIVE_SPAM_EFFECTIVE_SOURCES=$effective_spam_sources
+  echo NATIVE_SPAM_GENESIS_ACCOUNT_LIMIT=$genesis_account_limit
+  echo NATIVE_SPAM_GENESIS_DESTINATIONS=$genesis_destinations
+  echo NATIVE_SPAM_GENESIS_SOURCE_LIMIT=$genesis_source_limit
   echo NATIVE_SPAM_GENESIS_SOURCES=$genesis_sources
-  echo NATIVE_SPAM_GENESIS_TOPUP_AMOUNT=$topup_amount
+  echo NATIVE_SPAM_GENESIS_SOURCE_BALANCE=$source_balance
+  echo NATIVE_SPAM_GENESIS_DEST_BALANCE=$dest_balance
+  echo NATIVE_SPAM_POST_GENESIS_TOPUPS=$post_genesis_topups
+  echo NATIVE_SPAM_TOPUP_MODE=$topup_mode
   echo NATIVE_SPAM_WALLET_DIR=$wallet_dir
 
   mkdir -p "$work_dir" "$wallet_dir"
@@ -79,7 +167,15 @@ generate_basechain_state() {
       fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1
       test $? -eq 0 || { echo "Can't create native spam wallet $i"; exit 1; }
     fi
-    printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$topup_amount" >> "$basechain_script"
+    printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$source_balance" >> "$basechain_script"
+    if [ "$genesis_destinations" = "1" ]; then
+      base="$wallet_dir/dest-$i"
+      if [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
+        fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1
+        test $? -eq 0 || { echo "Can't create native spam destination wallet $i"; exit 1; }
+      fi
+      printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$dest_balance" >> "$basechain_script"
+    fi
   done
 
   {
@@ -97,8 +193,14 @@ generate_basechain_state() {
   } >> "$basechain_script"
 
   {
+    echo "NATIVE_SPAM_REQUESTED_SOURCES=$spam_sources"
+    echo "NATIVE_SPAM_SOURCES=$effective_spam_sources"
     echo "NATIVE_SPAM_GENESIS_SOURCES=$genesis_sources"
-    echo "NATIVE_SPAM_GENESIS_TOPUP_AMOUNT=$topup_amount"
+    echo "NATIVE_SPAM_GENESIS_SOURCE_BALANCE=$source_balance"
+    echo "NATIVE_SPAM_GENESIS_DESTINATIONS=$genesis_destinations"
+    echo "NATIVE_SPAM_GENESIS_DEST_BALANCE=$dest_balance"
+    echo "NATIVE_SPAM_POST_GENESIS_TOPUPS=$post_genesis_topups"
+    echo "NATIVE_SPAM_TOPUP_MODE=$topup_mode"
     echo "NATIVE_SPAM_WALLET_DIR=$wallet_dir"
   } > "$work_dir/genesis.env"
 
