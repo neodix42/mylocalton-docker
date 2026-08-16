@@ -32,6 +32,57 @@ validate_decimal_amount() {
   [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]]
 }
 
+genesis_log() {
+  printf '[genesis][%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+run_with_heartbeat() {
+  local label="$1"
+  shift
+  local heartbeat_seconds="${GENESIS_HEARTBEAT_SECONDS:-30}"
+  local started_at=$SECONDS
+  local command_pid
+  local heartbeat_pid
+  local status
+
+  if ! is_positive_uint "$heartbeat_seconds"; then
+    genesis_log "GENESIS_HEARTBEAT_SECONDS must be a positive integer, got '$heartbeat_seconds'"
+    return 2
+  fi
+
+  genesis_log "$label started: command=$* heartbeat=${heartbeat_seconds}s"
+  "$@" &
+  command_pid=$!
+
+  (
+    local next_heartbeat=$((SECONDS + heartbeat_seconds))
+    local elapsed
+    local process_snapshot
+
+    while kill -0 "$command_pid" 2>/dev/null; do
+      sleep 1
+      if kill -0 "$command_pid" 2>/dev/null && ((SECONDS >= next_heartbeat)); then
+        elapsed=$((SECONDS - started_at))
+        process_snapshot=$(ps -p "$command_pid" -o etime=,%cpu=,%mem=,rss=,stat=,comm= 2>/dev/null | xargs)
+        genesis_log "$label still running: elapsed=${elapsed}s pid=$command_pid process=[$process_snapshot]"
+        next_heartbeat=$((SECONDS + heartbeat_seconds))
+      fi
+    done
+  ) &
+  heartbeat_pid=$!
+
+  wait "$command_pid"
+  status=$?
+  wait "$heartbeat_pid" 2>/dev/null || true
+
+  if [ "$status" -eq 0 ]; then
+    genesis_log "$label completed: elapsed=$((SECONDS - started_at))s"
+  else
+    genesis_log "$label failed: exit_code=$status elapsed=$((SECONDS - started_at))s"
+  fi
+  return "$status"
+}
+
 generate_basechain_state() {
   local spam_run="${NATIVE_SPAM_RUN:-0}"
   local spam_sources="${NATIVE_LOAD_SOURCES:-${NATIVE_SPAM_SOURCES:-64}}"
@@ -50,6 +101,16 @@ generate_basechain_state() {
   local work_dir="${NATIVE_SPAM_WORK_DIR:-/var/ton-work/db/native-spam}"
   local wallet_dir="${NATIVE_SPAM_WALLET_DIR:-$work_dir/wallets}"
   local basechain_script="native-spam-basestate.fif"
+  local progress_every="${NATIVE_SPAM_GENESIS_PROGRESS_EVERY:-256}"
+  local wallet_started_at=$SECONDS
+  local total_wallets
+  local generated_wallets=0
+  local reused_wallets=0
+  local completed_sources
+  local processed_wallets
+  local elapsed
+  local rate
+  local eta
   local i
   local base
 
@@ -145,6 +206,14 @@ generate_basechain_state() {
     echo "NATIVE_SPAM_GENESIS_SOURCE_BALANCE must be a decimal amount, got '$source_balance'"
     exit 2
   fi
+  if ! is_positive_uint "$progress_every"; then
+    echo "NATIVE_SPAM_GENESIS_PROGRESS_EVERY must be a positive integer, got '$progress_every'"
+    exit 2
+  fi
+  if ! is_positive_uint "${GENESIS_HEARTBEAT_SECONDS:-30}"; then
+    echo "GENESIS_HEARTBEAT_SECONDS must be a positive integer, got '${GENESIS_HEARTBEAT_SECONDS:-30}'"
+    exit 2
+  fi
 
   echo NATIVE_SPAM_SOURCES=$spam_sources
   echo NATIVE_SPAM_EFFECTIVE_SOURCES=$effective_spam_sources
@@ -157,6 +226,13 @@ generate_basechain_state() {
   echo NATIVE_SPAM_POST_GENESIS_TOPUPS=$post_genesis_topups
   echo NATIVE_SPAM_TOPUP_MODE=$topup_mode
   echo NATIVE_SPAM_WALLET_DIR=$wallet_dir
+
+  total_wallets=$genesis_sources
+  if [ "$genesis_destinations" = "1" ]; then
+    total_wallets=$((genesis_sources * 2))
+  fi
+  genesis_log "Native basechain preparation started: sources=$genesis_sources destinations_per_source=$genesis_destinations total_wallets=$total_wallets"
+  genesis_log "Wallet key generation is sequential; progress will be logged every $progress_every source sets"
 
   mkdir -p "$work_dir" "$wallet_dir"
   {
@@ -174,19 +250,50 @@ generate_basechain_state() {
   for ((i = 0; i < genesis_sources; ++i)); do
     base="$wallet_dir/source-$i"
     if [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
-      fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1
-      test $? -eq 0 || { echo "Can't create native spam wallet $i"; exit 1; }
+      if ! fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1; then
+        genesis_log "Can't create native spam source wallet $i; last log lines follow"
+        tail -n 20 "$base.create.log" >&2
+        exit 1
+      fi
+      generated_wallets=$((generated_wallets + 1))
+    else
+      reused_wallets=$((reused_wallets + 1))
     fi
     printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$source_balance" >> "$basechain_script"
     if [ "$genesis_destinations" = "1" ]; then
       base="$wallet_dir/dest-$i"
       if [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
-        fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1
-        test $? -eq 0 || { echo "Can't create native spam destination wallet $i"; exit 1; }
+        if ! fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1; then
+          genesis_log "Can't create native spam destination wallet $i; last log lines follow"
+          tail -n 20 "$base.create.log" >&2
+          exit 1
+        fi
+        generated_wallets=$((generated_wallets + 1))
+      else
+        reused_wallets=$((reused_wallets + 1))
       fi
       printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$dest_balance" >> "$basechain_script"
     fi
+
+    completed_sources=$((i + 1))
+    if [ "$completed_sources" -eq 1 ] || [ "$completed_sources" -eq "$genesis_sources" ] || [ $((completed_sources % progress_every)) -eq 0 ]; then
+      elapsed=$((SECONDS - wallet_started_at))
+      processed_wallets=$completed_sources
+      if [ "$genesis_destinations" = "1" ]; then
+        processed_wallets=$((completed_sources * 2))
+      fi
+      if [ "$elapsed" -gt 0 ]; then
+        rate=$((processed_wallets / elapsed))
+        eta=$(((total_wallets - processed_wallets) * elapsed / processed_wallets))
+      else
+        rate=$processed_wallets
+        eta=0
+      fi
+      genesis_log "Native wallet progress: source_sets=$completed_sources/$genesis_sources wallets=$processed_wallets/$total_wallets created=$generated_wallets reused=$reused_wallets elapsed=${elapsed}s avg=${rate}/s eta=${eta}s"
+    fi
   done
+
+  genesis_log "Native wallet preparation completed: created=$generated_wallets reused=$reused_wallets elapsed=$((SECONDS - wallet_started_at))s"
 
   {
     echo
@@ -214,7 +321,8 @@ generate_basechain_state() {
     echo "NATIVE_SPAM_WALLET_DIR=$wallet_dir"
   } > "$work_dir/genesis.env"
 
-  create-state "$basechain_script"
+  genesis_log "Basechain Fift script ready: path=$(pwd)/$basechain_script lines=$(wc -l < "$basechain_script") bytes=$(wc -c < "$basechain_script")"
+  run_with_heartbeat "Basechain zero-state generation" create-state "$basechain_script"
   test $? -eq 0 || { echo "Can't generate basechain zero-state"; exit 1; }
 }
 
@@ -485,7 +593,8 @@ else
 
   generate_basechain_state
 
-  create-state gen-zerostate.fif
+  genesis_log "Native basechain state finished; starting network zero-state generation"
+  run_with_heartbeat "Network zero-state generation" create-state gen-zerostate.fif
   test $? -eq 0 || { echo "Can't generate zero-state"; exit 1; }
 
 
