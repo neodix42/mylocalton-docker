@@ -81,7 +81,6 @@ public class MyRestController {
   private static final List<String> START_OVER_ENV_LINES =
       List.of(
           "TON_BRANCH=latest",
-          "NEXT_BLOCK_GENERATION_DELAY=2",
           "HEALTHCHECK_INTERVAL=15s",
           "EXTERNAL_IP=",
           "VALIDATION_PERIOD=1200",
@@ -131,6 +130,10 @@ public class MyRestController {
           "SIMPLEX_SLOTS_PER_LEADER_WINDOW=4",
           "SIMPLEX_FIRST_BLOCK_TIMEOUT_MS=400",
           "SIMPLEX_MAX_LEADER_WINDOW_DESYNC=700",
+          "TON_SIMPLEX_MAX_TPS=0",
+          "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=5000",
+          "TON_NATIVE_COLLATOR_QUEUE_LIMIT=32768",
+          "TON_NATIVE_MEMPOOL_MAX_TTL=3600",
           "PROTO_VERSION=5",
           "VALIDATORS_MASTERCHAIN_NUM=1",
           "VALIDATORS_PER_SHARD=1",
@@ -181,7 +184,6 @@ public class MyRestController {
         "By default MyLocalTon is built based on the latest TON blockchain code base master branch.\n"
             + "You can set it to testnet in order to run MyLocalTon based on TON testnet code base.\n"
             + "You can set any other branch too, but check if this branch exists in the main repo ton-blockchain/ton.");
-    descriptions.put("NEXT_BLOCK_GENERATION_DELAY", "Delay between blocks generation (deprecated). ");
     descriptions.put("HEALTHCHECK_INTERVAL", "Healthcheck interval for service containers.");
     descriptions.put(
         "EXTERNAL_IP",
@@ -291,6 +293,18 @@ public class MyRestController {
     descriptions.put(
         "SIMPLEX_MAX_LEADER_WINDOW_DESYNC",
         "Simplex config max leader window desync.");
+    descriptions.put(
+        "TON_SIMPLEX_MAX_TPS",
+        "Saturation benchmark mode: produce Simplex candidates immediately without target-rate pacing.");
+    descriptions.put(
+        "TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS",
+        "Failure budget for one work-driven candidate; successful candidates are not paced by it.");
+    descriptions.put(
+        "TON_NATIVE_COLLATOR_QUEUE_LIMIT",
+        "Maximum native-transfer messages exposed to a single collation pass.");
+    descriptions.put(
+        "TON_NATIVE_MEMPOOL_MAX_TTL",
+        "Safety cap in seconds for native-transfer mempool retention.");
     descriptions.put("PROTO_VERSION", "TON protocol version.");
     descriptions.put(
         "VALIDATORS_MASTERCHAIN_NUM", "Maximum number of validators per masterchain.");

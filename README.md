@@ -104,7 +104,9 @@ Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested so
 docker compose --profile native-load-generator up --build native-load-generator
 ```
 
-The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only load keys from the dedicated `native-load-wallets` volume. It never runs inside the validator container and cannot read the validator database or validator keys. Account nonces are discovered from proof-checked canonical state by default. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, while `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. The laptop defaults are deliberately conservative. Metrics are printed as JSON once per configured report interval and distinguish offered, mempool-stored, rejected, and proof-checked masterchain-anchored transfers.
+The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only load keys from the dedicated `native-load-wallets` volume. It never runs inside the validator container and cannot read the validator database or validator keys. Account nonces are discovered from proof-checked canonical state by default. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, `NATIVE_LOAD_SUBMIT_BATCH_SIZE` amortizes liteserver round trips, and `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. `NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS` seeds the application congestion window from the measured admission RTT. Global and per-source canonical backlog limits pause new offers before nonce-ordered mempool work grows without bound. The proof-checked canonical block follower drives that backpressure and distinguishes pending duplicates from canonical too-old responses. The laptop defaults are deliberately conservative. Metrics are printed as JSON once per configured report interval and distinguish offered, batched wire queries, mempool admission, canonical-chain inclusion, repair work, backpressure, and proof-checked masterchain-anchored source nonces.
+
+`TON_SIMPLEX_MAX_TPS=1` is an explicit saturation-only mode used by the physical profiles. In that mode Simplex produces the next candidate immediately; `SIMPLEX_TARGET_RATE_MS` is not a block-production interval. `TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS` is only the failure/cancellation budget for one work-driven candidate, allowing a full block to collate without restoring successful-block pacing. `TON_NATIVE_COLLATOR_QUEUE_LIMIT` controls how many native messages are made available to one collation pass. `TON_NATIVE_MEMPOOL_MAX_TTL` is a safety cap, while each native transfer's `valid_until` remains the effective expiry. Keep `NATIVE_LOAD_VALID_FOR_SECONDS` longer than ramp, warm-up, measurement, and drain combined.
 
 For a 48-vCPU/256-GB same-host saturation run, use `.env.physical` explicitly. It leaves optional profiles disabled so an ordinary `up` cannot accidentally start load. The configured run has a 60-second ramp, 60-second warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile (42 minutes of configured phases, plus initial nonce discovery):
 
@@ -114,9 +116,86 @@ docker compose --env-file .env.physical --profile session-stats up -d session-st
 docker compose --env-file .env.physical --profile native-load-generator up --build native-load-generator
 ```
 
-The physical profile binds management, liteserver, UI, and file endpoints to `127.0.0.1`; change only the endpoint needed by a remote firewalled load host. Set `TON_DB_VAL0_HOST_DIR` to an existing absolute directory on the dedicated NVMe before genesis creation. Leaving it empty keeps the portable `ton-db-val0` named volume. When using a host bind with session-stats, set `TON_WORK_HOST_DIR` to the same path and clear `TON_WORK_DOCKER_VOLUME`. Source count, native wallet volume, shard layout, consensus timing, and block limits are genesis inputs: changing them for an existing network does not retrofit its zero state, so recreate the test network volumes before comparing a new profile.
+The same-host baseline allocates 28 vCPU to genesis, 16 vCPU/signers to the
+generator, 2 vCPU to Session Stats, and leaves 2 vCPU for the host. Its 200k TPS
+target is requested offered load, not a claim that 200k was produced. Use the
+reported maximum and sustained `sign_tps`, `offered_tps`, and canonical-chain
+TPS to prove which component reached its ceiling. Sustained 200k generation may
+require signed bundles/multisend or load generators on separate hosts.
 
-Build and publish the matching TON image before rebuilding this service; the entrypoint rejects an older image that lacks the saturation-generator CLI. For final numbers, pin an immutable image digest and prefer a server-CPU build (`PORTABLE=0`, `TON_ARCH=native`) over the portable multi-architecture image.
+For a complete, reproducible run, use the benchmark wrapper instead of starting
+the optional services separately:
+
+```bash
+sudo ./run-native-benchmark.sh .env.physical
+```
+
+It writes `benchmark-results/<UTC timestamp>/benchmark-summary.json`, the full
+generator log, generator peaks/final JSON, an independent Session Stats canonical
+summary, and continuous host/container samples.
+CPU is summarized as Docker percent, equivalent cores, and percentage of total
+host capacity; RAM includes average and maximum use. The wrapper returns the
+generator's exit code, or `3` when its canonical completion invariants fail, so
+an unsettled drain or incomplete canonical run remains a failed benchmark.
+Treat `canonical_chain_measure_peak_1s_tps` and
+`canonical_chain_measure_avg_tps` as the generator's proof-checked chain
+throughput fields. Session Stats stores validator samples in minute buckets, so
+the wrapper uses it to independently corroborate the canonical transfer total
+and maximum transfers per block, not exact run-boundary or one-second TPS.
+`mempool_accept_tps` is admission only, while
+`canonical_follower_discovery_tps` is observer catch-up speed and is deliberately
+not reported as production TPS.
+If `canonical_follower_lag_blocks` is nonzero at the end, the proof observer did
+not catch the anchored shard tip and the run is invalid. Canonical backpressure
+by itself is not classified as observer-limited: it can be the expected signal
+that offers outran chain inclusion. When it engages, compare follower lag and
+block discovery rate with canonical block rate and backlog before deciding
+whether the observer or the chain set the ceiling.
+
+The physical profile exposes only the Session Stats UI on
+`2.59.170.242:18000`, while management, the other optional UIs, liteserver,
+and the file endpoint remain bound to `127.0.0.1`. Restrict port `18000` with
+the host firewall, or change `SESSION_STATS_BIND_IP` back to `127.0.0.1` when
+public access is no longer needed. Set
+`TON_DB_VAL0_HOST_DIR` to an existing absolute
+directory on the dedicated NVMe before genesis creation. Leaving it empty
+keeps the portable `ton-db-val0` named volume. When using a host bind with
+session-stats, set `TON_WORK_HOST_DIR` to the same path and clear
+`TON_WORK_DOCKER_VOLUME`. Source count, native wallet volume, shard layout,
+and block limits are genesis inputs: changing them for an existing network
+does not retrofit its zero state, so recreate the test network volumes before
+comparing a new profile. Max-TPS mode, the native collation queue limit, and
+native mempool TTL are validator runtime settings, but all benchmark
+participants must use identical values.
+
+Build and publish the matching TON image before rebuilding this service; the
+entrypoint rejects an older image that lacks the saturation-generator CLI. For
+final numbers, pin an immutable image digest and use a server-CPU image instead
+of the portable multi-architecture image. From the TON source tree on the
+benchmark host, for example:
+
+```bash
+docker build \
+  --build-arg PORTABLE=0 \
+  --build-arg TON_ARCH=native \
+  --build-arg NINJA_JOBS=40 \
+  -t ghcr.io/corton-nommander/ton:max-tps-native .
+```
+
+Then use the same tag for the MyLocalTon-derived genesis and generator images:
+
+```bash
+sudo env TON_BRANCH=max-tps-native ./run-native-benchmark.sh .env.physical
+```
+
+`assembly/native/build-ubuntu-shared.sh -t` remains useful for a direct host
+build/test, but the container benchmark consumes the Docker image above.
+
+Native batch v4 signatures are bound to the network zero-state root and are
+required at global version 14. Use the same updated TON image on every
+validator and load-generator container, and create a fresh genesis when moving
+an older test network to this protocol; mixing old and new binaries is not a
+valid benchmark or deployment.
 
 ### Containers' description and startup parameters
 
@@ -133,7 +212,6 @@ Adjust parameters in `.env` file or edit `docker-compose.yaml` for relevant chan
 <td>genesis</td>
 <td>
 <ul><li><b>EXTERNAL_IP</b> - used to generate <b>external.global.config.json</b> that allows remote users to connect to lite-server via  public IP. Default <b>empty</b>, i.e. no <b>external.global.config.json</b> will be generated;</li> 
-<li><b>NEXT_BLOCK_GENERATION_DELAY</b> - (deprecated) used to set blocks generation rate per second. Default value 2 (seconds), that means 1  block in 2 seconds. Can also be set to less than a second, e.g. 0.5; </li>
 <li><b>VALIDATION_PERIOD</b> - set validation period in seconds, default <b>1200 (20 min)</b>; </li>
 <li><b>MASTERCHAIN_ONLY</b> - set to <b>true</b> if you want to have only masterchain, i.e. without workchains, default <b>false</b>; </li>
 <li><b>DHT_PORT</b> - set port (udp) for dht server, default port <b>40004</b>, optional.</li>

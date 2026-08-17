@@ -584,10 +584,6 @@ else
     sed -i "s/MASTERCHAIN_ONLY//g" gen-zerostate.fif
   fi
 
-  NEXT_BLOCK_GENERATION_DELAY=${NEXT_BLOCK_GENERATION_DELAY:-"2"}
-  echo NEXT_BLOCK_GENERATION_DELAY=$NEXT_BLOCK_GENERATION_DELAY
-  TMP_VAR=$(echo "($NEXT_BLOCK_GENERATION_DELAY*1000)/1" | bc)
-  sed -i "s/NEXT_BLOCK_GENERATION_DELAY/$TMP_VAR/g" gen-zerostate.fif
   # end setup genesis
   # ---------------------------------------------------------
 

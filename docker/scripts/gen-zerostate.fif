@@ -256,8 +256,10 @@ GAS_PRICE_MC sg* 1 *M 10 *M 10000 10 *M GR$0.1 GR$1.0 1000 10000000 config.mc_ga
 10000000 10000 sg* CELL_PRICE_MC sg* 3/2 sg*/ 1/3 sg*/ 1/3 sg*/ config.mc_fwd_prices!
 // mc-cc-lifetime sh-cc-lifetime sh-val-lifetime sh-val-num mc-shuffle
 250 250 5500 VALIDATORS_PER_SHARD true config.catchain_params!
-// round-candidates next-cand-delay-ms consensus-timeout-ms fast-attempts attempt-duration cc-max-deps max-block-size max-collated-size new-cc-ids
-<b x{d9} s, 1 8 u, 3 8 u, NEXT_BLOCK_GENERATION_DELAY 32 u, 16000 32 u, 3 32 u, 8 32 u, 4 32 u, 10 *Mi 32 u, 10 *Mi 32 u, PROTO_VERSION 16 u, 10000 32 u, b> 29 config!
+// round-candidates legacy-next-cand-delay-ms consensus-timeout-ms fast-attempts attempt-duration cc-max-deps max-block-size max-collated-size new-cc-ids
+// The legacy candidate delay is not a block-production interval under Simplex.
+// Keep the schema field at zero so zero-state generation has no pacing knob.
+<b x{d9} s, 1 8 u, 3 8 u, 0 32 u, 16000 32 u, 3 32 u, 8 32 u, 4 32 u, 10 *Mi 32 u, 10 *Mi 32 u, PROTO_VERSION 16 u, 10000 32 u, b> 29 config!
 
 BLOCK_SIZE_UNDERLOAD_KB BLOCK_LIMIT_MULTIPLIER * *Ki  BLOCK_SIZE_SOFT_KB BLOCK_LIMIT_MULTIPLIER * *Ki BLOCK_SIZE_HARD_KB BLOCK_LIMIT_MULTIPLIER * *Ki triple  // [ underload soft hard ] : block bytes limit
 BLOCK_GAS_LIMIT_UNDERLOAD BLOCK_LIMIT_MULTIPLIER * BLOCK_GAS_LIMIT_SOFT BLOCK_LIMIT_MULTIPLIER * BLOCK_GAS_LIMIT_HARD BLOCK_LIMIT_MULTIPLIER * triple  // gas limits

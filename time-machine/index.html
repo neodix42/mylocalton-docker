@@ -305,11 +305,6 @@
                             </select>
                         </div>
                         <div class="config-item">
-                            <label for="next-block-generation-delay">NEXT_BLOCK_GENERATION_DELAY</label>
-                            <input id="next-block-generation-delay" name="NEXT_BLOCK_GENERATION_DELAY" type="number"
-                                   value="2">
-                        </div>
-                        <div class="config-item">
                             <label for="simplex-target-rate-ms">SIMPLEX_TARGET_RATE_MS</label>
                             <input id="simplex-target-rate-ms"
                                    name="SIMPLEX_TARGET_RATE_MS" type="number" value="300">
@@ -328,6 +323,28 @@
                             <label for="simplex-max-leader-window-desync">SIMPLEX_MAX_LEADER_WINDOW_DESYNC</label>
                             <input id="simplex-max-leader-window-desync"
                                    name="SIMPLEX_MAX_LEADER_WINDOW_DESYNC" type="number" value="700">
+                        </div>
+                        <div class="config-item">
+                            <label for="ton-simplex-max-tps">TON_SIMPLEX_MAX_TPS</label>
+                            <select id="ton-simplex-max-tps" name="TON_SIMPLEX_MAX_TPS">
+                                <option value="0">false</option>
+                                <option value="1">true</option>
+                            </select>
+                        </div>
+                        <div class="config-item">
+                            <label for="ton-simplex-max-tps-candidate-timeout-ms">TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS</label>
+                            <input id="ton-simplex-max-tps-candidate-timeout-ms"
+                                   name="TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS" type="number" value="5000">
+                        </div>
+                        <div class="config-item">
+                            <label for="ton-native-collator-queue-limit">TON_NATIVE_COLLATOR_QUEUE_LIMIT</label>
+                            <input id="ton-native-collator-queue-limit"
+                                   name="TON_NATIVE_COLLATOR_QUEUE_LIMIT" type="number" value="32768">
+                        </div>
+                        <div class="config-item">
+                            <label for="ton-native-mempool-max-ttl">TON_NATIVE_MEMPOOL_MAX_TTL</label>
+                            <input id="ton-native-mempool-max-ttl"
+                                   name="TON_NATIVE_MEMPOOL_MAX_TTL" type="number" value="3600">
                         </div>
                     </div>
                 </div>

@@ -3,7 +3,7 @@ ARG TON_IMAGE=ghcr.io/corton-nommander/ton
 FROM ${TON_IMAGE}:${TON_BRANCH}
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt -y update && apt install --no-install-recommends -y python3 cron bc xxd
+RUN apt -y update && apt install --no-install-recommends -y python3 cron xxd
 
 RUN mkdir -p /scripts/web  \
     /usr/share/data \

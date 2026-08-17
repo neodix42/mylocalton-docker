@@ -37,7 +37,6 @@ services:
     environment:
       - GENESIS=true
       - NAME=genesis
-      - NEXT_BLOCK_GENERATION_DELAY # default 2 seconds, adjust health-check interval (deprecated)
       - EXTERNAL_IP # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
       - VALIDATION_PERIOD # 24h, default 20min
       - MASTERCHAIN_ONLY   # default false
@@ -86,6 +85,10 @@ services:
       - SIMPLEX_SLOTS_PER_LEADER_WINDOW
       - SIMPLEX_FIRST_BLOCK_TIMEOUT_MS
       - SIMPLEX_MAX_LEADER_WINDOW_DESYNC
+      # Explicit benchmark mode. Simplex target_rate remains a failure/skip
+      # timeout and does not pace candidate production when this is enabled.
+      - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
+      - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
       - PROTO_VERSION
       - VALIDATORS_MASTERCHAIN_NUM
       - VALIDATORS_PER_SHARD
@@ -107,6 +110,8 @@ services:
       - NATIVE_SPAM_RUN=0
       - NATIVE_LOAD_SOURCES
       - TON_NATIVE_EXECUTOR_THREADS
+      - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
+      - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
       - NATIVE_SPAM_MODE
       - NATIVE_SPAM_SOURCES
       - NATIVE_SPAM_DURATION_SECONDS
@@ -183,6 +188,9 @@ services:
       - NATIVE_LOAD_CONNECTIONS
       - NATIVE_LOAD_SIGNERS
       - NATIVE_LOAD_INFLIGHT
+      - NATIVE_LOAD_SUBMIT_BATCH_SIZE
+      - NATIVE_LOAD_MAX_CANONICAL_BACKLOG
+      - NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG
       - NATIVE_LOAD_DURATION_SECONDS
       - NATIVE_LOAD_AMOUNT
       - NATIVE_LOAD_FEE
@@ -199,9 +207,13 @@ services:
       - NATIVE_LOAD_RETRY_BACKOFF_MS
       - NATIVE_LOAD_AUTO_NONCE
       - NATIVE_LOAD_ADAPTIVE_INFLIGHT
+      - NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS
       - NATIVE_LOAD_SOURCE_OFFSET
       - NATIVE_LOAD_FINALITY_POLL_SECONDS
       - NATIVE_LOAD_FINALITY_SAMPLE_SOURCES
+      - NATIVE_LOAD_CANONICAL_POLL_SECONDS
+      - NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS
+      - NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER
     depends_on:
       genesis:
         condition: service_healthy
@@ -210,6 +222,7 @@ services:
       resources:
         limits:
           cpus: '${NATIVE_LOAD_CPU_QUOTE:-4}'
+          memory: '${NATIVE_LOAD_MEMORY_LIMIT:-2g}'
     networks:
       main:
         ipv4_address: 172.28.1.29
@@ -439,7 +452,7 @@ services:
     profiles: [session-stats]
     image: ${SESSION_STATS_IMAGE:-ghcr.io/neodix42/ton-session-stats:latest}
     ports:
-      - "${UI_BIND_IP:-0.0.0.0}:${SESSION_STATS_HTTP_PORT:-18000}:18000"
+      - "${SESSION_STATS_BIND_IP:-0.0.0.0}:${SESSION_STATS_HTTP_PORT:-18000}:18000"
     volumes:
       - ${HOST_FS_ROOT:-/}:/hostfs:ro
       - ${DOCKER_VOLUMES_HOST_DIR:-/var/lib/docker/volumes}:/docker-volumes:ro
@@ -537,6 +550,10 @@ services:
       - GENESIS_IP=172.28.1.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
+      - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
+      - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
+      - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL:-15s}
@@ -570,6 +587,10 @@ services:
       - GENESIS_IP=172.28.1.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
+      - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
+      - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
+      - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     depends_on:
       - genesis
     deploy:
@@ -593,6 +614,10 @@ services:
       - GENESIS_IP=172.28.1.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
+      - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
+      - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
+      - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL:-15s}
@@ -621,6 +646,10 @@ services:
       - GENESIS_IP=172.28.1.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
+      - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
+      - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
+      - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL:-15s}
@@ -649,6 +678,10 @@ services:
       - GENESIS_IP=172.28.1.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
+      - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
+      - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
+      - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
       interval: ${HEALTHCHECK_INTERVAL:-15s}
