@@ -14,6 +14,7 @@ Defaults:
 
 Run this script itself with sudo when Docker requires root access. Optional:
   BENCHMARK_HOST_SAMPLE_SECONDS=1
+  BENCHMARK_RECREATE_GENESIS=1   # otherwise reuse an already-healthy genesis
 EOF
 }
 
@@ -70,6 +71,8 @@ generator_log_file=$result_dir/native-load-generator.log
 generator_summary_file=$result_dir/generator-summary.json
 resource_summary_file=$result_dir/resource-summary.json
 session_stats_summary_file=$result_dir/session-stats-summary.json
+validator_session_stats_file=$result_dir/validator-session-stats.jsonl
+validator_pipeline_summary_file=$result_dir/validator-pipeline-summary.json
 runtime_file=$result_dir/container-runtime.json
 metadata_file=$result_dir/run-metadata.json
 summary_file=$result_dir/benchmark-summary.json
@@ -153,11 +156,44 @@ collect_container_stats() {
   done
 }
 
-echo "Starting genesis and session-stats with $env_file"
-"${compose[@]}" --profile session-stats up -d --build genesis session-stats
+genesis_health=$(docker inspect -f \
+  '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+  genesis 2>/dev/null || true)
+if [[ $genesis_health == "true healthy" && ${BENCHMARK_RECREATE_GENESIS:-0} != 1 ]]; then
+  desired_genesis_hash=$("${compose[@]}" config --hash genesis | awk '$1 == "genesis" {print $2}')
+  running_genesis_hash=$(docker inspect -f \
+    '{{index .Config.Labels "com.docker.compose.config-hash"}}' genesis 2>/dev/null || true)
+  desired_genesis_image=$("${compose[@]}" config --images genesis | tail -n 1)
+  desired_genesis_image_id=$(docker image inspect -f '{{.Id}}' "$desired_genesis_image" 2>/dev/null || true)
+  running_genesis_image_id=$(docker inspect -f '{{.Image}}' genesis 2>/dev/null || true)
+  if [[ -z $desired_genesis_hash || $running_genesis_hash != "$desired_genesis_hash" ||
+        -z $desired_genesis_image_id || $running_genesis_image_id != "$desired_genesis_image_id" ]]; then
+    echo "healthy genesis does not match $env_file or the current local image" >&2
+    echo "recreate it explicitly, or rerun with BENCHMARK_RECREATE_GENESIS=1" >&2
+    exit 2
+  fi
+  echo "Reusing the matching, already-healthy genesis container; starting session-stats only"
+  "${compose[@]}" --profile session-stats up -d --build --no-deps session-stats
+else
+  echo "Starting genesis and session-stats with $env_file"
+  "${compose[@]}" --profile session-stats up -d --build genesis session-stats
+fi
 
-echo "Building and starting a fresh native-load-generator container"
-"${compose[@]}" --profile native-load-generator up -d --build --force-recreate --no-deps "$container_name"
+echo "Building the native-load-generator image before opening the benchmark window"
+"${compose[@]}" --profile native-load-generator build "$container_name"
+
+# The validator's session-stats log contains one structured record per
+# collation and validation query. Remember the current end only after the image
+# build, so pull/compile time cannot contaminate the benchmark distributions.
+validator_session_stats_start_line=$(docker exec genesis sh -c \
+  'if [ -f /var/ton-work/db/log.session-stats ]; then wc -l < /var/ton-work/db/log.session-stats; else echo 0; fi' \
+  2>/dev/null || echo 0)
+if ! [[ $validator_session_stats_start_line =~ ^[0-9]+$ ]]; then
+  validator_session_stats_start_line=0
+fi
+
+echo "Starting a fresh native-load-generator container"
+"${compose[@]}" --profile native-load-generator up -d --force-recreate --no-deps "$container_name"
 
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 started_epoch=$(date +%s)
@@ -187,6 +223,140 @@ finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 finished_epoch=$(date +%s)
 stop_collectors
 docker logs "$container_name" >"$generator_log_file" 2>&1 || true
+
+generator_measure_start=$(jq -Rs \
+  '[split("\n")[] | fromjson? | select(.schema == "native-load-v2" and .final == true)] |
+   (last.measure_start_unix_s // null)' "$generator_log_file")
+generator_measure_end=$(jq -Rs \
+  '[split("\n")[] | fromjson? | select(.schema == "native-load-v2" and .final == true)] |
+   (last.measure_end_unix_s // null)' "$generator_log_file")
+
+validator_session_stats_first_line=$((validator_session_stats_start_line + 1))
+if ! docker exec genesis sh -c \
+  'file=/var/ton-work/db/log.session-stats; first=$1; old=$2
+   if [ ! -f "$file" ]; then exit 0; fi
+   current=$(wc -l < "$file")
+   if [ "$current" -lt "$old" ]; then first=1; fi
+   tail -n "+$first" "$file"' sh "$validator_session_stats_first_line" \
+  "$validator_session_stats_start_line" >"$validator_session_stats_file" 2>/dev/null; then
+  : >"$validator_session_stats_file"
+fi
+
+# Keep the raw JSONL for detailed inspection and publish robust distributions
+# for the fields needed to classify the limiting stage.  The file is parsed as
+# text so one partial final line cannot invalidate an otherwise complete run.
+jq -Rsc \
+  --argjson measure_start "$generator_measure_start" \
+  --argjson measure_end "$generator_measure_end" '
+  def numeric:
+    if type == "number" then .
+    elif type == "string" then (tonumber? // null)
+    else null end;
+  def distribution:
+    map(numeric) | map(select(. != null)) | sort as $v |
+    if ($v | length) == 0 then
+      {samples:0,avg:null,p50:null,p95:null,p99:null,max:null}
+    else
+      ($v | length) as $n |
+      {samples:$n,
+       avg:($v | add / $n),
+       p50:$v[((($n - 1) * 0.50) | floor)],
+       p95:$v[((($n - 1) * 0.95) | floor)],
+       p99:$v[((($n - 1) * 0.99) | floor)],
+       max:$v[-1]}
+    end;
+  def stage_distribution($rows; $name):
+    [$rows[] |
+      ((.work_time_real_stats? // "") |
+       (capture("(?:^| )" + $name + "=(?<value>[-+0-9.eE]+)")? | .value) |
+       tonumber?) |
+      select(. != null)] |
+    distribution;
+  def collated_summary($rows):
+    ($rows | map(.block_stats.transactions? // 0) | add // 0) as $transfers |
+    ($rows | map(.bytes? // 0) | add // 0) as $block_bytes |
+    ($rows | map(.collated_data_bytes? // 0) | add // 0) as $collated_bytes |
+    ($rows | map(.block_limits.bytes? // 0) | add // 0) as $estimated_bytes |
+    {
+      blocks:($rows | length),
+      transfers:$transfers,
+      avg_transfers_per_block:(if ($rows | length) > 0 then $transfers / ($rows | length) else null end),
+      max_transfers_per_block:($rows | map(.block_stats.transactions? // 0) | max // null),
+      total_actual_block_bytes:$block_bytes,
+      total_collated_data_bytes:$collated_bytes,
+      total_estimated_block_bytes:$estimated_bytes,
+      actual_block_bytes_per_transfer:(if $transfers > 0 then $block_bytes / $transfers else null end),
+      collated_data_bytes_per_transfer:(if $transfers > 0 then $collated_bytes / $transfers else null end),
+      estimated_block_bytes_per_transfer:(if $transfers > 0 then $estimated_bytes / $transfers else null end),
+      actual_block_bytes:($rows | map(.bytes?) | distribution),
+      collated_data_bytes:($rows | map(.collated_data_bytes?) | distribution),
+      estimated_block_bytes:($rows | map(.block_limits.bytes?) | distribution),
+      total_time_s:($rows | map(.total_time?) | distribution),
+      work_time_s:($rows | map(.work_time?) | distribution),
+      cpu_work_time_s:($rows | map(.cpu_work_time?) | distribution),
+      wait_externals_time_s:($rows | map(.wait_externals_time?) | distribution),
+      stages_real_s:{
+        preinit:stage_distribution($rows; "preinit"),
+        native_prepare:stage_distribution($rows; "native_prepare"),
+        native_execute:stage_distribution($rows; "native_execute"),
+        native_commit:stage_distribution($rows; "native_commit"),
+        native_batch_serialize:stage_distribution($rows; "native_batch_serialize"),
+        final_storage_stat:stage_distribution($rows; "final_storage_stat"),
+        combine_account_transactions:stage_distribution($rows; "combine_account_transactions"),
+        create_shard_state:stage_distribution($rows; "create_shard_state"),
+        create_block:stage_distribution($rows; "create_block"),
+        create_collated_data:stage_distribution($rows; "create_collated_data"),
+        create_block_candidate:stage_distribution($rows; "create_block_candidate")
+      }
+    };
+  def validated_summary($rows):
+    {
+      blocks:($rows | length),
+      accepted:($rows | map(select(.valid? == true)) | length),
+      rejected:($rows | map(select(.valid? == false)) | length),
+      total_time_s:($rows | map(.total_time?) | distribution),
+      work_time_s:($rows | map(.work_time?) | distribution),
+      actual_time_s:($rows | map(.actual_time?) | distribution),
+      cpu_work_time_s:($rows | map(.cpu_work_time?) | distribution),
+      actual_block_bytes:($rows | map(.bytes?) | distribution),
+      collated_data_bytes:($rows | map(.collated_data_bytes?) | distribution),
+      stages_real_s:{
+        unpack_block_candidate:stage_distribution($rows; "unpack_block_candidate"),
+        process_mc_state:stage_distribution($rows; "process_mc_state"),
+        native_batch_replay:stage_distribution($rows; "native_batch_replay"),
+        unpack_state:stage_distribution($rows; "unpack_state"),
+        validate_block_tlb:stage_distribution($rows; "validate_block_tlb"),
+        unpack_block_data:stage_distribution($rows; "unpack_block_data"),
+        precheck_account_updates:stage_distribution($rows; "precheck_account_updates"),
+        precheck_account_transactions:stage_distribution($rows; "precheck_account_transactions"),
+        check_new_state:stage_distribution($rows; "check_new_state")
+      }
+    };
+  [split("\n")[] | fromjson?] as $records |
+  [$records[] | select(.block_stats? != null)] as $collated |
+  [$records[] | select(.validated_at? != null)] as $validated |
+  [$collated[] | select((.block_id.workchain? // .block_id.workchain_id? // -1) == 0)] as $wc_collated |
+  [$validated[] | select((.block_id.workchain? // .block_id.workchain_id? // -1) == 0)] as $wc_validated |
+  [$wc_collated[] |
+    select($measure_start != null and $measure_end != null and
+           (.collated_at? // -1) >= $measure_start and (.collated_at? // -1) < $measure_end)] as $measured_collated |
+  [$wc_validated[] |
+    select($measure_start != null and $measure_end != null and
+           (.validated_at? // -1) >= $measure_start and (.validated_at? // -1) < $measure_end)] as $measured_validated |
+  {
+    semantics:"validator candidate session records captured directly from genesis; basechain transaction counts are native transfers for this isolated single-validator benchmark; proof-checked generator metrics remain authoritative for canonical selection",
+    raw_records:($records | length),
+    measured_window_unix_s:{start:$measure_start,end:$measure_end},
+    all_run:{
+      collated_basechain:collated_summary($wc_collated),
+      validated_basechain:validated_summary($wc_validated)
+    },
+    measured:{
+      collated_basechain:collated_summary($measured_collated),
+      validated_basechain:validated_summary($measured_validated)
+    }
+  }
+' "$validator_session_stats_file" >"$validator_pipeline_summary_file"
 
 # Let Session Stats import the tail of the validator log before querying the
 # independent canonical summary.  Its importer deliberately ignores the most
@@ -274,6 +444,7 @@ jq -Rs '
     max_wire_tps: ($records | map(.wire_tps // 0) | max),
     max_wire_query_tps: ($records | map(.wire_query_tps // 0) | max),
     max_wire_batch_size: ($records | map(.wire_batch_max_size // 0) | max),
+    max_wire_batch_source_run: ($records | map(.wire_batch_source_run_max_size // 0) | max),
     max_mempool_accept_tps: ($records | map(.mempool_accept_tps // 0) | max),
     max_canonical_tps: ($records | map(
       .canonical_chain_measure_peak_1s_tps // .canonical_tps // .measured_canonical_tps // 0
@@ -295,23 +466,38 @@ jq -Rs '
     canonical_backpressure_engaged: (($final.canonical_backpressure_s // 0) > 0),
     canonical_observer_invalid_or_lagging_at_end: (
       (($final.canonical_follower_errors // 0) > 0) or
+      (($final.canonical_follower_retry_exhausted // 0) > 0) or
       (($final.canonical_follower_reorgs // 0) > 0) or
-      (($final.canonical_follower_lag_blocks // 0) > 0)
+      (($final.canonical_follower_lag_blocks // 0) > 0) or
+      ($final != null and
+       ($final | has("canonical_follower_final_catchup_complete")) and
+       $final.canonical_follower_final_catchup_complete != true)
     ),
+    canonical_follower_transient_timeouts: ($final.canonical_follower_transient_timeouts // 0),
+    canonical_follower_transient_cancellations: ($final.canonical_follower_transient_cancellations // 0),
+    canonical_follower_transient_retries: ($final.canonical_follower_transient_retries // 0),
+    canonical_follower_transient_recoveries: ($final.canonical_follower_transient_recoveries // 0),
+    canonical_follower_reconnects: ($final.canonical_follower_reconnects // 0),
+    canonical_follower_fatal_errors: ($final.canonical_follower_fatal_errors // 0),
+    canonical_follower_retry_exhausted: ($final.canonical_follower_retry_exhausted // 0),
     measured_offered_avg_tps: ($final.steady_offered_avg_tps // null),
     measured_admission_avg_tps: ($final.steady_mempool_accept_avg_tps // null),
     measured_canonical_chain_avg_tps: ($final.canonical_chain_measure_avg_tps // null),
     measured_offer_cohort_observed_avg_tps: (
       $final.canonical_measured_offer_cohort_observed_avg_tps // null
     ),
-    generator_benchmark_result_valid: ($final.benchmark_result_valid // null),
+    generator_benchmark_result_valid: (
+      if $final == null then null else $final.benchmark_result_valid end
+    ),
     valid_canonical_run: (
       $final != null and
-      (($final.benchmark_result_valid // true) == true) and
+      ($final.benchmark_result_valid == true) and
       ($final.canonical_result_valid == true) and
       ($final.interrupted == false) and
       ($final.drain_timed_out == false) and
       (($final.canonical_follower_errors // 0) == 0) and
+      (($final.canonical_follower_retry_exhausted // 0) == 0) and
+      (($final.canonical_follower_final_catchup_complete // false) == true) and
       (($final.canonical_follower_reorgs // 0) == 0) and
       (($final.canonical_follower_lag_blocks // -1) == 0) and
       (($final.canonical_hash_conflicts // 0) == 0) and
@@ -440,7 +626,9 @@ jq -n \
   --slurpfile generator "$generator_summary_file" \
   --slurpfile resources "$resource_summary_file" \
   --slurpfile session_stats "$session_stats_summary_file" \
-  '{run:$run[0],generator:$generator[0],session_stats:$session_stats[0],resources:$resources[0]}' \
+  --slurpfile validator_pipeline "$validator_pipeline_summary_file" \
+  '{run:$run[0],generator:$generator[0],session_stats:$session_stats[0],
+    validator_pipeline:$validator_pipeline[0],resources:$resources[0]}' \
   >"$summary_file"
 
 echo "Benchmark summary: $summary_file"

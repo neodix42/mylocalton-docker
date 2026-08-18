@@ -8,6 +8,7 @@ connections=${NATIVE_LOAD_CONNECTIONS:-4}
 signers=${NATIVE_LOAD_SIGNERS:-4}
 inflight=${NATIVE_LOAD_INFLIGHT:-8192}
 submit_batch_size=${NATIVE_LOAD_SUBMIT_BATCH_SIZE:-1}
+submit_source_run_size=${NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE:-1}
 max_canonical_backlog=${NATIVE_LOAD_MAX_CANONICAL_BACKLOG:-262144}
 max_source_canonical_backlog=${NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG:-64}
 duration=${NATIVE_LOAD_DURATION_SECONDS:-600}
@@ -31,12 +32,18 @@ source_offset=${NATIVE_LOAD_SOURCE_OFFSET:-0}
 finality_poll_seconds=${NATIVE_LOAD_FINALITY_POLL_SECONDS:-10}
 finality_sample_sources=${NATIVE_LOAD_FINALITY_SAMPLE_SOURCES:-256}
 canonical_poll_seconds=${NATIVE_LOAD_CANONICAL_POLL_SECONDS:-0.25}
+canonical_query_timeout=${NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS:-30}
+canonical_retry_limit=${NATIVE_LOAD_CANONICAL_RETRY_LIMIT:-5}
+canonical_retry_backoff_seconds=${NATIVE_LOAD_CANONICAL_RETRY_BACKOFF_SECONDS:-0.25}
+canonical_retry_max_backoff_seconds=${NATIVE_LOAD_CANONICAL_RETRY_MAX_BACKOFF_SECONDS:-5}
 repair_cooldown_seconds=${NATIVE_LOAD_REPAIR_COOLDOWN_SECONDS:-10}
 canonical_block_follower=${NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER:-1}
 
 generator_help=$(/usr/local/bin/native-load-generator --help 2>&1 || true)
 if ! printf '%s\n' "$generator_help" | grep -q -- '--submit-batch-size' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--submit-source-run-size' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-poll-seconds' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-query-timeout' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--adaptive-initial-rtt-seconds'; then
   echo "TON image does not contain the batched, canonical-aware native-load-generator; rebuild/pull the updated TON image first" >&2
   exit 2
@@ -56,6 +63,7 @@ set -- /usr/local/bin/native-load-generator \
   --signers "$signers" \
   --inflight "$inflight" \
   --submit-batch-size "$submit_batch_size" \
+  --submit-source-run-size "$submit_source_run_size" \
   --max-canonical-backlog "$max_canonical_backlog" \
   --max-source-canonical-backlog "$max_source_canonical_backlog" \
   --duration "$duration" \
@@ -77,6 +85,10 @@ set -- /usr/local/bin/native-load-generator \
   --finality-poll-seconds "$finality_poll_seconds" \
   --finality-sample-sources "$finality_sample_sources" \
   --canonical-poll-seconds "$canonical_poll_seconds" \
+  --canonical-query-timeout "$canonical_query_timeout" \
+  --canonical-retry-limit "$canonical_retry_limit" \
+  --canonical-retry-backoff-seconds "$canonical_retry_backoff_seconds" \
+  --canonical-retry-max-backoff-seconds "$canonical_retry_max_backoff_seconds" \
   --repair-cooldown-seconds "$repair_cooldown_seconds"
 
 case "$auto_nonce" in
