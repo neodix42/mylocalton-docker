@@ -9,6 +9,7 @@ signers=${NATIVE_LOAD_SIGNERS:-4}
 inflight=${NATIVE_LOAD_INFLIGHT:-8192}
 submit_batch_size=${NATIVE_LOAD_SUBMIT_BATCH_SIZE:-1}
 submit_source_run_size=${NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE:-1}
+submit_coalesce_ms=${NATIVE_LOAD_SUBMIT_COALESCE_MS:-2}
 max_canonical_backlog=${NATIVE_LOAD_MAX_CANONICAL_BACKLOG:-262144}
 max_source_canonical_backlog=${NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG:-64}
 duration=${NATIVE_LOAD_DURATION_SECONDS:-600}
@@ -42,6 +43,7 @@ canonical_block_follower=${NATIVE_LOAD_CANONICAL_BLOCK_FOLLOWER:-1}
 generator_help=$(/usr/local/bin/native-load-generator --help 2>&1 || true)
 if ! printf '%s\n' "$generator_help" | grep -q -- '--submit-batch-size' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--submit-source-run-size' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--submit-coalesce-ms' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-poll-seconds' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-query-timeout' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--adaptive-initial-rtt-seconds'; then
@@ -64,6 +66,7 @@ set -- /usr/local/bin/native-load-generator \
   --inflight "$inflight" \
   --submit-batch-size "$submit_batch_size" \
   --submit-source-run-size "$submit_source_run_size" \
+  --submit-coalesce-ms "$submit_coalesce_ms" \
   --max-canonical-backlog "$max_canonical_backlog" \
   --max-source-canonical-backlog "$max_source_canonical_backlog" \
   --duration "$duration" \

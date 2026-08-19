@@ -106,11 +106,20 @@ docker compose --profile native-load-generator up --build native-load-generator
 
 The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only load keys from the dedicated `native-load-wallets` volume. It never runs inside the validator container and cannot read the validator database or validator keys. Account nonces are discovered from proof-checked canonical state by default. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, `NATIVE_LOAD_SUBMIT_BATCH_SIZE` amortizes liteserver round trips, and `NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE` groups ascending nonces from one source so one pinned account lookup can validate a run. `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. `NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS` seeds the application congestion window from the measured admission RTT. Global and per-source canonical backlog limits pause new offers before nonce-ordered mempool work grows without bound. The proof-checked canonical block follower drives that backpressure and distinguishes pending duplicates from canonical too-old responses. Its independent query timeout and bounded reconnect policy are configured with `NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS` and `NATIVE_LOAD_CANONICAL_RETRY_*`; recovered transport timeouts remain visible but do not invalidate an otherwise complete proof-checked run. The laptop defaults are deliberately conservative. Metrics are printed as JSON once per configured report interval and distinguish offered, batched wire queries, mempool admission, canonical-chain inclusion, repair work, backpressure, and proof-checked masterchain-anchored source nonces.
 
+The generator issues one fair, bounded contiguous nonce burst per source turn and
+waits `NATIVE_LOAD_SUBMIT_COALESCE_MS` (2 ms by default) for signer completions
+before assembling a batch. A retrying lowest unresolved admission task blocks
+newer unsent tasks from that source, but an already admitted nonce is removed
+from the admission head and does not prevent later batches from pipelining while
+canonical proof catches up. `source_issue_burst_*`,
+`head_blocked_ready_scans`, per-source cap gauges, and typed task/retry reasons
+make both batch underfill and head-of-line tails explicit.
+
 `TON_SIMPLEX_MAX_TPS=1` is an explicit saturation-only mode used by the physical profiles. It makes the native basechain/shardchain work-driven and publishes each successful candidate immediately; it does not unpace the masterchain, which retains its normal target-rate and minimum-interval rules. For the work-driven shardchain, `SIMPLEX_TARGET_RATE_MS` is not a successful-block interval. `TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS` is only the failure/cancellation budget for one work-driven candidate, allowing a full block to collate without restoring successful-block pacing. `TON_NATIVE_COLLATOR_QUEUE_LIMIT` controls how many native messages are made available to one collation pass. `TON_NATIVE_MEMPOOL_MAX_TTL` is a safety cap, while each native transfer's `valid_until` remains the effective expiry. Keep `NATIVE_LOAD_VALID_FOR_SECONDS` longer than ramp, warm-up, measurement, and drain combined.
 
 Size arithmetic must use the same layer on both sides. A signed native external BoC is 176 bytes. Inside a v4 batch, 512 transfers serialize to 101,399 bytes with unique endpoints (198.0 bytes/transfer), or 81,456 bytes with a shared destination (159.1 bytes/transfer). Those batch sizes include the compact account table, but they are not complete block costs: the block also carries the updated `ShardAccounts` dictionary, Merkle/proof cells, headers, and limit-estimator allowance. Use the measured `actual_block_bytes_per_transfer` and `estimated_block_bytes_per_transfer` in `validator-pipeline-summary.json` when dividing the configured block limit; never divide it by the 104-byte transfer leaf alone.
 
-`run-native-benchmark.sh` reuses an already-running healthy `genesis` container only when its Compose configuration and local image match the requested environment, builds the generator before opening the sample window, starts Session Stats and a fresh generator, and writes its final bundle under `benchmark-results/<UTC>/`. A mismatch fails before the run; set `BENCHMARK_RECREATE_GENESIS=1` only when the benchmark should allow Compose to rebuild/recreate genesis. In addition to generator, Session Stats, and resource summaries, the bundle contains `validator-session-stats.jsonl` and `validator-pipeline-summary.json` with all-run and exact measured-window actual/estimated block sizes plus per-stage collation/validation timing distributions.
+`run-native-benchmark.sh` reuses an already-running healthy `genesis` container only when its Compose configuration and local image match the requested environment, builds the generator before opening the sample window, starts Session Stats and a fresh generator, and writes its final bundle under `benchmark-results/<UTC>/`. A mismatch fails before the run; set `BENCHMARK_RECREATE_GENESIS=1` only when the benchmark should allow Compose to rebuild/recreate genesis. In addition to generator, Session Stats, and resource summaries, the bundle contains `validator-session-stats.jsonl` and `validator-pipeline-summary.json` with all-run and exact measured-window actual/estimated block sizes plus per-stage collation/validation timing distributions. `validator-scheduling-summary.json` derives cadence and consensus wall times from structured `consensus.stats.events` even when normal validator verbosity suppresses INFO summaries; its provenance section states that internal actor wake/timer reasons are not observed.
 
 For a 48-vCPU/256-GB same-host saturation run, use `.env.physical` explicitly. It leaves optional profiles disabled so an ordinary `up` cannot accidentally start load. The configured run has a 60-second ramp, 60-second warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile (42 minutes of configured phases, plus initial nonce discovery):
 
@@ -141,6 +150,21 @@ CPU is summarized as Docker percent, equivalent cores, and percentage of total
 host capacity; RAM includes average and maximum use. The wrapper returns the
 generator's exit code, or `3` when its canonical completion invariants fail, so
 an unsettled drain or incomplete canonical run remains a failed benchmark.
+Raw and summarized telemetry also covers per-CPU utilization, bounded top
+validator/generator threads, cgroup-v2 CPU throttling/PSI/memory/OOM/I/O, and
+physical block-device counters. Cumulative network and I/O deltas are split
+across monotonic segments, so Docker's possible all-zero post-exit sample cannot
+erase the run total. `run-metadata.json` records Compose hashes, Git state,
+Docker/Compose versions, CPU/SMT/NUMA topology, image IDs, registry digests, and
+OCI source labels. Dirty source or unpinned images are reported as separate
+reproducibility reasons; they never change proof correctness.
+
+`benchmark-summary.json.acceptance` keeps four decisions separate: canonical
+proof correctness, complete settled execution, ingress-capacity validity, and
+chain-capacity validity, followed by independent reproducibility. Each failed
+decision has stable reason codes. A literal JSON `false` is retained as false,
+not converted to null. Run `./run-native-benchmark.sh --self-test` to exercise
+the report invariants without Docker.
 Treat `canonical_chain_measure_peak_1s_tps` and
 `canonical_chain_measure_avg_tps` as the generator's proof-checked chain
 throughput fields. Session Stats stores validator samples in minute buckets, so
@@ -149,6 +173,12 @@ and maximum transfers per block, not exact run-boundary or one-second TPS.
 `mempool_accept_tps` is admission only, while
 `canonical_follower_discovery_tps` is observer catch-up speed and is deliberately
 not reported as production TPS.
+Canonical one-second peaks use only complete integer `gen_utime` buckets fully
+contained in the millisecond measurement window. The final
+`canonical_gen_utime_bucket_{start,end,duration}` fields publish those exact
+boundaries; partial first and last seconds are excluded. Session Stats still
+queries explicitly reported padded minute boundaries and remains corroboration,
+not the exact-window TPS authority.
 If `canonical_follower_lag_blocks` is nonzero at the end, the proof observer did
 not catch the anchored shard tip and the run is invalid. Canonical backpressure
 by itself is not classified as observer-limited: it can be the expected signal
