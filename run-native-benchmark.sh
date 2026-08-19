@@ -28,7 +28,7 @@ result_dir=${2:-benchmark-results/$run_id}
 host_sample_seconds=${BENCHMARK_HOST_SAMPLE_SECONDS:-1}
 container_name=native-load-generator
 
-for command_name in docker jq awk sha256sum; do
+for command_name in docker jq awk sha256sum timeout; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "required command is not installed: $command_name" >&2
     exit 2
@@ -73,6 +73,11 @@ resource_summary_file=$result_dir/resource-summary.json
 session_stats_summary_file=$result_dir/session-stats-summary.json
 validator_session_stats_file=$result_dir/validator-session-stats.jsonl
 validator_pipeline_summary_file=$result_dir/validator-pipeline-summary.json
+validator_stats_before_file=$result_dir/validator-stats-before.txt
+validator_stats_after_file=$result_dir/validator-stats-after.txt
+validator_pool_summary_file=$result_dir/validator-pool-summary.json
+validator_scheduling_log_file=$result_dir/validator-scheduling.log
+validator_scheduling_summary_file=$result_dir/validator-scheduling-summary.json
 runtime_file=$result_dir/container-runtime.json
 metadata_file=$result_dir/run-metadata.json
 summary_file=$result_dir/benchmark-summary.json
@@ -103,41 +108,90 @@ handle_signal() {
 trap handle_signal INT TERM
 trap stop_collectors EXIT
 
+capture_validator_stats() {
+  local output_file=$1
+  timeout 15s docker exec genesis sh -c '
+    config=/var/ton-work/db/config.json
+    internal_ip=$(hostname -I)
+    internal_ip=${internal_ip%% *}
+    control_port=$(jq -r ".control[0].port // empty" "$config")
+    test -n "$internal_ip" && test -n "$control_port"
+    exec validator-engine-console \
+      -k /var/ton-work/db/client \
+      -p /var/ton-work/db/server.pub \
+      -a "$internal_ip:$control_port" \
+      -c getstats
+  ' >"$output_file" 2>>"$result_dir/validator-stats.stderr.log"
+}
+
+parse_validator_stat() {
+  local input_file=$1 stat_name=$2 line
+  line=$(grep -F "$stat_name" "$input_file" 2>/dev/null | tail -n 1 || true)
+  if [[ -z $line ]]; then
+    printf '{}\n'
+    return
+  fi
+  awk '
+    BEGIN { printf "{"; separator = "" }
+    {
+      for (i = 1; i <= NF; ++i) {
+        token = $i
+        gsub(/[,;]/, "", token)
+        count = split(token, parts, ":")
+        if (count == 2 && parts[1] ~ /^[A-Za-z_][A-Za-z0-9_]*$/ &&
+            parts[2] ~ /^[0-9]+([.][0-9]+)?$/) {
+          printf "%s\"%s\":%s", separator, parts[1], parts[2]
+          separator = ","
+        }
+      }
+    }
+    END { print "}" }
+  ' <<<"$line"
+}
+
 read_host_cpu() {
   awk '/^cpu / {
     total = 0
     for (i = 2; i <= NF; i++) total += $i
     idle = $5 + $6
-    printf "%.0f %.0f\n", total, idle
+    printf "%.0f %.0f %.0f\n", total, idle, $6
     exit
   }' /proc/stat
 }
 
 collect_host_stats() {
-  local previous_total previous_idle current_total current_idle
-  local delta_total delta_idle cpu_percent mem_total_kib mem_available_kib
-  read -r previous_total previous_idle < <(read_host_cpu)
+  local previous_total previous_idle previous_iowait current_total current_idle current_iowait
+  local delta_total delta_idle delta_iowait cpu_percent iowait_percent mem_total_kib mem_available_kib
+  read -r previous_total previous_idle previous_iowait < <(read_host_cpu)
   while docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null | grep -qx true; do
     sleep "$host_sample_seconds"
-    read -r current_total current_idle < <(read_host_cpu)
+    read -r current_total current_idle current_iowait < <(read_host_cpu)
     delta_total=$((current_total - previous_total))
     delta_idle=$((current_idle - previous_idle))
+    delta_iowait=$((current_iowait - previous_iowait))
     cpu_percent=$(awk -v total="$delta_total" -v idle="$delta_idle" \
       'BEGIN { if (total > 0) printf "%.3f", 100 * (total - idle) / total; else print "0" }')
+    iowait_percent=$(awk -v total="$delta_total" -v iowait="$delta_iowait" \
+      'BEGIN { if (total > 0) printf "%.3f", 100 * iowait / total; else print "0" }')
     mem_total_kib=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo)
     mem_available_kib=$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo)
     jq -cn \
       --arg sampled_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --argjson sampled_at_epoch "$(date +%s)" \
       --argjson cpu_percent "$cpu_percent" \
+      --argjson iowait_percent "$iowait_percent" \
       --argjson memory_used_bytes "$(((mem_total_kib - mem_available_kib) * 1024))" \
       --argjson memory_total_bytes "$((mem_total_kib * 1024))" \
       --arg load_average "$(cut -d' ' -f1-3 /proc/loadavg)" \
+      --arg cpu_pressure "$(tr '\n' ';' </proc/pressure/cpu 2>/dev/null || true)" \
+      --arg io_pressure "$(tr '\n' ';' </proc/pressure/io 2>/dev/null || true)" \
       '{schema:"native-benchmark-host-resource-v1",$sampled_at,$sampled_at_epoch,
-        $cpu_percent,$memory_used_bytes,$memory_total_bytes,$load_average}' \
+        $cpu_percent,$iowait_percent,$memory_used_bytes,$memory_total_bytes,
+        $load_average,$cpu_pressure,$io_pressure}' \
       >>"$host_stats_file"
     previous_total=$current_total
     previous_idle=$current_idle
+    previous_iowait=$current_iowait
   done
 }
 
@@ -182,6 +236,13 @@ fi
 echo "Building the native-load-generator image before opening the benchmark window"
 "${compose[@]}" --profile native-load-generator build "$container_name"
 
+# Snapshot cumulative ExtMessagePool counters immediately around the load.
+# The delta exposes whether the pool scanned non-executable messages, formed
+# the intended per-source runs, or repeatedly delayed/reactivated nonce heads.
+if ! capture_validator_stats "$validator_stats_before_file"; then
+  : >"$validator_stats_before_file"
+fi
+
 # The validator's session-stats log contains one structured record per
 # collation and validation query. Remember the current end only after the image
 # build, so pull/compile time cannot contaminate the benchmark distributions.
@@ -223,13 +284,83 @@ finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 finished_epoch=$(date +%s)
 stop_collectors
 docker logs "$container_name" >"$generator_log_file" 2>&1 || true
+if ! capture_validator_stats "$validator_stats_after_file"; then
+  : >"$validator_stats_after_file"
+fi
+docker logs --since "$started_at" genesis 2>&1 |
+  awk '/consensus_schedule_summary/' >"$validator_scheduling_log_file" || true
+jq -Rsc '
+  def kv_fields:
+    [split(" ")[] | select(contains("=")) | split("=") |
+      select(length == 2) |
+      .[0] as $key | .[1] as $value |
+      {($key): (($value | tonumber?) // $value)}] | add // {};
+  [split("\n")[] | select(contains("consensus_schedule_summary")) | kv_fields] as $rows |
+  {
+    semantics:"cumulative BlockProducer/Simplex scheduling snapshots filtered from genesis logs; zero records means the configured validator verbosity suppressed INFO scheduling summaries, while validator-pipeline-summary still contains structured consensus events",
+    records:($rows | length),
+    last_by_component:($rows | sort_by(.chain,.component) | group_by(.chain,.component) |
+      map({chain:.[0].chain,component:.[0].component,last:.[-1]}))
+  }
+' "$validator_scheduling_log_file" >"$validator_scheduling_summary_file"
+
+scheduler_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_scheduler")
+scheduler_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_scheduler")
+batch_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_batch_admission")
+batch_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_batch_admission")
+pending_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_pending")
+pending_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_pending")
+jq -n \
+  --argjson scheduler_before "$scheduler_before" \
+  --argjson scheduler_after "$scheduler_after" \
+  --argjson batch_before "$batch_before" \
+  --argjson batch_after "$batch_after" \
+  --argjson pending_before "$pending_before" \
+  --argjson pending_after "$pending_after" '
+  def delta($before; $after; $exclude):
+    reduce ($after | keys_unsorted[]) as $key ({};
+      if ($exclude | index($key)) != null then .
+      else .[$key] = (($after[$key] // 0) - ($before[$key] // 0))
+      end);
+  {
+    semantics:"validator-engine cumulative ExtMessagePool counters sampled immediately before and after generator execution; scheduler delta should show near one scanned message per selected message and source runs approaching the configured run target",
+    scheduler:{
+      capture_complete:(($scheduler_before | length) > 0 and ($scheduler_after | length) > 0),
+      before:$scheduler_before,
+      after:$scheduler_after,
+      delta:delta($scheduler_before; $scheduler_after; ["max_run_size"]),
+      observed_max_run_size:($scheduler_after.max_run_size // null)
+    },
+    batch_admission:{
+      capture_complete:(($batch_before | length) > 0 and ($batch_after | length) > 0),
+      before:$batch_before,
+      after:$batch_after,
+      delta:delta($batch_before; $batch_after; [])
+    },
+    native_pending:{before:$pending_before,after:$pending_after}
+  }
+' >"$validator_pool_summary_file"
 
 generator_measure_start=$(jq -Rs \
   '[split("\n")[] | fromjson? | select(.schema == "native-load-v2" and .final == true)] |
-   (last.measure_start_unix_s // null)' "$generator_log_file")
+   (last as $final |
+    if ($final.measure_start_unix_ms // null) != null
+    then ($final.measure_start_unix_ms / 1000)
+    else ($final.measure_start_unix_s // null)
+    end)' "$generator_log_file")
 generator_measure_end=$(jq -Rs \
   '[split("\n")[] | fromjson? | select(.schema == "native-load-v2" and .final == true)] |
-   (last.measure_end_unix_s // null)' "$generator_log_file")
+   (last as $final |
+    if ($final.measure_end_unix_ms // null) != null
+    then ($final.measure_end_unix_ms / 1000)
+    else ($final.measure_end_unix_s // null)
+    end)' "$generator_log_file")
+
+if ! jq -en --argjson start "$generator_measure_start" --argjson end "$generator_measure_end" \
+  '$start != null and $end != null and $start < $end' >/dev/null; then
+  echo "generator did not publish a valid measured-window boundary" >&2
+  benchmark_exit_code=125
+fi
 
 validator_session_stats_first_line=$((validator_session_stats_start_line + 1))
 if ! docker exec genesis sh -c \
@@ -272,6 +403,16 @@ jq -Rsc \
        tonumber?) |
       select(. != null)] |
     distribution;
+  def native_work_counter_values($rows; $name):
+    [$rows[] |
+      ((.work_time_real_stats? // "") |
+       (capture("(?:^| )" + $name + "=(?<value>[0-9]+)")? | .value) |
+       tonumber?) |
+      select(. != null)];
+  def native_work_counter_sum($rows; $name):
+    native_work_counter_values($rows; $name) | add // 0;
+  def native_work_counter_max($rows; $name):
+    native_work_counter_values($rows; $name) | max // 0;
   def collated_summary($rows):
     ($rows | map(.block_stats.transactions? // 0) | add // 0) as $transfers |
     ($rows | map(.bytes? // 0) | add // 0) as $block_bytes |
@@ -291,6 +432,21 @@ jq -Rsc \
       actual_block_bytes:($rows | map(.bytes?) | distribution),
       collated_data_bytes:($rows | map(.collated_data_bytes?) | distribution),
       estimated_block_bytes:($rows | map(.block_limits.bytes?) | distribution),
+      native_fast_path_counters:{
+        microbatches:native_work_counter_sum($rows; "native_microbatches"),
+        input:native_work_counter_sum($rows; "native_microbatch_input"),
+        accepted:native_work_counter_sum($rows; "native_microbatch_accepted"),
+        delayed:native_work_counter_sum($rows; "native_microbatch_delayed"),
+        permanent:native_work_counter_sum($rows; "native_microbatch_permanent"),
+        unique_accounts:native_work_counter_sum($rows; "native_microbatch_unique_accounts"),
+        max_microbatch_input:native_work_counter_max($rows; "native_microbatch_max_input"),
+        max_microbatch_unique_accounts:native_work_counter_max($rows; "native_microbatch_max_unique_accounts"),
+        account_cells:native_work_counter_sum($rows; "native_account_cells_built"),
+        staged_dict_sets:native_work_counter_sum($rows; "native_staged_dict_sets"),
+        hard_preflight_failures:native_work_counter_sum($rows; "native_hard_preflight_failures"),
+        canonical_roots_reused:native_work_counter_sum($rows; "native_canonical_root_reused"),
+        canonical_accounts_reused:native_work_counter_sum($rows; "native_canonical_accounts_reused")
+      },
       total_time_s:($rows | map(.total_time?) | distribution),
       work_time_s:($rows | map(.work_time?) | distribution),
       cpu_work_time_s:($rows | map(.cpu_work_time?) | distribution),
@@ -300,10 +456,16 @@ jq -Rsc \
         native_prepare:stage_distribution($rows; "native_prepare"),
         native_execute:stage_distribution($rows; "native_execute"),
         native_commit:stage_distribution($rows; "native_commit"),
+        native_account_cell_build:stage_distribution($rows; "native_account_cell_build"),
+        native_staged_dict_set:stage_distribution($rows; "native_staged_dict_set"),
+        native_proof_preflight:stage_distribution($rows; "native_proof_preflight"),
+        native_state_install:stage_distribution($rows; "native_state_install"),
+        native_canonical_dict_install:stage_distribution($rows; "native_canonical_dict_install"),
         native_batch_serialize:stage_distribution($rows; "native_batch_serialize"),
         final_storage_stat:stage_distribution($rows; "final_storage_stat"),
         combine_account_transactions:stage_distribution($rows; "combine_account_transactions"),
         create_shard_state:stage_distribution($rows; "create_shard_state"),
+        create_state_merkle_update:stage_distribution($rows; "create_state_merkle_update"),
         create_block:stage_distribution($rows; "create_block"),
         create_collated_data:stage_distribution($rows; "create_collated_data"),
         create_block_candidate:stage_distribution($rows; "create_block_candidate")
@@ -332,31 +494,104 @@ jq -Rsc \
         check_new_state:stage_distribution($rows; "check_new_state")
       }
     };
+  def consensus_summary($rows):
+    ($rows | map(.ts) | map(select(. != null)) | sort) as $timestamps |
+    {
+      events:($rows | length),
+      first_event_unix_s:($timestamps[0] // null),
+      last_event_unix_s:($timestamps[-1] // null),
+      collate_started:([$rows[] | select(.event["@type"] == "consensus.stats.collateStarted")] | length),
+      collate_finished:([$rows[] | select(.event["@type"] == "consensus.stats.collateFinished")] | length),
+      collated_empty:([$rows[] | select(.event["@type"] == "consensus.stats.collatedEmpty")] | length),
+      candidate_received:([$rows[] | select(.event["@type"] == "consensus.stats.candidateReceived")] | length),
+      local_candidates:([$rows[] |
+        select(.event["@type"] == "consensus.stats.candidateReceived" and .event.is_collator == true)] | length),
+      validation_started:([$rows[] | select(.event["@type"] == "consensus.stats.validationStarted")] | length),
+      validation_finished:([$rows[] | select(.event["@type"] == "consensus.stats.validationFinished")] | length),
+      skip_votes:([$rows[] |
+        select(.event["@type"] == "consensus.simplex.stats.voted" and
+               .event.vote["@type"] == "consensus.simplex.skipVote")] | length),
+      skip_certificates:([$rows[] |
+        select(.event["@type"] == "consensus.simplex.stats.certObserved" and
+               .event.vote["@type"] == "consensus.simplex.skipVote")] | length),
+      notarize_votes:([$rows[] |
+        select(.event["@type"] == "consensus.simplex.stats.voted" and
+               .event.vote["@type"] == "consensus.simplex.notarizeVote")] | length),
+      finalize_votes:([$rows[] |
+        select(.event["@type"] == "consensus.simplex.stats.voted" and
+               .event.vote["@type"] == "consensus.simplex.finalizeVote")] | length)
+    };
   [split("\n")[] | fromjson?] as $records |
   [$records[] | select(.block_stats? != null)] as $collated |
   [$records[] | select(.validated_at? != null)] as $validated |
   [$collated[] | select((.block_id.workchain? // .block_id.workchain_id? // -1) == 0)] as $wc_collated |
+  [$collated[] | select((.block_id.workchain? // .block_id.workchain_id? // 0) == -1)] as $mc_collated |
   [$validated[] | select((.block_id.workchain? // .block_id.workchain_id? // -1) == 0)] as $wc_validated |
+  [$validated[] | select((.block_id.workchain? // .block_id.workchain_id? // 0) == -1)] as $mc_validated |
   [$wc_collated[] |
     select($measure_start != null and $measure_end != null and
            (.collated_at? // -1) >= $measure_start and (.collated_at? // -1) < $measure_end)] as $measured_collated |
   [$wc_validated[] |
     select($measure_start != null and $measure_end != null and
            (.validated_at? // -1) >= $measure_start and (.validated_at? // -1) < $measure_end)] as $measured_validated |
+  [$mc_collated[] |
+    select($measure_start != null and $measure_end != null and
+           (.collated_at? // -1) >= $measure_start and (.collated_at? // -1) < $measure_end)] as $measured_mc_collated |
+  [$mc_validated[] |
+    select($measure_start != null and $measure_end != null and
+           (.validated_at? // -1) >= $measure_start and (.validated_at? // -1) < $measure_end)] as $measured_mc_validated |
+  [$records[] | select(.["@type"] == "consensus.stats.events")] as $consensus_records |
+  (reduce $consensus_records[] as $record ({};
+    (($record.events | map(select(.event["@type"] == "consensus.stats.id")) | first? |
+       .event.workchain?) //
+     ($record.events |
+       map(select(.event["@type"] == "consensus.stats.candidateReceived" and
+                  .event.block["@type"] == "consensus.stats.block")) |
+       first? | .event.block.id.workchain?)) as $workchain |
+    if $workchain != null then .[$record.id] = $workchain else . end)) as $session_workchains |
+  [$consensus_records[] as $record |
+    $record.events[] |
+    {session_id:$record.id,workchain:($session_workchains[$record.id] // null),ts:.ts,event:.event}] as $events |
+  [$events[] | select(.workchain == 0)] as $bc_events |
+  [$events[] | select(.workchain == -1)] as $mc_events |
+  [$bc_events[] | select($measure_start != null and $measure_end != null and
+                         .ts >= $measure_start and .ts < $measure_end)] as $measured_bc_events |
+  [$mc_events[] | select($measure_start != null and $measure_end != null and
+                         .ts >= $measure_start and .ts < $measure_end)] as $measured_mc_events |
   {
     semantics:"validator candidate session records captured directly from genesis; basechain transaction counts are native transfers for this isolated single-validator benchmark; proof-checked generator metrics remain authoritative for canonical selection",
     raw_records:($records | length),
+    consensus_unmapped_events:([$events[] | select(.workchain == null)] | length),
     measured_window_unix_s:{start:$measure_start,end:$measure_end},
     all_run:{
       collated_basechain:collated_summary($wc_collated),
-      validated_basechain:validated_summary($wc_validated)
+      validated_basechain:validated_summary($wc_validated),
+      collated_masterchain:collated_summary($mc_collated),
+      validated_masterchain:validated_summary($mc_validated),
+      consensus_basechain:consensus_summary($bc_events),
+      consensus_masterchain:consensus_summary($mc_events)
     },
     measured:{
       collated_basechain:collated_summary($measured_collated),
-      validated_basechain:validated_summary($measured_validated)
+      validated_basechain:validated_summary($measured_validated),
+      collated_masterchain:collated_summary($measured_mc_collated),
+      validated_masterchain:validated_summary($measured_mc_validated),
+      consensus_basechain:consensus_summary($measured_bc_events),
+      consensus_masterchain:consensus_summary($measured_mc_events)
     }
   }
 ' "$validator_session_stats_file" >"$validator_pipeline_summary_file"
+
+if jq -e '
+  (.measured_window_unix_s.start != null) and
+  (.measured_window_unix_s.end != null) and
+  (.measured_window_unix_s.start < .measured_window_unix_s.end) and
+  (.all_run.collated_basechain.blocks > 0) and
+  (.measured.collated_basechain.blocks == 0)
+' "$validator_pipeline_summary_file" >/dev/null; then
+  echo "validator telemetry contained basechain candidates but the measured slice was empty" >&2
+  benchmark_exit_code=125
+fi
 
 # Let Session Stats import the tail of the validator log before querying the
 # independent canonical summary.  Its importer deliberately ignores the most
@@ -464,6 +699,17 @@ jq -Rs '
     ),
     canonical_backpressure_seconds: ($final.canonical_backpressure_s // null),
     canonical_backpressure_engaged: (($final.canonical_backpressure_s // 0) > 0),
+    measured_canonical_backpressure_seconds: ($final.measure_canonical_backpressure_s // null),
+    measured_canonical_backpressure_fraction: ($final.measure_canonical_backpressure_fraction // null),
+    ingress_capacity_valid: (
+      if $final == null then null else ($final.ingress_capacity_valid // false) end
+    ),
+    chain_capacity_valid: (
+      if $final == null then null else ($final.chain_capacity_valid // false) end
+    ),
+    chain_correctness_valid: (
+      if $final == null then null else ($final.chain_correctness_valid // false) end
+    ),
     canonical_observer_invalid_or_lagging_at_end: (
       (($final.canonical_follower_errors // 0) > 0) or
       (($final.canonical_follower_retry_exhausted // 0) > 0) or
@@ -481,6 +727,9 @@ jq -Rs '
     canonical_follower_fatal_errors: ($final.canonical_follower_fatal_errors // 0),
     canonical_follower_retry_exhausted: ($final.canonical_follower_retry_exhausted // 0),
     measured_offered_avg_tps: ($final.steady_offered_avg_tps // null),
+    offer_target_attainment_ratio: ($final.offer_target_attainment_ratio // null),
+    offer_target_attained: ($final.offer_target_attained // null),
+    canonical_overdrive_ratio: ($final.canonical_overdrive_ratio // null),
     measured_admission_avg_tps: ($final.steady_mempool_accept_avg_tps // null),
     measured_canonical_chain_avg_tps: ($final.canonical_chain_measure_avg_tps // null),
     measured_offer_cohort_observed_avg_tps: (
@@ -526,6 +775,10 @@ if jq -e '.canonical_observer_invalid_or_lagging_at_end == true' "$generator_sum
 elif jq -e '.canonical_backpressure_engaged == true' "$generator_summary_file" >/dev/null; then
   echo "notice: the canonical backlog guard throttled offers; this can indicate chain saturation or transient observer lag, so compare follower lag, block rate, and canonical backlog before classifying the ceiling" >&2
 fi
+if jq -e '.valid_canonical_run == true and .chain_capacity_valid != true' \
+  "$generator_summary_file" >/dev/null; then
+  echo "notice: the run is canonically correct but not a valid chain-capacity result; do not claim a TPS ceiling from it" >&2
+fi
 
 jq -s \
   --argjson host_vcpus "$(getconf _NPROCESSORS_ONLN)" \
@@ -540,6 +793,16 @@ jq -s \
   map(
     (map(.CPUPerc | percent)) as $cpu |
     (map((.MemUsage | split(" / ")[0]) | bytes)) as $memory |
+    (map((.NetIO | split(" / ")[0]) | bytes)) as $net_rx |
+    (map((.NetIO | split(" / ")[1]) | bytes)) as $net_tx |
+    (map((.BlockIO | split(" / ")[0]) | bytes)) as $block_read |
+    (map((.BlockIO | split(" / ")[1]) | bytes)) as $block_write |
+    (map(.sampled_at_epoch) | sort) as $sample_times |
+    (($sample_times[-1] // 0) - ($sample_times[0] // 0)) as $sample_span |
+    ([($net_rx[-1] - $net_rx[0]), 0] | max) as $net_rx_delta |
+    ([($net_tx[-1] - $net_tx[0]), 0] | max) as $net_tx_delta |
+    ([($block_read[-1] - $block_read[0]), 0] | max) as $block_read_delta |
+    ([($block_write[-1] - $block_write[0]), 0] | max) as $block_write_delta |
     {
       name: .[0].Name,
       samples: length,
@@ -554,7 +817,16 @@ jq -s \
       avg_memory_host_percent: (
         (($memory | add) / ($memory | length)) * 100 / $host_memory_bytes
       ),
-      max_memory_host_percent: (($memory | max) * 100 / $host_memory_bytes)
+      max_memory_host_percent: (($memory | max) * 100 / $host_memory_bytes),
+      io_sample_span_seconds:$sample_span,
+      net_rx_bytes_delta:$net_rx_delta,
+      net_tx_bytes_delta:$net_tx_delta,
+      block_read_bytes_delta:$block_read_delta,
+      block_write_bytes_delta:$block_write_delta,
+      avg_net_rx_bytes_per_second:(if $sample_span > 0 then $net_rx_delta / $sample_span else null end),
+      avg_net_tx_bytes_per_second:(if $sample_span > 0 then $net_tx_delta / $sample_span else null end),
+      avg_block_read_bytes_per_second:(if $sample_span > 0 then $block_read_delta / $sample_span else null end),
+      avg_block_write_bytes_per_second:(if $sample_span > 0 then $block_write_delta / $sample_span else null end)
     }
   )
 ' "$container_stats_file" >"$result_dir/container-resource-summary.json"
@@ -562,12 +834,15 @@ jq -s \
 jq -s '
   if length == 0 then
     {samples:0,avg_cpu_percent:null,max_cpu_percent:null,
+     avg_iowait_percent:null,max_iowait_percent:null,
      avg_memory_used_bytes:null,max_memory_used_bytes:null}
   else
     {
       samples: length,
       avg_cpu_percent: (map(.cpu_percent) | add / length),
       max_cpu_percent: (map(.cpu_percent) | max),
+      avg_iowait_percent: (map(.iowait_percent // 0) | add / length),
+      max_iowait_percent: (map(.iowait_percent // 0) | max),
       avg_memory_used_bytes: (map(.memory_used_bytes) | add / length),
       max_memory_used_bytes: (map(.memory_used_bytes) | max),
       memory_total_bytes: (last.memory_total_bytes)
@@ -587,11 +862,16 @@ docker inspect genesis "$container_name" session-stats |
     image_id: .Image,
     state: .State.Status,
     health: (.State.Health.Status // null),
+    oom_killed: (.State.OOMKilled // false),
+    restart_count: (.RestartCount // 0),
+    exit_code: (.State.ExitCode // null),
+    started_at: (.State.StartedAt // null),
+    finished_at: (.State.FinishedAt // null),
     cpuset: .HostConfig.CpusetCpus,
     nano_cpus: .HostConfig.NanoCpus,
     memory_limit_bytes: .HostConfig.Memory,
     benchmark_environment: [.Config.Env[] | select(test(
-      "^(TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|NATIVE_LOAD_[^=]+|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
+      "^(GENESIS_VERBOSITY|TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|NATIVE_LOAD_[^=]+|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
     ))]
   }]' >"$runtime_file"
 
@@ -627,8 +907,12 @@ jq -n \
   --slurpfile resources "$resource_summary_file" \
   --slurpfile session_stats "$session_stats_summary_file" \
   --slurpfile validator_pipeline "$validator_pipeline_summary_file" \
+  --slurpfile validator_pool "$validator_pool_summary_file" \
+  --slurpfile validator_scheduling "$validator_scheduling_summary_file" \
   '{run:$run[0],generator:$generator[0],session_stats:$session_stats[0],
-    validator_pipeline:$validator_pipeline[0],resources:$resources[0]}' \
+    validator_pipeline:$validator_pipeline[0],validator_pool:$validator_pool[0],
+    validator_scheduling:$validator_scheduling[0],
+    resources:$resources[0]}' \
   >"$summary_file"
 
 echo "Benchmark summary: $summary_file"
