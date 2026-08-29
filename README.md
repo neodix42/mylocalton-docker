@@ -121,6 +121,24 @@ Size arithmetic must use the same layer on both sides. A signed native external 
 
 `run-native-benchmark.sh` reuses an already-running healthy `genesis` container only when its Compose configuration and local image match the requested environment, builds the generator before opening the sample window, starts Session Stats and a fresh generator, and writes its final bundle under `benchmark-results/<UTC>/`. A mismatch fails before the run; set `BENCHMARK_RECREATE_GENESIS=1` only when the benchmark should allow Compose to rebuild/recreate genesis. In addition to generator, Session Stats, and resource summaries, the bundle contains `validator-session-stats.jsonl` and `validator-pipeline-summary.json` with all-run and exact measured-window actual/estimated block sizes plus per-stage collation/validation timing distributions. `validator-scheduling-summary.json` derives cadence and consensus wall times from structured `consensus.stats.events` even when normal validator verbosity suppresses INFO summaries; its provenance section states that internal actor wake/timer reasons are not observed.
 
+For a 24-vCPU/128-GB/2-TB desktop, use `.env.desktop`. It keeps every
+published management endpoint on loopback, assigns whole SMT core pairs to the
+validator and generator, and leaves native spam disabled until its profile is
+started explicitly. Pull the latest TON base and build the two required images,
+then start a local chain and the generator:
+
+```bash
+docker compose --env-file .env.desktop --profile native-load-generator build --pull genesis native-load-generator
+docker compose --env-file .env.desktop up -d genesis
+docker compose --env-file .env.desktop --profile session-stats up -d session-stats
+docker compose --env-file .env.desktop --profile native-load-generator up native-load-generator
+```
+
+Docker Desktop CPU, memory, and virtual-disk allocations are outside Compose;
+verify that they expose the intended capacity and enough free disk before a
+sustained run. `NATIVE_LOAD_SOURCES` is a zero-state input, so use a fresh
+network when switching an existing genesis to this profile.
+
 For a 48-vCPU/256-GB same-host saturation run, use `.env.physical` explicitly. It leaves optional profiles disabled so an ordinary `up` cannot accidentally start load. The configured run has a 60-second ramp, 60-second warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile (42 minutes of configured phases, plus initial nonce discovery):
 
 ```bash
