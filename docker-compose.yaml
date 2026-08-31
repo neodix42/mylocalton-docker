@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
@@ -89,6 +89,7 @@ services:
       # timeout and does not pace candidate production when this is enabled.
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
       - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=${TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS:-1000}
       - PROTO_VERSION
       - VALIDATORS_MASTERCHAIN_NUM
       - VALIDATORS_PER_SHARD
@@ -173,7 +174,7 @@ services:
     build:
       context: .
       dockerfile: ./native-load-generator/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
         TON_BRANCH: ${TON_BRANCH:-latest}
@@ -241,7 +242,7 @@ services:
     build:
       context: .
       dockerfile: ./explorer/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_EXPLORER_IMAGE: ${MLT_EXPLORER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-explorer}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -274,7 +275,7 @@ services:
     build:
       context: .
       dockerfile: ./lite-server/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_LITE_SERVER_IMAGE: ${MLT_LITE_SERVER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-lite-server}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -307,7 +308,7 @@ services:
     build:
       context: .
       dockerfile: ./faucet/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_FAUCET_IMAGE: ${MLT_FAUCET_IMAGE:-ghcr.io/neodix42/mylocalton-docker-faucet}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -341,7 +342,7 @@ services:
     build:
       context: .
       dockerfile: ./data/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_DATA_IMAGE: ${MLT_DATA_IMAGE:-ghcr.io/neodix42/mylocalton-docker-data}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -370,7 +371,7 @@ services:
     build:
       context: .
       dockerfile: ./config-update/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_CONFIG_UPDATE_IMAGE: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -400,7 +401,7 @@ services:
     build:
       context: .
       dockerfile: ./admin-portal/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_ADMIN_PORTAL_IMAGE: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -431,7 +432,7 @@ services:
     build:
       context: .
       dockerfile: ./time-machine/Dockerfile
-      pull: true
+      pull: ${TON_BUILD_PULL:-true}
       args:
         MLT_TIME_MACHINE_IMAGE: ${MLT_TIME_MACHINE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-time-machine}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
@@ -558,6 +559,7 @@ services:
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
       - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=${TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS:-1000}
       - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
       - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
@@ -595,6 +597,7 @@ services:
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
       - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=${TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS:-1000}
       - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
       - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     depends_on:
@@ -622,6 +625,7 @@ services:
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
       - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=${TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS:-1000}
       - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
       - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
@@ -654,6 +658,7 @@ services:
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
       - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=${TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS:-1000}
       - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
       - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:
@@ -686,6 +691,7 @@ services:
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
       - TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS=${TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS:-5000}
+      - TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS=${TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS:-1000}
       - TON_NATIVE_COLLATOR_QUEUE_LIMIT=${TON_NATIVE_COLLATOR_QUEUE_LIMIT:-32768}
       - TON_NATIVE_MEMPOOL_MAX_TTL=${TON_NATIVE_MEMPOOL_MAX_TTL:-3600}
     healthcheck:

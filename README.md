@@ -115,51 +115,111 @@ canonical proof catches up. `source_issue_burst_*`,
 `head_blocked_ready_scans`, per-source cap gauges, and typed task/retry reasons
 make both batch underfill and head-of-line tails explicit.
 
-`TON_SIMPLEX_MAX_TPS=1` is an explicit saturation-only mode used by the physical profiles. It makes the native basechain/shardchain work-driven and publishes each successful candidate immediately; it does not unpace the masterchain, which retains its normal target-rate and minimum-interval rules. For the work-driven shardchain, `SIMPLEX_TARGET_RATE_MS` is not a successful-block interval. `TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS` is only the failure/cancellation budget for one work-driven candidate, allowing a full block to collate without restoring successful-block pacing. `TON_NATIVE_COLLATOR_QUEUE_LIMIT` controls how many native messages are made available to one collation pass. `TON_NATIVE_MEMPOOL_MAX_TTL` is a safety cap, while each native transfer's `valid_until` remains the effective expiry. Keep `NATIVE_LOAD_VALID_FOR_SECONDS` longer than ramp, warm-up, measurement, and drain combined.
+`TON_SIMPLEX_MAX_TPS=1` is an explicit saturation-only mode used by the physical
+profile. It makes the native basechain/shardchain work-driven and publishes each
+successful candidate immediately; it does not unpace the masterchain, which
+retains its normal target-rate and minimum-interval rules. For the work-driven
+shardchain, `SIMPLEX_TARGET_RATE_MS` is not a successful-block interval.
+`TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS` is the outer failure/cancellation
+budget for one work-driven candidate. The local-work budget is 80% of that
+outer timeout. `TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS` sets a guarded,
+best-effort sealing interval at the end of the local-work budget: at the intake
+cutoff, the collator stops admitting another native fragment and seals the last
+valid checkpoint. A fragment already executing is non-preemptible. The
+physical profile's 8000 ms outer timeout gives 6400 ms of local work; its 1000
+ms reserve plus the fixed 100 ms fragment-start guard cuts off new-fragment
+intake at 5300 ms, targets a 1000 ms sealing interval, and retains the outer
+1600 ms consensus margin. `native_deadline_seals`, `native_deadline_deferred`, and
+`native_deadline_first_fragment_commits` in
+`validator-pipeline-summary.json` show whether this path was exercised.
+`TON_NATIVE_COLLATOR_QUEUE_LIMIT` controls how many native messages are made
+available to one collation pass. `TON_NATIVE_MEMPOOL_MAX_TTL` is a safety cap,
+while each native transfer's `valid_until` remains the effective expiry. Keep
+`NATIVE_LOAD_VALID_FOR_SECONDS` longer than ramp, warm-up, measurement, and
+drain combined.
 
 Size arithmetic must use the same layer on both sides. A signed native external BoC is 176 bytes. Inside a v4 batch, 512 transfers serialize to 101,399 bytes with unique endpoints (198.0 bytes/transfer), or 81,456 bytes with a shared destination (159.1 bytes/transfer). Those batch sizes include the compact account table, but they are not complete block costs: the block also carries the updated `ShardAccounts` dictionary, Merkle/proof cells, headers, and limit-estimator allowance. Use the measured `actual_block_bytes_per_transfer` and `estimated_block_bytes_per_transfer` in `validator-pipeline-summary.json` when dividing the configured block limit; never divide it by the 104-byte transfer leaf alone.
 
-`run-native-benchmark.sh` reuses an already-running healthy `genesis` container only when its Compose configuration and local image match the requested environment, builds the generator before opening the sample window, starts Session Stats and a fresh generator, and writes its final bundle under `benchmark-results/<UTC>/`. A mismatch fails before the run; set `BENCHMARK_RECREATE_GENESIS=1` only when the benchmark should allow Compose to rebuild/recreate genesis. In addition to generator, Session Stats, and resource summaries, the bundle contains `validator-session-stats.jsonl` and `validator-pipeline-summary.json` with all-run and exact measured-window actual/estimated block sizes plus per-stage collation/validation timing distributions. `validator-scheduling-summary.json` derives cadence and consensus wall times from structured `consensus.stats.events` even when normal validator verbosity suppresses INFO summaries; its provenance section states that internal actor wake/timer reasons are not observed.
+`run-native-benchmark.sh` reuses an already-running healthy `genesis` container
+when its Compose configuration and local image match the requested environment.
+Before creating a result directory, it rejects a missing local TON base image
+or one without a source-revision label.
+On a mismatch it loudly recreates the container with the requested runtime
+configuration while preserving named and bind-mounted volumes. Set
+`BENCHMARK_STRICT_GENESIS_REUSE=1` to fail instead, or
+`BENCHMARK_RECREATE_GENESIS=1` to force recreation even when it matches. The
+wrapper builds the generator before opening the sample window, starts Session
+Stats and a fresh generator, and writes its final bundle under
+`benchmark-results/<UTC>/`. In addition to generator, Session Stats, and
+resource summaries, the bundle contains `validator-session-stats.jsonl` and
+`validator-pipeline-summary.json` with all-run and exact measured-window
+actual/estimated block sizes plus per-stage collation/validation timing
+distributions. `validator-scheduling-summary.json` derives cadence and
+consensus wall times from structured `consensus.stats.events` even when normal
+validator verbosity suppresses INFO summaries; its provenance section states
+that internal actor wake/timer reasons are not observed.
 
-For a 24-vCPU/128-GB/2-TB desktop, use `.env.desktop`. It keeps every
-published management endpoint on loopback, assigns whole SMT core pairs to the
-validator and generator, and leaves native spam disabled until its profile is
-started explicitly. Pull the latest TON base and build the two required images,
-then start a local chain and the generator:
+For a 24-vCPU/128-GB/2-TB physical desktop, use the tracked `.env.physical`
+profile. It keeps every published management endpoint on loopback, assigns
+whole SMT core pairs to the validator and generator, and leaves native spam
+disabled until its profile is started explicitly. First build the matching TON
+source checkout as the local tag selected by `.env.physical`:
 
 ```bash
-docker compose --env-file .env.desktop --profile native-load-generator build --pull genesis native-load-generator
-docker compose --env-file .env.desktop up -d genesis
-docker compose --env-file .env.desktop --profile session-stats up -d session-stats
-docker compose --env-file .env.desktop --profile native-load-generator up native-load-generator
+cd ../corton-nommander-ton-sidechain
+docker build \
+  --build-arg PORTABLE=0 \
+  --build-arg TON_ARCH=native \
+  --build-arg NINJA_JOBS=20 \
+  --build-arg VCS_REF="$(git describe --always --dirty)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t ghcr.io/corton-nommander/ton:max-tps-native .
+```
+
+Then return to this repository and run the controlled benchmark baseline and
+telemetry collection with exactly:
+
+```bash
+cd ../MyLocalTonDocker
+sudo ./run-native-benchmark.sh .env.physical
 ```
 
 Docker Desktop CPU, memory, and virtual-disk allocations are outside Compose;
 verify that they expose the intended capacity and enough free disk before a
-sustained run. `NATIVE_LOAD_SOURCES` is a zero-state input, so use a fresh
-network when switching an existing genesis to this profile.
+sustained run. Verify the checked-in SMT sibling pairs with
+`lscpu -e=CPU,NODE,SOCKET,CORE`; remap the CPU sets if the host topology differs.
+`.env.desktop` may still be used as a local, untracked override, but the
+documented benchmark and its metadata use `.env.physical`.
 
-For a 48-vCPU/256-GB same-host saturation run, use `.env.physical` explicitly. It leaves optional profiles disabled so an ordinary `up` cannot accidentally start load. The configured run has a 60-second ramp, 60-second warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile (42 minutes of configured phases, plus initial nonce discovery):
+The profile leaves optional services disabled so an ordinary `up` cannot
+accidentally start load. The configured run has a 60-second ramp, 60-second
+warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile
+(42 minutes of configured phases, plus initial nonce discovery).
+
+The same-host baseline allocates 18 vCPU to genesis, 4 vCPU to the generator,
+and caps Session Stats at 1 vCPU on the remaining SMT pair. This moves one full
+core pair toward the measured bottleneck: genesis saturated its old allocation,
+while the generator peaked below three cores. The validator runs 16 scheduler
+threads, leaving two of its allocated CPUs for database and network work. The
+first 4k TPS target is requested offered load, not a claim that 4k was produced.
+Use the reported maximum and sustained `sign_tps`, `offered_tps`, and
+canonical-chain TPS to prove which component reached its ceiling. Larger hosts
+should scale the CPU sets and quotas explicitly after checking NUMA and sibling
+topology.
+
+Require one valid, fully drained result with no candidate deadline failures at
+each step before increasing offered load. Keep the checked-in 4k baseline for
+the first command above, then run the same profile with shell overrides:
 
 ```bash
-docker compose --env-file .env.physical up -d genesis
-docker compose --env-file .env.physical --profile session-stats up -d session-stats
-docker compose --env-file .env.physical --profile native-load-generator up --build native-load-generator
+sudo env NATIVE_LOAD_TARGET_TPS=6000 ./run-native-benchmark.sh .env.physical
+sudo env NATIVE_LOAD_TARGET_TPS=10000 ./run-native-benchmark.sh .env.physical
+sudo env NATIVE_LOAD_TARGET_TPS=15000 ./run-native-benchmark.sh .env.physical
 ```
 
-The same-host baseline allocates 28 vCPU to genesis, 16 vCPU/signers to the
-generator, 2 vCPU to Session Stats, and leaves 2 vCPU for the host. Its 200k TPS
-target is requested offered load, not a claim that 200k was produced. Use the
-reported maximum and sustained `sign_tps`, `offered_tps`, and canonical-chain
-TPS to prove which component reached its ceiling. Sustained 200k generation may
-require signed bundles/multisend or load generators on separate hosts.
-
-For a complete, reproducible run, use the benchmark wrapper instead of starting
-the optional services separately:
-
-```bash
-sudo ./run-native-benchmark.sh .env.physical
-```
+Stop the staircase at the first invalid run or when canonical backpressure,
+candidate deadline sealing, or deadline failures recur; changing several
+capacity variables at once makes the limiting stage ambiguous.
 
 It writes `benchmark-results/<UTC timestamp>/benchmark-summary.json`, the full
 generator log, generator peaks/final JSON, an independent Session Stats canonical
@@ -204,11 +264,8 @@ that offers outran chain inclusion. When it engages, compare follower lag and
 block discovery rate with canonical block rate and backlog before deciding
 whether the observer or the chain set the ceiling.
 
-The physical profile exposes only the Session Stats UI on
-`2.59.170.242:18000`, while management, the other optional UIs, liteserver,
-and the file endpoint remain bound to `127.0.0.1`. Restrict port `18000` with
-the host firewall, or change `SESSION_STATS_BIND_IP` back to `127.0.0.1` when
-public access is no longer needed. Set
+The physical desktop profile keeps Session Stats, management, optional UIs,
+liteserver, and the file endpoint on `127.0.0.1`. Set
 `TON_DB_VAL0_HOST_DIR` to an existing absolute
 directory on the dedicated NVMe before genesis creation. Leaving it empty
 keeps the portable `ton-db-val0` named volume. When using a host bind with
@@ -216,29 +273,19 @@ session-stats, set `TON_WORK_HOST_DIR` to the same path and clear
 `TON_WORK_DOCKER_VOLUME`. Source count, native wallet volume, shard layout,
 and block limits are genesis inputs: changing them for an existing network
 does not retrofit its zero state, so recreate the test network volumes before
-comparing a new profile. Max-TPS mode, the native collation queue limit, and
-native mempool TTL are validator runtime settings, but all benchmark
-participants must use identical values.
+comparing a new profile. Max-TPS mode, its candidate and finalize-reserve
+timeouts, the native collation queue limit, and native mempool TTL are validator
+runtime settings. The wrapper reconciles the validator container so these
+values take effect, but does not delete or regenerate zero-state volumes.
 
-Build and publish the matching TON image before rebuilding this service; the
-entrypoint rejects an older image that lacks the saturation-generator CLI. For
-final numbers, pin an immutable image digest and use a server-CPU image instead
-of the portable multi-architecture image. From the TON source tree on the
-benchmark host, for example:
-
-```bash
-docker build \
-  --build-arg PORTABLE=0 \
-  --build-arg TON_ARCH=native \
-  --build-arg NINJA_JOBS=40 \
-  -t ghcr.io/corton-nommander/ton:max-tps-native .
-```
-
-Then use the same tag for the MyLocalTon-derived genesis and generator images:
-
-```bash
-sudo env TON_BRANCH=max-tps-native ./run-native-benchmark.sh .env.physical
-```
+`.env.physical` selects the `max-tps-native` tag and sets
+`TON_BUILD_PULL=false`, so derived-image builds use that exact local base rather
+than trying to replace it from a registry. The wrapper checks that the local
+base exists, rebuilds the derived genesis image before deciding whether a
+running validator can be reused, and rejects an older image that lacks the
+saturation-generator CLI. For final published numbers, also push and pin an
+immutable digest. Larger build hosts may raise `NINJA_JOBS` from the desktop's
+20-job baseline.
 
 `assembly/native/build-ubuntu-shared.sh -t` remains useful for a direct host
 build/test, but the container benchmark consumes the Docker image above.

@@ -18,7 +18,8 @@ Run this script itself with sudo when Docker requires root access. Optional:
   BENCHMARK_DETAIL_SAMPLE_SECONDS=5
   BENCHMARK_THREAD_SAMPLE_SECONDS=5
   BENCHMARK_MAX_THREADS_PER_CONTAINER=32
-  BENCHMARK_RECREATE_GENESIS=1   # otherwise reuse an already-healthy genesis
+  BENCHMARK_RECREATE_GENESIS=1   # force container recreation even when matching
+  BENCHMARK_STRICT_GENESIS_REUSE=1 # fail instead of reconciling a mismatch
 EOF
 }
 
@@ -100,6 +101,27 @@ test -r "$benchmark_jq_dir/native-benchmark-lib.jq" || {
   exit 2
 }
 
+compose=(docker compose --env-file "$env_file")
+compose_environment=$("${compose[@]}" config --environment)
+ton_image=$(awk -F= '$1 == "TON_IMAGE" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+ton_branch=$(awk -F= '$1 == "TON_BRANCH" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+ton_image=${ton_image:-ghcr.io/corton-nommander/ton}
+ton_branch=${ton_branch:-latest}
+ton_base_image=$ton_image:$ton_branch
+if ! docker image inspect "$ton_base_image" >/dev/null 2>&1; then
+  echo "required TON benchmark base image is not available locally: $ton_base_image" >&2
+  echo "build the matching TON source checkout first; see README.md (Native high-rate load)" >&2
+  echo "run the documented Docker build from that checkout, including its VCS_REF label" >&2
+  exit 2
+fi
+ton_base_revision=$(docker image inspect -f \
+  '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ton_base_image" 2>/dev/null || true)
+if [[ -z $ton_base_revision || $ton_base_revision == '<no value>' || $ton_base_revision == unknown ]]; then
+  echo "TON benchmark base image lacks source-revision provenance: $ton_base_image" >&2
+  echo "rebuild it from the matching TON checkout with the VCS_REF command in README.md" >&2
+  exit 2
+fi
+
 if [[ -d "$result_dir" && -n $(find "$result_dir" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
   if [[ $# -lt 2 ]]; then
     result_dir=${result_dir}-$$
@@ -137,7 +159,6 @@ summary_file=$result_dir/benchmark-summary.json
 : >"$thread_stats_file"
 : >"$device_stats_file"
 
-compose=(docker compose --env-file "$env_file")
 collector_pids=()
 interrupted=0
 
@@ -476,27 +497,41 @@ collect_container_stats() {
   done
 }
 
+echo "Building the genesis image from local $ton_base_image before deciding reuse"
+"${compose[@]}" build genesis
+
 genesis_health=$(docker inspect -f \
   '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
   genesis 2>/dev/null || true)
-if [[ $genesis_health == "true healthy" && ${BENCHMARK_RECREATE_GENESIS:-0} != 1 ]]; then
+recreate_genesis=${BENCHMARK_RECREATE_GENESIS:-0}
+strict_genesis_reuse=${BENCHMARK_STRICT_GENESIS_REUSE:-0}
+genesis_matches=false
+if [[ $genesis_health == "true healthy" && $recreate_genesis != 1 ]]; then
   desired_genesis_hash=$("${compose[@]}" config --hash genesis | awk '$1 == "genesis" {print $2}')
   running_genesis_hash=$(docker inspect -f \
     '{{index .Config.Labels "com.docker.compose.config-hash"}}' genesis 2>/dev/null || true)
   desired_genesis_image=$("${compose[@]}" config --images genesis | tail -n 1)
   desired_genesis_image_id=$(docker image inspect -f '{{.Id}}' "$desired_genesis_image" 2>/dev/null || true)
   running_genesis_image_id=$(docker inspect -f '{{.Image}}' genesis 2>/dev/null || true)
-  if [[ -z $desired_genesis_hash || $running_genesis_hash != "$desired_genesis_hash" ||
-        -z $desired_genesis_image_id || $running_genesis_image_id != "$desired_genesis_image_id" ]]; then
+  if [[ -n $desired_genesis_hash && $running_genesis_hash == "$desired_genesis_hash" &&
+        -n $desired_genesis_image_id && $running_genesis_image_id == "$desired_genesis_image_id" ]]; then
+    genesis_matches=true
+  elif [[ $strict_genesis_reuse == 1 ]]; then
     echo "healthy genesis does not match $env_file or the current local image" >&2
-    echo "recreate it explicitly, or rerun with BENCHMARK_RECREATE_GENESIS=1" >&2
+    echo "strict reuse is enabled; unset BENCHMARK_STRICT_GENESIS_REUSE to reconcile the container" >&2
     exit 2
+  else
+    echo "Healthy genesis does not match $env_file or the current local image." >&2
+    echo "Recreating the container with matching runtime configuration; named/bind volumes are preserved." >&2
   fi
+fi
+
+if [[ $genesis_matches == true ]]; then
   echo "Reusing the matching, already-healthy genesis container; starting session-stats only"
   "${compose[@]}" --profile session-stats up -d --build --no-deps session-stats
 else
-  echo "Starting genesis and session-stats with $env_file"
-  "${compose[@]}" --profile session-stats up -d --build genesis session-stats
+  echo "Starting/recreating genesis and session-stats with $env_file"
+  "${compose[@]}" --profile session-stats up -d --build --force-recreate genesis session-stats
 fi
 
 echo "Building the native-load-generator image before opening the benchmark window"
@@ -716,7 +751,12 @@ jq -L "$benchmark_jq_dir" -Rsc \
         staged_dict_sets:native_work_counter_sum($rows; "native_staged_dict_sets"),
         hard_preflight_failures:native_work_counter_sum($rows; "native_hard_preflight_failures"),
         canonical_roots_reused:native_work_counter_sum($rows; "native_canonical_root_reused"),
-        canonical_accounts_reused:native_work_counter_sum($rows; "native_canonical_accounts_reused")
+        canonical_accounts_reused:native_work_counter_sum($rows; "native_canonical_accounts_reused"),
+        deadline_seals:native_work_counter_sum($rows; "native_deadline_seals"),
+        deadline_deferred:native_work_counter_sum($rows; "native_deadline_deferred"),
+        deadline_first_fragment_commits:native_work_counter_sum(
+          $rows; "native_deadline_first_fragment_commits"
+        )
       },
       total_time_s:($rows | map(.total_time?) | distribution),
       work_time_s:($rows | map(.work_time?) | distribution),
@@ -1094,6 +1134,12 @@ jq -L "$benchmark_jq_dir" -Rs '
        $final.canonical_follower_final_catchup_complete != true)
     ),
     canonical_follower_transient_timeouts: ($final.canonical_follower_transient_timeouts // 0),
+    canonical_follower_transient_liteserver_timeouts: (
+      $final.canonical_follower_transient_liteserver_timeouts // 0
+    ),
+    canonical_follower_transient_not_ready: (
+      $final.canonical_follower_transient_not_ready // 0
+    ),
     canonical_follower_transient_cancellations: ($final.canonical_follower_transient_cancellations // 0),
     canonical_follower_transient_retries: ($final.canonical_follower_transient_retries // 0),
     canonical_follower_transient_recoveries: ($final.canonical_follower_transient_recoveries // 0),
@@ -1387,13 +1433,21 @@ done < <(jq -r 'map(.image_id) | unique[]' "$runtime_file")
 jq -s '.' "$image_metadata_jsonl" >"$image_metadata_file"
 
 env_sha256=$(sha256sum "$env_file" | awk '{print $1}')
-git_revision=$(git rev-parse HEAD 2>/dev/null || true)
-git_dirty=$(if [[ -z $(git status --porcelain --untracked-files=normal 2>/dev/null) ]]; then echo false; else echo true; fi)
-git_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
-git_branch=$(git branch --show-current 2>/dev/null || true)
-git_describe=$(git describe --always --dirty --tags 2>/dev/null || true)
-git_status_sha256=$(git status --porcelain=v1 --untracked-files=normal 2>/dev/null | sha256sum | awk '{print $1}')
-git_diff_sha256=$(git diff --binary HEAD 2>/dev/null | sha256sum | awk '{print $1}')
+# The documented invocation uses sudo. Scope Git's ownership exception to this
+# one checkout so root captures provenance instead of silently treating a
+# dubious-ownership failure as a clean tree.
+benchmark_git=(git -c "safe.directory=$script_dir" -C "$script_dir")
+git_revision=$("${benchmark_git[@]}" rev-parse HEAD 2>/dev/null || true)
+git_root=$("${benchmark_git[@]}" rev-parse --show-toplevel 2>/dev/null || true)
+git_branch=$("${benchmark_git[@]}" branch --show-current 2>/dev/null || true)
+git_describe=$("${benchmark_git[@]}" describe --always --dirty --tags 2>/dev/null || true)
+git_status=$("${benchmark_git[@]}" status --porcelain=v1 --untracked-files=normal 2>/dev/null ||
+  printf '%s' '__git_status_unavailable__')
+git_dirty=$(if [[ -z $git_status ]]; then echo false; else echo true; fi)
+git_status_sha256=$(printf '%s' "$git_status" | sha256sum | awk '{print $1}')
+git_diff_sha256=$({
+  "${benchmark_git[@]}" diff --binary HEAD 2>/dev/null || printf '%s' '__git_diff_unavailable__'
+} | sha256sum | awk '{print $1}')
 compose_config_sha256=$("${compose[@]}" --profile session-stats --profile native-load-generator config |
   sha256sum | awk '{print $1}')
 compose_service_hashes=$("${compose[@]}" --profile session-stats --profile native-load-generator \
