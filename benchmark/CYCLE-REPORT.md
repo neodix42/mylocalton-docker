@@ -871,3 +871,40 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   at this 2,048 window and 768 CWND. If that becomes injector-window-limited,
   a 1,536-CWND A/B follows before altering candidate size or consensus logic.
 - Artifact directory: `benchmark-results/20260901T072845Z`.
+
+## Cycle 20 — valid 12,000-TPS staircase, cadence-policy boundary (20260901T074907Z)
+
+- TON image revision label: `b1393d52`; Docker harness revision: `96bfc3b`.
+  Both trees were clean. This fresh-state staircase retains Cycle 19's
+  2,048-message bounded transport window, 768 CWND, 4,096 sources,
+  one-validator no-gossip topology, and 18,432-entry candidate cap. The sole
+  requested-workload change is 12,000 TPS instead of 10,000.
+- Result: benchmark-capacity valid 12k run. Offered/admitted/proof-chain TPS
+  was 12,000.087 / 12,000.087 / 11,988.780, with zero canonical-backpressure
+  seconds. Proof correctness, completion, ingress and chain capacity, cleanup,
+  final follower catch-up, and broadcast lifecycle all passed; drain took
+  1.328 seconds to zero backlog. The fully contained canonical one-second
+  maximum was 31,809 TPS, a burst and not the sustained result.
+- This is not yet a user-acceptable maximum under the explicit sub-second
+  block-generation requirement. Although the benchmark's formal capacity gates
+  pass, sampled collation total p99 was 1.026 seconds, collation-wall p99 was
+  1.107 seconds, and accepted-block interval p99 was 1.196 seconds. Their
+  1.60–1.69 second maxima make the tail visible rather than masked. The next
+  experiment must restore all p99 values below one second before advancing the
+  offered-rate staircase.
+- The capacity/latency tradeoff is directly observable in packing. Proof had
+  1,471 blocks averaging 5,696.912 transfers and reached the 18,432-entry
+  candidate cap; sampled collations averaged 5,703.098 transfers across 1,483
+  blocks. Native work p99 was only 127.3 ms, but total collation p95/p99 rose
+  to 867.5/1,025.8 ms as larger candidates increased downstream/cadence tail.
+  Transport remained bounded (2,560 observed high-water, 2,048 max push,
+  512 max pop); cancellation waste improved to 217,644 / 9,784,555 selected
+  messages (2.22%), so it is not the reason to reduce the candidate cap.
+- The next isolated cycle therefore retains 12k, source, window, CWND, and
+  topology but lowers `TON_NATIVE_COLLATOR_QUEUE_LIMIT` to 12,288 entries.
+  It is a conservative whole-512-fragment cap intended to remove the full
+  18,432-entry tail while preserving ample room for 12k at the observed
+  cadence. It must pass proof/cleanup/zero-pressure plus total collation,
+  collation-wall, and accepted-interval p99 <1 second; otherwise adaptive
+  checkpoint coalescing is the next source-level treatment.
+- Artifact directory: `benchmark-results/20260901T074907Z`.
