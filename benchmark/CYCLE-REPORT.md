@@ -2080,3 +2080,58 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   the prefill frontier. It must first match <=86-ms first-work, zero/low
   backpressure, and C44's worst-case cadence before claiming a TPS gain.
 - Artifact directory: `benchmark-results/20260901T214547Z`.
+
+## Cycle 47 — rejected callback-local excluded-membership cache at 15k (20260901T224322Z)
+
+- This is a strict source-only A/B against Cycle 44. The `.env` SHA-256,
+  Compose/service hashes, sorted genesis and native-generator environments,
+  CPU/memory pinning, 4,096 sources, 12 connections, six workers/signers,
+  96-message batches, 16-message source runs, qcap=1, 1,152 CWND, 0.0768-s
+  RTT, 30-ms coalescing, 8,192 candidate cap, 2,048 transport window,
+  no-gossip control, and 60/60/700/300 timing are unchanged. Cycle 47's OCI
+  source label is `960e606d`; Cycle 44's is `7d5f775a`. The harness revision
+  advances only because prior cycle reports were recorded.
+- Runner and generator both exit zero. All proof correctness, completion,
+  ingress-capacity, chain-capacity, validator-cleanup, catch-up, drain, and
+  broadcast-control lifecycle gates pass, with zero proof hash/nonce/duplicate
+  or external conflicts, follower errors, reorgs, retry exhaustion, or final
+  native queue leaks. `reproducible=false` remains solely the known unlabeled
+  Session Stats image caveat; it is not a source-result failure.
+- The membership-cache treatment is exercised, not a no-op: scheduler telemetry
+  reports 2,742 exclusion-membership builds containing 58,368,910 entries
+  (21,286.984 entries/build), 87,744 slow hits, 11 below-threshold cases, and
+  zero over-limit cases. It avoids Cycle 46's source/nonce range materialization
+  and does recover relative to that rejected treatment, but still materializes
+  a large whole-hash set for callback work.
+- Against the valid Cycle 44 control, offered/admitted TPS falls
+  14,837.160 -> 14,774.011 (-63.149, -0.426%) and proof TPS falls
+  14,748.848 -> 14,676.293 (-72.555, -0.492%). The measured chain keeps the
+  same 2,288 blocks over 700 seconds (3.2686 blocks/s), but packing falls
+  4,505.876 -> 4,483.710 transfers/block (maximum remains 8,192). Thus the
+  apparent same block rate does not establish a throughput win.
+- Canonical backpressure regresses from zero to 1.225296 seconds across 24
+  events (0.1750% of the measurement window). Sampled backlog peak rises
+  107,814 -> 127,441 and measurement-end backlog 80,091 -> 80,194, although
+  drain improves slightly from 5.665 -> 5.381 seconds and fully completes.
+- Total/wall/accepted/start/validated p99 cadence is
+  524.313/573.776/679.165/756.509/111.166 ms, versus Cycle 44's
+  525.791/568.039/676.195/747.184/101.538 ms. Every p99 remains sub-second,
+  but wall, accepted, start, and validation p99 regress. Total/wall maxima
+  improve to 680.109/721.924 ms, while accepted/start/validated maxima are
+  988.334/1,040.899/268.624 ms versus Cycle 44's
+  891.712/892.262/265.014 ms: the collate-start maximum crosses one second,
+  so the control's worst-case subsecond cadence is not retained.
+- The causal timing signal also regresses: native first-work rises from
+  198.237 seconds / 2,304 calls = 86.040 ms/call to
+  211.696 seconds / 2,297 calls = 92.162 ms/call (+6.122 ms, +7.115%). The
+  large per-callback membership builds above are inconsistent with the required
+  first-work gate, despite being less costly than Cycle 46's 95.844 ms/call
+  full-index result.
+- Reject the callback-local membership-cache path and revert `960e606d`; do
+  not tune its threshold or retry it at a higher target. Restore the Cycle 44
+  tree. A successor must avoid whole-callback exclusion materialization,
+  preferably by carrying validated source/nonce exclusion metadata upstream or
+  by constructing an exact representation only at the reached prefill frontier.
+  It must first beat Cycle 44 proof TPS while preserving <=86-ms first-work,
+  zero/low backpressure, and subsecond worst-case cadence.
+- Artifact directory: `benchmark-results/20260901T224322Z`.
