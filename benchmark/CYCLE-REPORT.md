@@ -1149,3 +1149,39 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   the proof, cleanup, backpressure, drain, and all-three-p99 sub-second gates
   before either raising target or changing block/candidate geometry.
 - Artifact directory: `benchmark-results/20260901T102814Z`.
+
+## Cycle 27 — 15k 1,536-CWND A/B, injector self-congestion (20260901T105048Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `e15694d`.
+  Both source trees were clean. This is the direct fresh-state A/B against
+  Cycle 26: 15,000 target, 4,096 sources, 60/60/700/300-second timing,
+  no-gossip topology, 8,192-entry candidate allowance, and 2,048-message
+  transport window are unchanged. Its sole runtime change doubles adaptive
+  CWND from 768 to 1,536 (two complete 64-message batches per client).
+- Proof correctness, completion, canonical cleanup, follower completion, and
+  broadcast-control lifecycle passed. It is **not** an ingress or chain
+  capacity result: offered/admitted/proof-chain TPS was only 11,356.777 /
+  11,356.777 / 11,339.049, or 75.7% of target. The formal invalid reasons are
+  `offer_target_not_attained` and `insufficient_load_over_canonical_throughput`.
+  This must not be interpreted as the validator ceiling. As in all cycles,
+  `reproducible=false` is only the external Session Stats image-label caveat.
+- The doubled window self-congested the injection/admission path. All 12
+  clients hit their cap and 9,188,499 AIMD increases were clipped, while RTT
+  p50/p95/p99 rose from Cycle 26's 50/200/500 ms to 200/500/500 ms. Source
+  canonical-backlog caps activated, the global backlog reached 128,634, and
+  20 brief global guard pauses consumed 0.266% of the measured interval.
+  The proof drain stayed correct but lengthened to 7.151 seconds.
+- Total collation, collation wall, and accepted-block-interval p99 were
+  379.7 / 413.0 / 549.0 ms; their absolute maxima were 529.1 / 583.0 /
+  960.9 ms. Those figures are not an improvement over Cycle 26 because they
+  accompany a 22.3% proof-TPS regression and smaller blocks: 2,640 proof
+  blocks at 3,002.271 transfers each, versus Cycle 26's 1,745 at 5,845.317.
+  The lower work per candidate explains the superficially better tail values.
+- This rejects a two-full-batch-per-client window. The next one-variable A/B
+  remains at 15k but uses `NATIVE_LOAD_ADAPTIVE_MAX_CWND=864`: exactly 72
+  permits per client (one complete 64-message batch plus an 8-message tail),
+  a 12.5% increase over Cycle 26 rather than a 100% jump. It must retain all
+  formal capacity gates and all three p99 values below one second. If 864
+  remains capped with Cycle-26-like RTT/backlog, 960 is the next bounded
+  fallback; any renewed 100/500-ms RTT regime reverts to 768.
+- Artifact directory: `benchmark-results/20260901T105048Z`.
