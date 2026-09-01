@@ -1464,3 +1464,56 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   this same high-density workload with proof/cleanup/backpressure and all
   three p99 gates unchanged.
 - Artifact directory: `benchmark-results/20260901T140340Z`.
+
+## Cycle 35 — bulk staged ShardAccounts update, valid source-only improvement (20260901T145219Z)
+
+- TON image revision label: `e507ba00`; Docker harness revision: `064435b`.
+  This is a strict source-only A/B against Cycle 34: the selected genesis and
+  generator environment arrays are byte-identical (15k target, 4,096 sources,
+  12 connections, six workers/signers, 96-message batches, 16-message source
+  runs, one admission RPC per client, 1,152 global CWND, 0.0768-s initial RTT,
+  30-ms submit coalescing, timing, no-gossip topology, 8,192-entry candidate
+  allowance, and 2,048-message transport window). The only functional change
+  is `e507ba00`: `AugmentedDictionary::set_many_sorted` builds and atomically
+  merges the sorted staged ShardAccounts updates before the existing exact
+  hard/size preflight. The harness tree was clean; its revision differs from
+  Cycle 34 only because Cycle 34's report was committed after that run.
+- All proof correctness, completion, ingress/chain capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Offered/admitted/
+  proof-chain TPS was 14,998.146 / 14,998.146 / 14,948.825, improving Cycle
+  34's 14,619.196 / 14,619.196 / 14,534.811. Measured canonical backpressure
+  fell from 0.0200% to zero, sampled backlog fell 121,293 to 84,705, and clean
+  drain fell 6.510 to 4.233 seconds. The complete canonical one-second maximum
+  was 26,521 TPS, a burst rather than sustained capacity.
+  `reproducible=false` remains solely the external Session Stats image-label
+  caveat.
+- The user p99 policy remains satisfied and improves: total collation,
+  collation wall, and accepted-block interval p99 were 597.9 / 651.0 / 800.4
+  ms (Cycle 34: 615.9 / 667.4 / 819.3 ms). Absolute total/wall/accepted
+  maxima were 719.9 / 768.1 / 1,096.0 ms; the rare accepted maximum is
+  reported separately from the p99 policy. Proof packing rose slightly from
+  6,164.947 to 6,238.350 transfers/block (maximum 8,192).
+- The intended hot-path mechanism is confirmed without changing checkpoint
+  geometry: native commit average fell 49.787 to 47.256 ms (-5.08%), staged
+  dictionary set fell 23.732 to 22.226 ms (-6.35%), and exact checkpoint
+  rebuild fell 18.942 to 17.928 ms (-5.35%). Checkpoint groups/rebuilds were
+  20,634 versus 20,223, averaging 509.05 entries and 1.1585 fragments/group
+  (Cycle 34: 505.41 and 1.1646); there were zero rollbacks. Thus the TPS gain
+  comes from a faster equivalent staged-dictionary operation, not a hidden
+  batch-size or cadence change.
+- Query-credit behavior remained bounded and comparable: all 12 clients
+  reached the one-query cap, the observed per-client maximum was one, wire
+  batches averaged 89.166 messages (maximum 96), and no full-batch release
+  bypassed the cap. Exact proof evidence matched 11,848,617 canonical
+  source/nonce/external-cell hashes, with zero conflicts, duplicate nonces,
+  nonce gaps, generator timeouts, or follower errors; final catch-up passed.
+- Retain `e507ba00` as the best valid high-density source profile so far.
+  It remains distinct from Cycle 30's 14,819.585 TPS 64-message injector
+  baseline, but now exceeds it by 129.240 TPS while preserving all p99 gates.
+  Do not immediately enlarge candidates or post-commit grace: the 8,192 cap
+  is not the current size limit and the accepted-interval p99 has only about
+  200 ms of margin. The next benchmark should be a controlled target staircase
+  (15.5k first) with this exact profile, retaining proof/cleanup, <=1%
+  backpressure, and all three sub-second p99 gates before any claim of a new
+  capacity level.
+- Artifact directory: `benchmark-results/20260901T145219Z`.
