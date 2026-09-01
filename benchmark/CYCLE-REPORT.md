@@ -1562,3 +1562,48 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   copying/rebuild work, with exact materialized-versus-overlay equivalence
   tests, before re-attempting the three-block cadence at a higher throughput.
 - Artifact directory: `benchmark-results/20260901T161728Z`.
+
+## Cycle 37 — exact storage-stat overlay, rejected performance treatment (20260901T170237Z)
+
+- TON image revision label: `ace787c6`; Docker harness revision: `ad00353`.
+  This is a strict source-only A/B against Cycle 36: the sorted genesis and
+  generator benchmark-environment arrays are byte-identical. The source
+  treatment keeps the native checkpoint baseline immutable, evaluates each
+  tentative proof as an exact storage-stat overlay, and materializes the full
+  statistic only at the final native root. The harness revision differs only
+  because the Cycle 36 report was committed after that run.
+- Proof correctness, completion, canonical cleanup, follower, and
+  broadcast-lifecycle gates passed. Exact proof evidence matched 10,956,477
+  canonical source/nonce/external-cell hashes, with zero conflicts, follower
+  errors, or reorgs; final catch-up passed. The run is nevertheless not a 15k
+  capacity pass: offered/admitted/proof-chain TPS was 13,723.586 / 13,723.586
+  / 13,639.542 (91.49% of target). The formal invalid reasons are
+  `offer_target_not_attained` and
+  `insufficient_load_over_canonical_throughput`. Backpressure was 0.4965%,
+  still within the independent <=1% limit, while sampled backlog was 129,500
+  and clean drain took 7.572 seconds. `reproducible=false` remains solely the
+  external Session Stats image-label caveat.
+- The three-block cadence is retained but does not improve: 2,350 native
+  basechain blocks in 700 seconds is 3.357 blocks/s, versus Cycle 36's 2,370
+  / 700 = 3.386 blocks/s. Proof TPS fell 1.54% from 13,852.770 to 13,639.542,
+  and proof packing fell from 4,085.690 to 4,057.038 transfers/block
+  (maximum remains 8,192). This is also 8.76% below Cycle 35's valid
+  14,948.825-TPS high-density result.
+- The required p99 gates remain sub-second but all regress against Cycle 36:
+  total collation, collation wall, and accepted-block interval p99 were
+  534.1 / 585.2 / 744.5 ms, versus 515.9 / 560.4 / 661.1 ms. Absolute
+  total/wall/accepted maxima were 1,264.8 / 1,366.1 / 2,399.9 ms; unlike
+  Cycle 36, this treatment has observed samples above one second.
+- The intended hot path regressed despite preserving exact proof semantics.
+  Checkpoint rebuilds increased from 14,859 to 16,273, and the measured
+  checkpoint stage average rose 55.8%, from 6.081 to 9.471 ms/candidate.
+  The corresponding aggregate stage time rose from 14.526 to 22.466 seconds;
+  normalized by rebuild, it is about 0.978 to 1.381 ms/rebuild. The overlay
+  is therefore correct but slower under the identical C36 runtime profile.
+- Reject and revert this storage-stat overlay on the performance branch rather
+  than applying it to the Cycle 35 maximum-TPS profile. Retain Cycle 36's
+  `2fbea2ea` path as the optional >=3-blocks/s cadence mode and Cycle 35's
+  `e507ba00` path as the maximum valid sustained-TPS profile. A future
+  checkpoint experiment should first instrument and eliminate the extra
+  per-rebuild cost before another 10-ms-grace throughput attempt.
+- Artifact directory: `benchmark-results/20260901T170237Z`.
