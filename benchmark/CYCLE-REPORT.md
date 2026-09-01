@@ -1990,3 +1990,48 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   client in that experiment. Promote it only if proof TPS and wire density
   improve without backpressure, packing, drain, or cadence regressions.
 - Artifact directory: `benchmark-results/20260901T202423Z`.
+
+## Cycle 45 — rejected one-RPC 128-message injector geometry at 15k (20260901T204717Z)
+
+- TON and native-generator image labels are `7d5f775a`, with clean source
+  trees and identical 15k topology, resources, timing, candidate/transport
+  limits, qcap=1, source-run=16, and 30-ms coalescing to Cycle 44. The sorted
+  runtime environment differs only in the coupled geometry required to test
+  one larger RPC per client: batch size 96->128, global CWND 1,152->1,536,
+  and initial RTT 0.0768->0.1025 seconds. The initial window is 1,535.9995
+  and effective cap is 1,536, so each of 12 persistent clients can carry at
+  most one 128-message admission request.
+- The mechanism is exercised exactly as designed: qcap is one, observed
+  maximum admission RPCs per client is one, all 12 clients reach the query
+  cap, final credit is zero, average wire batch density rises 86.878->112.536
+  messages (+29.534%), and wire queries fall 135,086->94,920 (-29.734%). No
+  full-batch dispatch occurs, so this density gain remains deadline-driven.
+  It is therefore a valid one-RPC geometry test, not the earlier two-RPC
+  per-client CWND-1536 failure mode.
+- Correctness, completion, cleanup, follower, and broadcast-lifecycle gates
+  pass: 10,681,698 exact canonical hashes match with zero hash/nonce/duplicate
+  or external conflicts, follower errors, reorgs, or retry exhaustion; final
+  catch-up and native queue cleanup complete. `reproducible=false` remains
+  only the known unlabeled Session Stats image caveat.
+- Capacity fails decisively on load attainment. Offered/admitted TPS falls
+  14,837.160->13,331.099 (88.874% of target, 918.901 TPS below the 14,250
+  floor), and proof TPS falls 14,748.848->13,172.461 (-10.688%). Formal
+  reasons are only `offer_target_not_attained` and
+  `insufficient_load_over_canonical_throughput`; this is not a proof failure.
+  The 24,576 one-second canonical bucket is a transient burst, not capacity.
+- Blocks rise 2,288->2,934 (3.269->4.191 blocks/s), but this is harmful
+  under-packing rather than throughput: packing falls 4,505.876->3,138.224
+  transfers/block (-30.353%, same 8,192 maximum). Backlog peak/end rises
+  107,814/80,091->130,879/125,654 and drain lengthens 5.665->9.704 seconds.
+  Backpressure is 5.164 seconds (0.7378%), formally below 1%, but it does not
+  rescue the failed offer/proof rate. P99 cadence superficially improves with
+  the smaller blocks (381.608 / 417.564 / 500.066 ms total/wall/accepted),
+  while collate-start still reaches a 1.152-s maximum and external wait rises
+  362.496->393.420 seconds; first-work worsens 86.040->108.800 ms/call.
+- Reject and do not retune/retry the batch-128/CWND-1536 regime. Restore the
+  Cycle 44 96-message / 1,152-CWND / 0.0768-s geometry for all subsequent
+  source work. Do not compensate by lengthening coalescing, widening
+  connections, raising qcap, or raising target: those would mask the causal
+  result and recreate known backlog pressure. The next experiment should be a
+  source-side scheduler/ingress optimization on the valid C44 profile.
+- Artifact directory: `benchmark-results/20260901T204717Z`.
