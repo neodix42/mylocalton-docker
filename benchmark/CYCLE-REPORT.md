@@ -1822,3 +1822,71 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   restored baseline, alter one dimension, repeat the exact formal gates, and
   compare first-work/refill/idle timing separately from proof TPS.
 - Artifact directory: `benchmark-results/20260901T190005Z`.
+
+## Cycle 42 — restored-C40 16k control, repeatability boundary (20260901T193522Z)
+
+- TON and native-generator image revision labels are `7d5f775a`; Docker
+  harness revision is `33d34ae`. This is a true restoration control rather
+  than another source treatment: `7d5f775a` has the same Git tree object as
+  Cycle 40's `9cd0de4e` (`git diff --quiet 9cd0de4e 7d5f775a` succeeds). The
+  `.env` SHA-256 (`b22279ae...`), Compose configuration and per-service
+  hashes, and normalized sorted container benchmark environments, CPU sets,
+  and resource limits are all byte-identical across Cycles 40, 41, and 42.
+  It retains the 16,000-TPS target, 4,096 sources, 12 connections, six
+  workers/signers, 96-message batches, 16-message source runs, one admission
+  RPC per client, 1,152 global CWND, 0.0768-s initial RTT, 30-ms coalescing,
+  8,192-entry candidate allowance, and 2,048-message transport window. The
+  harness revision advances only because the Cycle 41 report was committed.
+- Proof correctness, run completion, canonical cleanup, follower, and
+  broadcast-lifecycle gates all pass. The final proof matches 11,831,292
+  canonical source/nonce/external-cell hashes with zero hash conflicts, nonce
+  gaps, duplicate or external nonce conflicts, follower errors, reorgs, or
+  follower retry exhaustion; final catch-up, drain, native transport, and
+  native pending-pool cleanup all complete. `reproducible=false` remains only
+  the unchanged unlabeled external Session Stats image caveat.
+- The restored control nevertheless fails both capacity dimensions. Offered
+  and admitted TPS are 14,844.787 (92.780% of the 16k target), 355.213 TPS
+  below the 15,200-TPS formal ingress threshold. The sole formal reasons are
+  `offer_target_not_attained` and
+  `insufficient_load_over_canonical_throughput`; correctness is not in
+  question. Proof-chain TPS is 14,725.501: -425.278 (-2.807%) from the valid
+  Cycle 40 result and -266.029 (-1.775%) from rejected Cycle 41. This makes
+  Cycle 40's narrow 95.267% pass non-repeatable under the identical restored
+  runtime, rather than establishing 16k as a stable capacity rung.
+- Block production and normal cadence are not the limiting condition. Cycle
+  42 produces 2,355 proof blocks in 700 seconds (3.364 blocks/s), higher than
+  both Cycle 40's 3.354 and Cycle 41's 3.336. Total-collation, collation-wall,
+  and accepted-block-interval p99 are still sub-second at 507.713 / 553.669 /
+  639.459 ms (Cycle 40: 503.894 / 554.649 / 648.169 ms); collate-start p99 is
+  741.845 ms and validated-block p99 is 93.396 ms. Their total/wall/accepted
+  maxima are 688.978 / 730.015 / 1,361.194 ms, so rare acceptance-spacing
+  tails remain above one second but the stated p99 cadence objective holds.
+- The throughput loss follows lower packing and renewed ingress pressure, not
+  a loss of block frequency. Proof packing is 4,370.754 transfers/block,
+  -139.636 (-3.096%) from Cycle 40, with the same 8,192 maximum; the peak
+  one-second canonical burst is 26,112. Canonical backpressure occurs in 22
+  measured events for 1.005 seconds (0.1436%, formally below the 1% limit but
+  no longer zero). Sampled backlog rises from Cycle 40's 114,472 / 84,766
+  peak/end to 128,657 / 102,880, and clean drain lengthens 5.342 to 6.797
+  seconds without timing out. The native transport remains bounded (2,560
+  high-water; 2,048/512 max push/pop) and ends with zero reserved, pending,
+  live-queued, and live-unpushed messages.
+- This run also removes a causal basis for promoting the Cycle 41 initial-pump
+  timing observation. On the source-equivalent restored path, first-work wait
+  is 233.300 seconds over 2,378 calls (98.108 ms/call), versus 216.753 /
+  2,369 (91.495 ms/call) in Cycle 40 and 204.880 / 2,368 (86.520 ms/call) in
+  Cycle 41. Refill wait moves in the opposite direction (65.504 seconds here
+  versus 78.876 / 85.134), while total reconciled external wait is 372.101
+  seconds versus 370.219 / 366.044. The three runs therefore demonstrate
+  meaningful run-to-run scheduling/load variance and do not isolate a stable
+  throughput gain from the C41 source change.
+- Do not run the proposed 128-message/1,536-CWND injector geometry at 16k:
+  it would be measured against an invalid and non-repeatable control, while
+  adding a larger outstanding window to the higher backlog state. Return to
+  the 15.5k target as the provisional next rung and first repeat the restored
+  source/profile there. Only after that control passes all capacity gates
+  should a single coupled batch-128/CWND-1536/initial-RTT-0.096 (or 0.0961)
+  A/B be
+  considered, with unchanged qcap=1 and explicit proof that wire-batch density
+  rises rather than merely adding deadline queueing.
+- Artifact directory: `benchmark-results/20260901T193522Z`.
