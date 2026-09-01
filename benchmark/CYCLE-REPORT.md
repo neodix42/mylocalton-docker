@@ -629,3 +629,43 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   KeyValue/write tail. If not, block-cadence/packing and database-write work
   become the next isolated treatments.
 - Artifact directory: `benchmark-results/20260901T041349Z`.
+
+## Cycle 14 — explicit external-message rebroadcast control (20260901T053132Z)
+
+- TON image revision label: `13335a11`; the TON and Docker source trees were
+  clean at launch (`5c036b0` for the benchmark harness). This is the first
+  fresh-state cycle with committed source provenance after the overnight work.
+  Session Stats remains an externally supplied image without a revision label,
+  so the harness correctly marks whole-image reproducibility false without
+  weakening the proof, completion, or cleanup decisions.
+- Workload: the Cycle 13 4,096-source, 6,000-TPS, 60/60/700/300-second
+  profile, with 20 ms generator coalescing, 768 global CWND, 18 validator CPUs,
+  4 generator CPUs, the 18,432-message logical candidate cap, and all prior
+  admission/cache fixes retained. The guarded `BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=0`
+  control captured matching in-memory and on-disk settings before load, after
+  the five-second settle, after load, and after restoring the normal setting.
+- Result: proof-correct and complete, but capacity-invalid. Measured
+  offered/admitted/proof-chain throughput was 4,648.461 / 4,648.461 /
+  4,504.069 TPS. The exact canonical one-second peak was 23,040 TPS; it is a
+  burst, not a sustained capacity number. Target attainment was 77.474% and
+  canonical-backlog pressure stopped offers for 198.970 seconds (28.424% of
+  the measured window), so both ingress and chain-capacity gates were false.
+  The guard reached its 131,072-message maximum, but the final canonical
+  backlog, pool residue, nonce gaps, retry exhaustion, follower errors, and
+  reorgs were all zero; final proof catch-up completed and drain took 20.922
+  seconds.
+- Cadence and packing stayed inside the intended fast-path envelope. The
+  proof window contained 2,998 native basechain blocks averaging 1,050.148
+  transfers each (maximum 18,432). Session telemetry recorded 3,025 measured
+  basechain collations averaging 173.5 ms, with 328.4 ms p95 and 594.1 ms p99;
+  accepted-block interval averaged 232 ms with 379 ms p95 and 714 ms p99.
+  Thus lowering the candidate cap to force sub-second blocks is not justified:
+  construction is already sub-second while the blocks remain mostly underfilled.
+- The no-op control supplies the paired baseline for the next single-validator
+  ceiling experiment. External wait still dominated collation wall time:
+  310.860 seconds first-work (74.1%), 48.383 seconds fragment-refill (11.5%),
+  and 57.568 seconds post-commit idle (13.7%) across the measured basechain
+  collations. Native CPU work averaged only 11.8 ms per collation. This keeps
+  bounded transport prefill, not a block-size reduction, as the next code
+  treatment if disabling rebroadcast does not remove the stalls.
+- Artifact directory: `benchmark-results/20260901T053132Z`.
