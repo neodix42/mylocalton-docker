@@ -561,9 +561,15 @@ for field in \
   retry_horizon_exhausted \
   canonical_state_lag_retry_exhausted \
   adaptive_cwnd \
+  admission_query_credit \
   adaptive_max_cwnd \
   effective_cwnd_cap \
   clients_at_cwnd_cap \
+  clients_at_query_cap \
+  clients_at_query_cap_sampled_peak \
+  submit_max_queries_per_client \
+  query_credit_stalls \
+  max_per_client_admission_queries \
   cwnd_cap_limited_acks \
   ready_source_queue_max_depth \
   native_fast_path_invocations \

@@ -2154,6 +2154,7 @@ jq -L "$benchmark_jq_dir" -Rs '
     max_source_issue_burst:($records | map(.source_issue_burst_max_size // 0) | max),
     max_active_tasks_per_source:($records | map(.max_active_tasks_per_source // 0) | max),
     max_clients_at_cwnd_cap:($records | map(.clients_at_cwnd_cap // 0) | max),
+    max_clients_at_query_cap:($records | map(.clients_at_query_cap // 0) | max),
     max_sources_at_canonical_backlog_cap:($records |
       map(.sources_at_canonical_backlog_cap // 0) | max),
     max_mempool_accept_tps: ($records | map(.mempool_accept_tps // 0) | max),
@@ -2247,6 +2248,15 @@ jq -L "$benchmark_jq_dir" -Rs '
       max_clients_at_cap:($records | map(.clients_at_cwnd_cap // 0) | max),
       cap_limited_acks:($final.cwnd_cap_limited_acks // 0),
       semantics:"message-count admission window; independent from the unresolved/proof max_inflight bound"
+    } end),
+    admission_query_credit:(if $final == null then null else {
+      configured_per_client:($final.submit_max_queries_per_client // 0),
+      final_inflight:($final.admission_queries_inflight // 0),
+      sampled_clients_at_cap_peak:($final.clients_at_query_cap_sampled_peak // null),
+      max_clients_at_cap:($records | map(.clients_at_query_cap // 0) | max),
+      stalls:($final.query_credit_stalls // 0),
+      max_per_client:($final.max_per_client_admission_queries // 0),
+      semantics:"per persistent-client cap on concurrent native admission RPCs; zero preserves unlimited behavior, and counters exclude anchor/state scans"
     } end),
     ready_source_scheduler:(if $final == null then null else {
       head_blocked_ready_notifications:($final.head_blocked_ready_notifications // 0),
