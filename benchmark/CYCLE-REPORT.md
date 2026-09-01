@@ -1517,3 +1517,48 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   backpressure, and all three sub-second p99 gates before any claim of a new
   capacity level.
 - Artifact directory: `benchmark-results/20260901T145219Z`.
+
+## Cycle 36 — 10-ms post-commit grace, three-block cadence mode (20260901T161728Z)
+
+- TON image revision label: `2fbea2ea`; Docker harness revision: `650950b`.
+  This is a strict source-only timing A/B against Cycle 35: sorted genesis and
+  generator benchmark-environment arrays are identical (15k target, 4,096
+  sources, 12 connections, six workers/signers, 96-message batches,
+  16-message source runs, one admission RPC per client, 1,152 global CWND,
+  0.0768-s initial RTT, 30-ms submit coalescing, timing, no-gossip topology,
+  8,192-entry candidate allowance, and 2,048-message transport window). The
+  sole functional source change restores the post-commit pack grace from 20
+  to 10 ms. The partial-fragment grace remains 10 ms; the work-driven outer
+  failure timeout and consensus timing model are unchanged.
+- Proof correctness, completion, canonical cleanup, follower, and
+  broadcast-lifecycle gates passed. The run is deliberately *not* a 15k
+  capacity pass: offered/admitted/proof-chain TPS was 13,940.799 / 13,940.799
+  / 13,852.770, only 92.94% of the offered target. The formal invalid reasons
+  are `offer_target_not_attained` and
+  `insufficient_load_over_canonical_throughput`; canonical backpressure was
+  0.2867%, below the independent <=1% limit, and clean drain completed in
+  6.613 seconds. `reproducible=false` remains solely the external Session
+  Stats image-label caveat.
+- The cadence objective is conclusively met. The proof cohort contains 2,370
+  native basechain blocks in 700 seconds, or 3.386 blocks/s, versus Cycle 35's
+  1,675 / 700 = 2.393 blocks/s. Total collation, collation wall, and
+  accepted-block-interval p99 were 515.9 / 560.4 / 661.1 ms, all below one
+  second and improved from Cycle 35's 597.9 / 651.0 / 800.4 ms. Absolute
+  maxima were 697.0 / 749.3 / 917.7 ms, so this run has no observed
+  accepted-interval sample above one second either.
+- The cost is direct and material: proof TPS falls 7.33% from 14,948.825 to
+  13,852.770, while blocks increase 41.49% and proof packing falls 34.51%
+  from 6,238.346 to 4,085.690 transfers/block (maximum remains 8,192).
+  This is the expected fixed per-block checkpoint/state/consensus overhead,
+  not a block-size limit or proof failure. Native commit and checkpoint timing
+  are lower per candidate because candidates are smaller; that must not be
+  misattributed to a faster equivalent throughput path.
+- Retain `2fbea2ea` only as an optional low-latency / >=3-blocks/s desktop
+  cadence profile. Retain Cycle 35's `e507ba00` 20-ms grace as the maximum
+  sustained-TPS profile. Do not change `SIMPLEX_TARGET_RATE_MS` or the 8-second
+  candidate timeout to chase block frequency: in work-driven max-TPS mode they
+  are failure/cancellation bounds rather than successful-block pacing. The
+  next source treatment should remove repeated exact checkpoint storage-stat
+  copying/rebuild work, with exact materialized-versus-overlay equivalence
+  tests, before re-attempting the three-block cadence at a higher throughput.
+- Artifact directory: `benchmark-results/20260901T161728Z`.
