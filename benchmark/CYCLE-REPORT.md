@@ -1108,3 +1108,44 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   justified if that control cannot attain target while chain cadence remains
   healthy.
 - Artifact directory: `benchmark-results/20260901T100645Z`.
+
+## Cycle 26 — 15k 768-CWND control, valid but injector-window-limited (20260901T102814Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `c34a77f`.
+  Both source trees were clean. This fresh-state control retains Cycle 25's
+  4,096 sources, 60/60/700/300-second timing, one-validator no-gossip
+  topology, 8,192-entry candidate allowance, 2,048-message transport window,
+  and 768 CWND. Its only workload change is the offered target: 13,500 to
+  15,000 TPS.
+- Result: all formal proof correctness, completion, ingress/chain capacity,
+  canonical cleanup, follower, and broadcast-lifecycle gates passed.
+  Offered/admitted/proof-chain TPS was 14,682.113 / 14,682.113 /
+  14,592.386. That is 97.881% of the nominal 15k target and satisfies the
+  documented >=95% capacity gate, but does not establish that the chain has
+  been offered a full 15k. There was zero measured canonical-backpressure, a
+  113,664 sampled backlog peak below the 131,072 guard, and a 5.317-second
+  clean drain to zero residue. The maximum fully contained canonical
+  one-second bucket was 24,736 TPS, a burst rather than a sustained result.
+  `reproducible=false` remains solely the external Session Stats image-label
+  caveat.
+- Cadence remains strongly user-compliant: total collation, collation wall,
+  and accepted-block-interval p99 were 581.9 / 636.7 / 766.7 ms, all below one
+  second and better than Cycle 25's 608.8 / 665.9 / 785.5 ms. Absolute
+  total/wall/accepted maxima were 657.4 / 720.7 / 1,007.0 ms. The 1.007-second
+  accepted maximum is a rare tail and remains distinct from the all-three-p99
+  requirement.
+- Proof contained 1,745 native blocks averaging 5,845.317 transfers and
+  reached the 8,192-entry cap. That density is +11.1% over Cycle 25, while
+  native commit/staged-dictionary/exact-checkpoint averages improved to
+  53.827 / 26.660 / 19.368 ms. Bounded checkpoint coalescing remained clean:
+  20,570 groups, 1.160 fragments/group, 720 capacity and 19,847 ingress
+  flushes, three latency flushes, and zero rollback/deadline/fanout/headroom
+  events.
+- Every one of the 12 generator clients reached the 768 CWND cap, clipping
+  11,626,288 additive increases. This is the direct explanation for the
+  2.119% offer shortfall; the proof chain stayed within 0.6% of actual offered
+  load and did not backpressure. The next experiment is therefore a strict
+  same-15k A/B with only `NATIVE_LOAD_ADAPTIVE_MAX_CWND=1536`. It must retain
+  the proof, cleanup, backpressure, drain, and all-three-p99 sub-second gates
+  before either raising target or changing block/candidate geometry.
+- Artifact directory: `benchmark-results/20260901T102814Z`.
