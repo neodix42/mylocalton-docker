@@ -1945,3 +1945,48 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   control passes comfortably, use a separate one-RPC-per-client batch-128
   experiment with all other runtime dimensions fixed.
 - Artifact directory: `benchmark-results/20260901T200039Z`.
+
+## Cycle 44 — restored-C38 15k confirmation, valid control (20260901T202423Z)
+
+- TON and native-generator image revision labels are `7d5f775a`; Docker
+  harness revision is `ee93094`. This is an exact restored-source/runtime
+  confirmation of Cycle 38: `7d5f775a` and Cycle 38's `9cd0de4e` have the
+  same Git tree (`106654e...`). The `.env` SHA-256, Compose/service hashes,
+  and normalized sorted runtime environment, CPU, and resource hashes match
+  the 15k profile. It retains 4,096 sources, 12 connections, six
+  workers/signers, 96-message batches, 16-message source runs, one admission
+  RPC per client, 1,152 global CWND, 0.0768-s initial RTT, 30-ms coalescing,
+  8,192 candidate entries, 2,048-message transport window, and no-gossip
+  control.
+- All formal proof correctness, completion, ingress/chain-capacity, and
+  validator-cleanup gates pass. Exact proof matches 11,735,952 canonical
+  source/nonce/external-cell hashes with zero hash conflicts, nonce gaps,
+  duplicate or external nonce conflicts, follower errors, reorgs, or retry
+  exhaustion. Final catch-up, drain, and native pending/transport cleanup all
+  complete. `reproducible=false` remains solely the known unlabeled Session
+  Stats image caveat.
+- Offered/admitted/proof-chain TPS is 14,837.160 / 14,837.160 / 14,748.848:
+  98.9144% of the 15k target and +64.770 / +70.333 TPS (+0.439% / +0.479%)
+  over Cycle 38. Canonical backpressure is zero. The 26,752 canonical
+  one-second bucket is a burst, not a sustained capacity claim.
+- The >=3-blocks/s and subsecond-cadence objectives both hold: 2,288 proof
+  blocks over 700 seconds is 3.269 blocks/s, packing is 4,505.876
+  transfers/block (maximum 8,192), and total/wall/accepted/start/validated
+  p99s are 525.791 / 568.039 / 676.195 / 747.184 / 101.538 ms. Reported
+  total/wall/accepted/start maxima are 706.433 / 751.369 / 891.712 / 892.262
+  ms, all below one second. Sampled backlog is 107,814 peak / 80,091 end and
+  drain completes in 5.665 seconds without timeout.
+- Bounded injection/transport behavior is verified: all 12 clients reach the
+  1,152 global CWND cap; qcap remains one RPC per client with observed maximum
+  one; batches average 86.878 messages (maximum 96) with no full-batch
+  dispatches; native transport high-water is 2,560 with 2,048/512 maximum
+  producer/consumer batches and zero final reserved, pending, or live work.
+- This is the current repeatable 15k control and authorizes one narrowly
+  coupled injector A/B only: retain qcap=1 and all other runtime controls,
+  then change batch size 96->128, global CWND 1,152->1,536, and initial RTT
+  to 0.1025 seconds so each of 12 persistent clients can carry at most one
+  initially full 128-message admission RPC. Do not raise target, widen
+  connections, lengthen coalescing, or allow two simultaneous RPCs per
+  client in that experiment. Promote it only if proof TPS and wire density
+  improve without backpressure, packing, drain, or cadence regressions.
+- Artifact directory: `benchmark-results/20260901T202423Z`.
