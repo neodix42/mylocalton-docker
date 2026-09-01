@@ -1185,3 +1185,41 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   remains capped with Cycle-26-like RTT/backlog, 960 is the next bounded
   fallback; any renewed 100/500-ms RTT regime reverts to 768.
 - Artifact directory: `benchmark-results/20260901T105048Z`.
+
+## Cycle 28 — 15k 864-CWND midpoint, valid but regressive (20260901T111218Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `db8fa54`.
+  Both source trees were clean. This fresh-state C26/C27 midpoint holds the
+  15k target, 4,096 sources, timing, no-gossip topology, 8,192-entry
+  candidate allowance, and 2,048-message transport window fixed. Its only
+  change is CWND 768 to 864, distributed evenly as 72 permits per client: one
+  complete 64-message batch plus an 8-message tail.
+- All formal proof correctness, completion, ingress/chain capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Offered/admitted/
+  proof-chain TPS was 14,317.877 / 14,317.877 / 14,275.824, with zero
+  measured canonical-backpressure, a 103,749 sampled backlog peak, and a
+  5.302-second clean drain. This clears the formal 95% offer gate but is a
+  regression from Cycle 26's 14,592.386 proof TPS at CWND 768. The complete
+  canonical one-second maximum was 26,931 TPS, a burst rather than sustained
+  capacity. `reproducible=false` remains only the external Session Stats
+  image-label caveat.
+- The user p99 policy remains satisfied: total collation, collation wall, and
+  accepted-block interval p99 were 588.8 / 642.5 / 780.5 ms. However each is
+  slightly worse than Cycle 26's 581.9 / 636.7 / 766.7 ms, and p95 admission
+  RTT rose from 200 to 500 ms. Absolute total/wall/accepted maxima were
+  720.9 / 771.1 / 1,291.9 ms; the accepted maximum is a rare tail reported
+  separately from the p99 requirement.
+- Proof had 1,800 blocks averaging 5,543.778 transfers, below Cycle 26's
+  5,845.317. All 12 clients still hit their cap (11,364,801 clipped increases),
+  but the extra eight permits each increased queue residence rather than useful
+  parallelism. Native commit/staged-dictionary/checkpoint averages fell to
+  46.944 / 23.908 / 16.456 ms only because blocks were less dense; that is not
+  a throughput optimization. Coalescing remained correct (18,901 groups,
+  1.195 fragments/group, zero rollbacks).
+- This closes the global-CWND widening ladder: 768 is the retained 15k
+  injector profile; 864 is valid but slower and 1,536 is self-congesting and
+  capacity-invalid. The next improvement must seek independent one-batch
+  connection parallelism or reduce the admission/collation cost, not increase
+  permits per existing client. Any such change is a separate committed source
+  treatment and will be retested first against the Cycle 26 15k/768 baseline.
+- Artifact directory: `benchmark-results/20260901T111218Z`.
