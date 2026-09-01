@@ -2035,3 +2035,48 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   result and recreate known backlog pressure. The next experiment should be a
   source-side scheduler/ingress optimization on the valid C44 profile.
 - Artifact directory: `benchmark-results/20260901T204717Z`.
+
+## Cycle 46 — rejected whole-set excluded-prefix source A/B at 15k (20260901T214547Z)
+
+- This is a strict source-only A/B against Cycle 44. Runtime `.env` SHA-256,
+  Compose/service hashes, normalized sorted genesis/generator environments,
+  CPU/memory pinning, 4,096 sources, 12 connections, six workers/signers,
+  96-message batches, 16-message source runs, qcap=1, 1,152 CWND, 0.0768-s
+  RTT, 30-ms coalescing, 8,192 candidate cap, 2,048 transport window,
+  no-gossip control, and 60/60/700/300 timing are unchanged. C46's OCI source
+  label is `6959f4bf` (`1edac92d` production excluded-prefix shortcut plus
+  test-only coverage); Cycle 44's is `7d5f775a`.
+- All formal operational gates pass: correctness, completion, ingress and
+  chain capacity, cleanup, catch-up, and drain. The proof contains no
+  hash/nonce/duplicate/external conflicts, follower errors, reorgs, or queue
+  leaks; final native transport/pending/reconciliation state is zero.
+  `reproducible=false` remains solely the known unlabeled Session Stats image
+  caveat. The treatment is rejected for performance/cadence, not correctness.
+- The shortcut is demonstrably active, not a no-op: 929 index builds validate
+  13,028,622 entries into 972,698 ranges and skip 13,026,581 messages
+  (99.9843% coverage of successful indexes). However, 1,868 attempts fall
+  back conservatively and the successful builds materialize about 14,024
+  entries and 1,047 ranges each. The whole-set validation/sort/range work is
+  therefore large relative to a 2,048-message prefill.
+- C44->C46 proof TPS falls 14,748.848->14,347.000 (-401.848, -2.725%) and
+  offered TPS falls 14,837.160->14,454.217 (-2.581%), although 96.3614%
+  target attainment still passes. Block rate falls 3.2686->3.2414 blocks/s,
+  packing 4,505.876->4,419.812 (-1.91%), and the 25,088 one-second canonical
+  bucket is only a transient burst. Canonical backpressure rises 0->0.578593
+  seconds (11 events), backlog rises 107,814->128,070, and drain extends
+  5.665->6.844 seconds.
+- The causal timing signal matches the regression: native first-work rises
+  198.237 seconds/2,304 calls =86.040 ms/call to
+  220.728/2,303 =95.844 ms/call (+9.804 ms, +11.39%). Native probe, fragment
+  refill, and post-commit-idle waits also rise. While p99 total/wall/accepted
+  interval remains sub-second at 517.283/563.959/662.595 ms, maxima regress:
+  accepted interval 1,319.743 ms, collate start 1,662.697 ms, and validation
+  343.907 ms versus Cycle 44's 891.712/892.262/265.014 ms.
+- Reject and revert the whole-exclusion materialization path; do not raise
+  target or retry 16k on this source. Restore the Cycle 44 source/runtime
+  baseline. A successor must avoid validating/sorting every exclusion for a
+  small prefill: it should either resolve source/nonce data upstream with
+  candidate exclusions or lazily index only source/nonces actually reached at
+  the prefill frontier. It must first match <=86-ms first-work, zero/low
+  backpressure, and C44's worst-case cadence before claiming a TPS gain.
+- Artifact directory: `benchmark-results/20260901T214547Z`.
