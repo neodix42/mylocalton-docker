@@ -835,3 +835,39 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   cancellation ratio, max push batch, and p99 cadence are its key regression
   checks.
 - Artifact directory: `benchmark-results/20260901T070740Z`.
+
+## Cycle 19 — bounded transport-prefill treatment, 2,048 window (20260901T072845Z)
+
+- TON image revision label: `b1393d52`; Docker harness revision: `1c5d927`.
+  Both trees were clean. This is the direct fresh-state treatment for Cycle 18:
+  its 4,096-source 10,000-TPS, 60/60/700/300-second, one-validator no-gossip,
+  18,432-entry, and 768-CWND profile is unchanged. The sole runtime difference
+  is `TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW=2048` instead of 1,024.
+- Result: valid 10k capacity run. Offered/admitted/proof-chain TPS was
+  10,000.096 / 10,000.096 / 9,998.644, with zero canonical backpressure.
+  All proof, completion, ingress/chain-capacity, cleanup, follower, and
+  broadcast-lifecycle gates passed; drain took 0.781 seconds to zero backlog.
+  The maximum complete canonical one-second bucket was 19,600 TPS, a burst
+  rather than a sustained capacity result.
+- The wider hand-off remains bounded and correct. It selected 8,229,346
+  messages and accounted for 269,681 cancellation-discarded entries (3.28% of
+  selected, only 0.06 percentage points above Cycle 18); no final validator
+  residue or nonce/proof failure occurred. The observed high-water was 2,560
+  messages, exactly the configured 2,048 window plus one 512-message producer
+  look-ahead; max push batch was 2,048 and consumer microbatches remained 512.
+  This confirms the treatment did not turn into an unbounded producer queue.
+- At the fixed 10k target, sustained TPS is intentionally target-limited, so
+  cadence and safety are the useful comparison. Total collation p99 improved
+  from Cycle 18's 846.2 ms to 799.2 ms; accepted-block interval p99 improved
+  from 951.8 ms to 901.9 ms; collation-wall p99 was 855.4 ms. All remain below
+  the sub-second p99 gate. Packing was 2,981.677 proof transfers/block
+  (sampled 2,973.666) across 2,344 proof blocks, with an observed maximum
+  18,432-entry candidate. The few 1.06–1.45 second absolute tails remain
+  reportable and are not obscured by the p99 pass.
+- Fragment-refill time was statistically unchanged (219.3 seconds versus
+  218.9 in the control), so the wider window is retained for its bounded
+  telemetry and p99 improvement but not credited with a new target-limited TPS
+  ceiling. The next clean staircase changes only offered target to 12,000 TPS
+  at this 2,048 window and 768 CWND. If that becomes injector-window-limited,
+  a 1,536-CWND A/B follows before altering candidate size or consensus logic.
+- Artifact directory: `benchmark-results/20260901T072845Z`.
