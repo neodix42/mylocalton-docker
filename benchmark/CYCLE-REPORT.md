@@ -1303,3 +1303,43 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   because this profile already attains the target closely; changing it together
   with rate would confound the capacity result.
 - Artifact directory: `benchmark-results/20260901T115801Z`.
+
+## Cycle 31 — 16.5k staircase, injector-window limited (20260901T122050Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `cf30ef8`.
+  Both source trees were clean. This is the strict rate staircase from Cycle
+  30: sources, 12 connections, six workers/signers, 768 global CWND, 0.05-s
+  initial RTT, 30-ms leading-edge submit coalescing, 64-message batches,
+  16-message source runs, timing, no-gossip topology, 8,192-entry candidate
+  allowance, and 2,048-message transport window are unchanged. The sole
+  runtime change is the offered target, 15,000 to 16,500 TPS.
+- Proof correctness, completion, cleanup, follower, and broadcast-lifecycle
+  gates passed, with zero canonical backpressure, a 101,503 sampled backlog
+  peak below the 131,072 guard, and a 5.426-second clean drain. Offered/
+  admitted/proof-chain TPS was 15,124.719 / 15,124.719 / 15,103.558. This is
+  the highest observed proof-chain average so far, but it is not a valid
+  16.5k capacity claim: only 91.67% of the target was offered, so the formal
+  ingress gate reports `offer_target_not_attained` and the chain gate reports
+  `insufficient_load_over_canonical_throughput`. The complete canonical
+  one-second maximum was 27,648 TPS, a burst rather than sustained capacity.
+  `reproducible=false` remains solely the external Session Stats image-label
+  caveat.
+- The user p99 policy remains satisfied: total collation, collation wall, and
+  accepted-block interval p99 were 584.5 / 633.2 / 757.0 ms. Absolute
+  total/wall/accepted maxima were 723.8 / 775.1 / 1,089.7 ms; the rare
+  accepted maximum remains separate from the p99 policy. Proof packing was
+  5,951.176 transfers/block over 1,774 proof blocks (maximum 8,192).
+- This isolates the present limiter to the injector-window/admission path,
+  not a canonical backlog guard or chain failure: proof tracks admitted work
+  within 0.14%, no measured backpressure occurred, all 12 clients remained at
+  their 768 cap (12,072,189 clipped additive ACKs), and RTT stayed 50/200/500
+  ms. Compared with Cycle 30, denser arrival raised average wire batches from
+  35.648 to 42.177 messages and reduced admission queries from 330,507 to
+  286,224 (-13.4%), yet offer rose only 1.49%.
+- The next isolated treatment holds this 16.5k geometry fixed and changes
+  only bounded submit coalescing from 30 to 40 ms. It tests whether a modest
+  additional leading-edge batching delay can improve the capped injector's
+  query efficiency while retaining proof/cleanup validity, zero or <=1%
+  canonical backpressure, and all three sub-second p99 gates. It is not
+  combined with a block-size, CWND, lane-count, or source change.
+- Artifact directory: `benchmark-results/20260901T122050Z`.
