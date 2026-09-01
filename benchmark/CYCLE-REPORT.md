@@ -1607,3 +1607,56 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   checkpoint experiment should first instrument and eliminate the extra
   per-rebuild cost before another 10-ms-grace throughput attempt.
 - Artifact directory: `benchmark-results/20260901T170237Z`.
+
+## Cycle 38 — native immediate actor fast lane, valid three-block cadence recovery (20260901T173628Z)
+
+- TON image revision label: `9cd0de4e`; Docker harness revision: `9938359`.
+  This is a strict runtime-environment A/B against Cycle 36: the sorted
+  genesis and native-load-generator environment arrays are byte-identical
+  (15k target, 4,096 sources, 12 connections, six workers/signers,
+  96-message batches, 16-message source runs, one admission RPC per client,
+  1,152 global CWND, 0.0768-s initial RTT, 30-ms submit coalescing, timing,
+  no-gossip topology, 8,192-entry candidate allowance, and 2,048-message
+  transport window). The new source treatment is native-only immediate actor
+  handoff at the Collator -> ValidatorManager -> ExtMessagePool seams; the
+  generic path remains scheduled. Cycle 37 is the direct inherited-source
+  behavioral comparator, while Cycle 36 supplies the exact runtime baseline.
+- All proof correctness, completion, ingress/chain-capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Exact proof
+  evidence matched 11,690,572 canonical source/nonce/external-cell hashes,
+  with zero conflicts, follower errors, or reorgs; final catch-up passed and
+  the native pool/reconciliation state was clean. Offered/admitted/proof-chain
+  TPS was 14,772.390 / 14,772.390 / 14,678.515: +5.97% / +5.96% proof over
+  Cycle 36 and +7.64% / +7.62% over Cycle 37. This clears the formal 15k
+  workload capacity gates. `reproducible=false` remains solely the external
+  Session Stats image-label caveat.
+- The cadence objective remains met: 2,270 proof blocks in 700 seconds is
+  3.243 blocks/s. That is below Cycle 36's 3.386 blocks/s, but higher packing
+  (4,519.948 versus 4,085.690 transfers/block, maximum 8,192) recovers the
+  throughput. Canonical backpressure fell from 0.2867% to zero; sampled
+  backlog fell 127,609 to 115,145 and clean drain fell 6.613 to 5.358 seconds.
+  The 25,600 one-second maximum is a burst, not a sustained-capacity claim.
+- All required p99 values remain sub-second: total collation, collation wall,
+  and accepted-block interval were 525.244 / 576.667 / 709.828 ms. Relative
+  to Cycle 36 these are +9.298 / +16.279 / +48.731 ms, so the throughput win
+  does consume some ordinary cadence margin. Absolute total/wall/accepted
+  maxima were 659.437 / 689.408 / 957.271 ms—still all below one second, and
+  far below Cycle 37's 1,264.842 / 1,366.090 / 2,399.939-ms tail.
+- The telemetry supports the fast lane rather than an injector artifact.
+  Native first-work wait fell from 263.141 s across 2,392 calls in Cycle 36
+  (110.009 ms/call; 69.01% of accounted external wait) to 193.965 s across
+  2,308 calls (84.040 ms/call; 53.43%): -23.61% per call and -69.176 s in
+  aggregate. Native fragment-refill and post-commit-idle averages also fell
+  31.14% and 11.55%, respectively, while total reconciled external wait fell
+  381.310 to 363.002 seconds. Against Cycle 37, first-work latency improved
+  another 12.69% per call and all three absolute tail maxima improved.
+- Retain the native immediate actor handoff as the first valid >=3-blocks/s
+  cadence recovery, but do not yet raise the target or lengthen packing grace:
+  accepted-interval p99 rose 7.37% from Cycle 36 and its 957.271-ms maximum
+  leaves only 42.729 ms below one second. The checkpoint stage remains a
+  material C36 regression (average 6.081 to 9.959 ms, p99 31.031 to
+  44.705 ms, rebuilds +30.7%). Rebase/isolate the fast lane on the reverted
+  Cycle 36 checkpoint path, then repeat this exact runtime A/B before a target
+  staircase. Cycle 35 remains the higher proof-TPS profile (14,948.825) but
+  does not provide this three-block cadence.
+- Artifact directory: `benchmark-results/20260901T173628Z`.
