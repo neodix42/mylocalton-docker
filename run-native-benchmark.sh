@@ -1787,6 +1787,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
           $rows; "native_stat_checkpoint_base_snapshots"
         ),
         checkpoint_rebuilds:native_work_counter_sum($rows; "native_stat_checkpoint_rebuilds"),
+        checkpoint_coalescing:native_checkpoint_coalescing_summary($rows),
         fragment_refill_waits:native_work_counter_sum($rows; "native_fragment_refill_waits"),
         fragment_refill_timeouts:native_work_counter_sum($rows; "native_fragment_refill_timeouts"),
         fragment_refill_messages:native_work_counter_sum($rows; "native_fragment_refill_messages"),
@@ -1828,6 +1829,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
         native_commit:stage_distribution($rows; "native_commit"),
         native_account_cell_build:stage_distribution($rows; "native_account_cell_build"),
         native_staged_dict_set:stage_distribution($rows; "native_staged_dict_set"),
+        native_stat_checkpoint_rebuild:stage_distribution($rows; "native_stat_checkpoint_rebuild"),
         native_proof_preflight:stage_distribution($rows; "native_proof_preflight"),
         native_state_install:stage_distribution($rows; "native_state_install"),
         native_canonical_dict_install:stage_distribution($rows; "native_canonical_dict_install"),

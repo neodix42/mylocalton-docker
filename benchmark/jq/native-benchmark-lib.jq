@@ -22,6 +22,84 @@ def stat_counter_value:
   else null
   end;
 
+# The native collator emits its fast-path counters in the space-separated
+# work_time_real_stats string.  Keep checkpoint-coalescing parsing here rather
+# than in the wrapper so the complete, all-or-nothing contract is testable and
+# older result bundles remain explicitly distinguishable from a zero-counter
+# run.
+def native_work_time_counter_values($rows; $name):
+  [$rows[] |
+    ((.work_time_real_stats? // "") |
+     (capture("(?:^| )" + $name + "=(?<value>(?:[-+0-9.eE]+|true|false))")? | .value) |
+     stat_counter_value) |
+    select(. != null)];
+
+# Native checkpoint groups are committed transactionally.  Counters below are
+# additive across collated candidates except the two per-candidate maxima.
+# Report null values for an old or mixed image instead of treating a missing
+# telemetry field as a zero-value coalescing experiment.
+def native_checkpoint_coalescing_summary($rows):
+  [
+    "native_checkpoint_groups",
+    "native_checkpoint_group_entries",
+    "native_checkpoint_group_fragments",
+    "native_checkpoint_group_max_entries",
+    "native_checkpoint_group_max_fragments",
+    "native_checkpoint_flush_capacity",
+    "native_checkpoint_flush_ingress",
+    "native_checkpoint_flush_deadline",
+    "native_checkpoint_flush_fanout",
+    "native_checkpoint_flush_headroom",
+    "native_checkpoint_flush_latency",
+    "native_checkpoint_rollbacks",
+    "native_checkpoint_rollback_entries"
+  ] as $fields |
+  ($rows | length) as $records_total |
+  (reduce $fields[] as $field ({};
+    .[$field] = native_work_time_counter_values($rows; $field))) as $values |
+  (
+    ($records_total > 0) and
+    ([ $fields[] | select(($values[.] | length) != $records_total) ] | length == 0)
+  ) as $capture_complete |
+  def total($field):
+    if $capture_complete then ($values[$field] | add) else null end;
+  def maximum($field):
+    if $capture_complete then ($values[$field] | max) else null end;
+  total("native_checkpoint_groups") as $groups |
+  total("native_checkpoint_group_entries") as $entries |
+  total("native_checkpoint_group_fragments") as $fragments |
+  {
+    semantics:(
+      "native exact-checkpoint coalescing counters summed across collated " +
+      "candidates; group maxima are maxima across candidates; missing or " +
+      "mixed source telemetry is reported as unavailable"
+    ),
+    capture_complete:$capture_complete,
+    records_total:$records_total,
+    records_with_telemetry:(
+      $values["native_checkpoint_groups"] | length
+    ),
+    native_checkpoint_groups:$groups,
+    native_checkpoint_group_entries:$entries,
+    native_checkpoint_group_fragments:$fragments,
+    native_checkpoint_group_max_entries:maximum("native_checkpoint_group_max_entries"),
+    native_checkpoint_group_max_fragments:maximum("native_checkpoint_group_max_fragments"),
+    native_checkpoint_average_entries_per_group:(
+      if $groups != null and $groups > 0 then $entries / $groups else null end
+    ),
+    native_checkpoint_average_fragments_per_group:(
+      if $groups != null and $groups > 0 then $fragments / $groups else null end
+    ),
+    native_checkpoint_flush_capacity:total("native_checkpoint_flush_capacity"),
+    native_checkpoint_flush_ingress:total("native_checkpoint_flush_ingress"),
+    native_checkpoint_flush_deadline:total("native_checkpoint_flush_deadline"),
+    native_checkpoint_flush_fanout:total("native_checkpoint_flush_fanout"),
+    native_checkpoint_flush_headroom:total("native_checkpoint_flush_headroom"),
+    native_checkpoint_flush_latency:total("native_checkpoint_flush_latency"),
+    native_checkpoint_rollbacks:total("native_checkpoint_rollbacks"),
+    native_checkpoint_rollback_entries:total("native_checkpoint_rollback_entries")
+  };
+
 # Summarize the exact immutable shard-state cache used by external-message
 # admission. C13 names cache misses handed to ValidatorManager
 # shard_manager_waits. C12 emitted the same logical event as shard_fetches, so

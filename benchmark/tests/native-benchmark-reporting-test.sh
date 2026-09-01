@@ -60,6 +60,55 @@ jq -n -e -L "$jq_dir" '
     [12.5, 1, 0, null]) and
   ([100, 130, 0, 7, 11] | monotonic_counter_delta == 41) and
 
+  (native_checkpoint_coalescing_summary([
+    {work_time_real_stats:(
+      "native_checkpoint_groups=1 native_checkpoint_group_entries=1024 " +
+      "native_checkpoint_group_fragments=2 native_checkpoint_group_max_entries=1024 " +
+      "native_checkpoint_group_max_fragments=2 native_checkpoint_flush_capacity=1 " +
+      "native_checkpoint_flush_ingress=0 native_checkpoint_flush_deadline=0 " +
+      "native_checkpoint_flush_fanout=0 native_checkpoint_flush_headroom=0 " +
+      "native_checkpoint_flush_latency=0 native_checkpoint_rollbacks=0 " +
+      "native_checkpoint_rollback_entries=0"
+    )},
+    {work_time_real_stats:(
+      "native_checkpoint_groups=2 native_checkpoint_group_entries=1536 " +
+      "native_checkpoint_group_fragments=3 native_checkpoint_group_max_entries=1536 " +
+      "native_checkpoint_group_max_fragments=3 native_checkpoint_flush_capacity=0 " +
+      "native_checkpoint_flush_ingress=1 native_checkpoint_flush_deadline=1 " +
+      "native_checkpoint_flush_fanout=2 native_checkpoint_flush_headroom=1 " +
+      "native_checkpoint_flush_latency=1 native_checkpoint_rollbacks=1 " +
+      "native_checkpoint_rollback_entries=512"
+    )}
+  ])) as $checkpoint |
+  ($checkpoint.capture_complete == true) and
+  ($checkpoint.records_total == 2) and
+  ($checkpoint.records_with_telemetry == 2) and
+  ($checkpoint.native_checkpoint_groups == 3) and
+  ($checkpoint.native_checkpoint_group_entries == 2560) and
+  ($checkpoint.native_checkpoint_group_fragments == 5) and
+  ($checkpoint.native_checkpoint_group_max_entries == 1536) and
+  ($checkpoint.native_checkpoint_group_max_fragments == 3) and
+  (($checkpoint.native_checkpoint_average_entries_per_group - (2560 / 3) | fabs) < 1e-12) and
+  (($checkpoint.native_checkpoint_average_fragments_per_group - (5 / 3) | fabs) < 1e-12) and
+  ($checkpoint.native_checkpoint_flush_capacity == 1) and
+  ($checkpoint.native_checkpoint_flush_ingress == 1) and
+  ($checkpoint.native_checkpoint_flush_deadline == 1) and
+  ($checkpoint.native_checkpoint_flush_fanout == 2) and
+  ($checkpoint.native_checkpoint_flush_headroom == 1) and
+  ($checkpoint.native_checkpoint_flush_latency == 1) and
+  ($checkpoint.native_checkpoint_rollbacks == 1) and
+  ($checkpoint.native_checkpoint_rollback_entries == 512) and
+
+  # Historic or mixed result bundles must not turn missing coalescing
+  # telemetry into a superficially valid all-zero experiment.
+  (native_checkpoint_coalescing_summary([
+    {work_time_real_stats:"native_checkpoint_groups=1"}
+  ])) as $partial_checkpoint |
+  ($partial_checkpoint.capture_complete == false) and
+  ($partial_checkpoint.records_with_telemetry == 1) and
+  ($partial_checkpoint.native_checkpoint_groups == null) and
+  ($partial_checkpoint.native_checkpoint_group_entries == null) and
+
   (capacity_acceptance({
     chain_correctness_valid:false,
     correctness_invalid_reasons:["proof_error"],
@@ -531,6 +580,7 @@ for field in \
   native_size_guard_serialized_margin_bytes \
   native_size_guard_serialized_oversize_bytes \
   native_stat_checkpoint_rebuilds \
+  checkpoint_coalescing \
   native_deadline_seals \
   native_deadline_deferred \
   native_deadline_first_fragment_commits \
@@ -608,6 +658,31 @@ for field in \
     exit 1
   }
 done
+
+for field in \
+  native_checkpoint_groups \
+  native_checkpoint_group_entries \
+  native_checkpoint_group_fragments \
+  native_checkpoint_group_max_entries \
+  native_checkpoint_group_max_fragments \
+  native_checkpoint_flush_capacity \
+  native_checkpoint_flush_ingress \
+  native_checkpoint_flush_deadline \
+  native_checkpoint_flush_fanout \
+  native_checkpoint_flush_headroom \
+  native_checkpoint_flush_latency \
+  native_checkpoint_rollbacks \
+  native_checkpoint_rollback_entries; do
+  grep -q "$field" "$jq_dir/native-benchmark-lib.jq" || {
+    echo "benchmark jq library does not report $field" >&2
+    exit 1
+  }
+done
+
+grep -Fq 'native_stat_checkpoint_rebuild:stage_distribution($rows; "native_stat_checkpoint_rebuild")' "$wrapper" || {
+  echo "benchmark wrapper does not report native checkpoint-rebuild timing" >&2
+  exit 1
+}
 
 grep -Fq 'actor_stats_sample_seconds=${BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS:-30}' "$wrapper" || {
   echo "actor-stat sampling must default to the low-perturbation 30-second cadence" >&2

@@ -164,6 +164,19 @@ a one-variable benchmark
 cycle. `validator-pool-summary.json` records the native transport's before and
 after snapshots, deltas, and observed high-water/max-push/max-pop diagnostics.
 
+Checkpoint-coalescing treatments are reported under
+`validator-pipeline-summary.json` at
+`measured.collated_basechain.native_fast_path_counters.checkpoint_coalescing`
+(with a corresponding `all_run` view). It retains every emitted
+`native_checkpoint_*` group, flush-reason, and rollback counter, derives
+per-group entry/fragment averages, and keeps group maxima as maxima rather than
+sums. The summary is fail-closed for old or mixed validator images:
+`capture_complete:false` makes its quantitative values `null` instead of
+mislabeling absent telemetry as a zero-coalescing run. Compare the associated
+`stages_real_s.native_stat_checkpoint_rebuild` distribution to quantify
+checkpoint-rebuild cost across treatments; these diagnostics do not replace proof,
+cleanup, or sub-second cadence acceptance gates.
+
 Size arithmetic must use the same layer on both sides. A signed native external BoC is 176 bytes. Inside a v4 batch, 512 transfers serialize to 101,399 bytes with unique endpoints (198.0 bytes/transfer), or 81,456 bytes with a shared destination (159.1 bytes/transfer). Those batch sizes include the compact account table, but they are not complete block costs: the block also carries the updated `ShardAccounts` dictionary, Merkle/proof cells, headers, and limit-estimator allowance. Use the measured `actual_block_bytes_per_transfer` and `estimated_block_bytes_per_transfer` in `validator-pipeline-summary.json` when dividing the configured block limit; never divide it by the 104-byte transfer leaf alone.
 
 `run-native-benchmark.sh` reuses an already-running healthy `genesis` container
