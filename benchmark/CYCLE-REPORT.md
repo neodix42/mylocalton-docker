@@ -978,3 +978,52 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   rollback, size-preflight, proof, and sub-second-tail tests. Retest this
   12k baseline before lifting the offered-rate staircase.
 - Artifact directory: `benchmark-results/20260901T082923Z`.
+
+## Cycle 23 — transactional checkpoint-coalescing treatment, cadence regression (20260901T092140Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `f96780b`.
+  Both source trees were clean. This is the direct fresh-state source treatment
+  for Cycle 22: 4,096 sources, 12,000 TPS, 60/60/700/300-second timing,
+  one-validator no-gossip topology, 10,240-entry candidate allowance,
+  2,048-message transport window, and 768 CWND are unchanged. The source
+  retains 512-message execution fragments, but may transactionally coalesce up
+  to four immediately available fragments before one exact
+  ShardAccounts/storage preflight. The harness change is reporting-only.
+- Formal result: proof correctness, completion, ingress capacity, chain
+  capacity, canonical cleanup, follower catch-up, and the broadcast-control
+  lifecycle all passed. Offered/admitted/proof-chain TPS was 11,999.910 /
+  11,999.910 / 12,002.864. There was zero measured canonical-backpressure,
+  sampled backlog peaked at 35,984, and the anchored drain reached zero
+  residue in 1.446 seconds. The maximum fully contained canonical one-second
+  bucket was 24,391 TPS, a burst rather than a sustained capacity result.
+  As in prior cycles, `reproducible=false` is solely because the external
+  Session Stats image does not carry a source-revision OCI label; it does not
+  alter the proof or capacity verdict.
+- This does **not** replace Cycle 22 as the user-compliant sub-second baseline.
+  Total collation p99 remained below one second at 853.4 ms and collation-wall
+  p99 at 917.3 ms, but accepted-block-interval p99 rose to 1.076 seconds
+  (Cycle 22: 963.4 ms). Absolute total/wall/accepted maxima were 1.078 /
+  1.133 / 1.232 seconds. Therefore the 12k capacity result is valid but fails
+  the explicit all-three-p99 cadence policy.
+- Packing became denser: proof had 1,405 native blocks averaging 5,971.532
+  transfers per block, versus Cycle 22's 1,856 blocks at 4,506.849 transfers
+  per block. That +32.5% packing shift removes the rare 6.107-second accepted
+  tail seen in Cycle 22, but moves enough ordinary accepted intervals past one
+  second to fail p99. It must not be presented as a net latency improvement.
+- New complete checkpoint telemetry explains why the intended coalescing gain
+  was modest. The measured window had 25,040 512-message fragments and 23,096
+  checkpoint groups (1.084 fragments and 365.279 transfers per group). 22,689
+  groups flushed at an ingress boundary, only 406 at the capacity bound, one
+  at latency, and none at deadline/fanout/headroom; there were zero rollbacks.
+  Exact checkpoint rebuilds fell from Cycle 22's 26,172 to 23,096 (-11.8%),
+  but native-commit average rose from 55.056 to 79.729 ms and staged-dictionary
+  work from 24.624 to 34.030 ms per candidate. Thus this profile is still
+  hand-off/packing limited rather than benefiting enough from four-fragment
+  grouping.
+- The next isolated cadence treatment retains the committed source and 12k
+  profile but lowers the fair logical candidate allowance from 10,240 to 8,192
+  entries. This deliberately trades some packing for a safer sub-second block
+  cadence before resuming the offered-rate ladder. It must retain all formal
+  proof/cleanup gates and make total collation, collation wall, and accepted
+  block interval p99 each less than one second.
+- Artifact directory: `benchmark-results/20260901T092140Z`.
