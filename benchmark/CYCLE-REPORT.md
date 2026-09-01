@@ -747,3 +747,46 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   next source change, with proof, cancellation-accounting, clean-drain, and
   sub-second p99 regressions all gated.
 - Artifact directory: `benchmark-results/20260901T061338Z`.
+
+## Cycle 17 — 10,000-TPS no-gossip injector-limit probe (20260901T063654Z)
+
+- TON image revision label: `13335a11`; Docker harness revision: `0be3132`.
+  Both trees were clean. This fresh-state probe kept the Cycle 16 workload and
+  one-validator no-gossip ceiling setting exactly: 4,096 sources, 60/60/700/300
+  seconds, 18 validator and 4 generator CPUs, 18,432 logical candidate entries,
+  20 ms submit coalescing, and 768 global adaptive CWND. It changed only the
+  requested target from 8,000 to 10,000 TPS.
+- Result: proof-correct, complete, cleanly drained, but deliberately
+  capacity-invalid as an injector-limit result. Offered/admitted/proof-chain
+  TPS was 9,329.920 / 9,329.920 / 9,454.299. The 94.54% canonical figure is
+  not a 10k chain-capacity claim: measured-chain progress includes the
+  bounded cohort already queued near the window boundary, while offered load
+  missed the required 95% target-attainment gate. The only ingress invalid
+  reason is `offer_target_not_attained`; the only chain-capacity invalid
+  reason is insufficient offered load over observed canonical throughput.
+  Canonical-backlog backpressure was exactly zero, final proof/cleanup was
+  correct, and drain took 0.777 seconds to zero backlog.
+- The artifact identifies the limiting injector condition directly. All 12
+  clients reached the 768-message global CWND cap, and 7,342,137 successful
+  ACK increases were cap-clipped. RTT was 20 ms p50, 200 ms p95, and 500 ms
+  p99. Therefore this run cannot establish a 10k blockchain ceiling; the
+  next paired configuration experiment must retain this committed source and
+  profile while increasing only `NATIVE_LOAD_ADAPTIVE_MAX_CWND` from 768 to
+  1,536.
+- Despite the invalid capacity classification, the correct workload gives
+  useful packing and cadence evidence. Proof contained 2,284 native blocks
+  averaging 2,893.413 transfers (maximum 18,432), and sampled collations
+  averaged 2,890.318 transfers across 2,293 blocks. The maximum canonical
+  one-second bucket was 34,908 TPS, a burst rather than a sustained capacity
+  result. Collation total time was 240.2 ms average, 540.8 ms p95, and
+  816.4 ms p99; accepted-block interval was 305.6 ms average, 661.5 ms p95,
+  and 954.6 ms p99. The p99 sub-second gates remain satisfied, although the
+  recorded maxima (1.31-second collation and 1.53-second accepted interval)
+  require continued tail monitoring.
+- Native external waiting remains the central code opportunity: 351.8
+  seconds split into 86.0 seconds first-work, 193.8 seconds fragment-refill,
+  and 70.7 seconds post-commit idle. The following source commit introduces a
+  bounded configurable transport prefill; its treatment must be compared on
+  an otherwise-identical 10k/768-CWND control before widening the injector
+  window.
+- Artifact directory: `benchmark-results/20260901T063654Z`.
