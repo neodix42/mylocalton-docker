@@ -1,0 +1,612 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+jq_dir=$script_dir/../jq
+wrapper=$script_dir/../../run-native-benchmark.sh
+
+command -v jq >/dev/null 2>&1 || {
+  echo "required command is not installed: jq" >&2
+  exit 2
+}
+
+# Exercise the collector's container-state policy without Docker. Startup and
+# transient states must wait, running samples, and only explicit terminal
+# states stop collection.
+"$wrapper" --self-test-actor-stats-container-state
+"$wrapper" --self-test-actor-stats-sleep
+"$wrapper" --self-test-ext-messages-broadcast
+
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  def external_wait_stats($multiplier; $calls):
+    "external_wait_round_live_s=\(0.1 * $multiplier) " +
+    "external_wait_round_live_calls=\($calls) " +
+    "external_wait_round_native_coalescing_s=\(0.2 * $multiplier) " +
+    "external_wait_round_native_coalescing_calls=\($calls) " +
+    "external_wait_generic_try_pop_s=\(0.1 * $multiplier) " +
+    "external_wait_generic_try_pop_calls=\($calls) " +
+    "external_wait_generic_sync_snapshot_s=\(0.1 * $multiplier) " +
+    "external_wait_generic_sync_snapshot_calls=\($calls) " +
+    "external_wait_native_probe_s=\(0.1 * $multiplier) " +
+    "external_wait_native_probe_calls=\($calls) " +
+    "external_wait_native_first_work_s=\(0.1 * $multiplier) " +
+    "external_wait_native_first_work_calls=\($calls) " +
+    "external_wait_native_fragment_refill_s=\(0.1 * $multiplier) " +
+    "external_wait_native_fragment_refill_calls=\($calls) " +
+    "external_wait_native_post_commit_idle_s=\(0.05 * $multiplier) " +
+    "external_wait_native_post_commit_idle_calls=\($calls) " +
+    "external_wait_native_producer_drain_s=\(0.05 * $multiplier) " +
+    "external_wait_native_producer_drain_calls=\($calls) " +
+    "external_wait_native_sync_snapshot_s=\(0.1 * $multiplier) " +
+    "external_wait_native_sync_snapshot_calls=\($calls) " +
+    "external_wait_accounted_s=\($multiplier) external_wait_calls=\(10 * $calls)";
+  def external_wait_single_category($seconds; $accounted):
+    "external_wait_round_live_s=\($seconds) external_wait_round_live_calls=1 " +
+    "external_wait_round_native_coalescing_s=0 external_wait_round_native_coalescing_calls=0 " +
+    "external_wait_generic_try_pop_s=0 external_wait_generic_try_pop_calls=0 " +
+    "external_wait_generic_sync_snapshot_s=0 external_wait_generic_sync_snapshot_calls=0 " +
+    "external_wait_native_probe_s=0 external_wait_native_probe_calls=0 " +
+    "external_wait_native_first_work_s=0 external_wait_native_first_work_calls=0 " +
+    "external_wait_native_fragment_refill_s=0 external_wait_native_fragment_refill_calls=0 " +
+    "external_wait_native_post_commit_idle_s=0 external_wait_native_post_commit_idle_calls=0 " +
+    "external_wait_native_producer_drain_s=0 external_wait_native_producer_drain_calls=0 " +
+    "external_wait_native_sync_snapshot_s=0 external_wait_native_sync_snapshot_calls=0 " +
+    "external_wait_accounted_s=\($accounted) external_wait_calls=1";
+
+  (field_or_null({present:false}; "present") == false) and
+  (field_or_null({}; "missing") == null) and
+  (["12.5", true, false, "invalid"] | map(stat_counter_value) ==
+    [12.5, 1, 0, null]) and
+  ([100, 130, 0, 7, 11] | monotonic_counter_delta == 41) and
+
+  (capacity_acceptance({
+    chain_correctness_valid:false,
+    correctness_invalid_reasons:["proof_error"],
+    run_incomplete_reasons:[],
+    ingress_capacity_valid:false,
+    ingress_capacity_invalid_reasons:["offer_target_not_attained"],
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[]
+  })) as $acceptance |
+  ($acceptance.chain_correctness_valid == false) and
+  ($acceptance.run_complete == true) and
+  ($acceptance.ingress_capacity_valid == false) and
+  ($acceptance.chain_capacity_valid == true) and
+
+  (capacity_acceptance(null)) as $missing |
+  ($missing.run_complete == null) and
+  ($missing.run_incomplete_reasons == ["missing_final_generator_record"]) and
+
+  (validator_pool_cleanup_acceptance(
+    {pending_sources:0,failures:3}; {accounts:0,messages:0,nonce_watermarks:4096}
+  )) as $clean |
+  ($clean.valid == true) and
+  ($clean.invalid_reasons == []) and
+
+  (validator_pool_cleanup_acceptance(
+    {pending_sources:2}; {accounts:1,messages:7,nonce_watermarks:4096}
+  )) as $dirty |
+  ($dirty.valid == false) and
+  ($dirty.invalid_reasons == [
+    "canonical_reconciliation_pending_sources",
+    "native_pool_pending_messages"
+  ]) and
+
+  (validator_pool_cleanup_acceptance({}; {})) as $missing_cleanup |
+  ($missing_cleanup.valid == false) and
+  ($missing_cleanup.invalid_reasons == [
+    "canonical_reconciliation_capture_missing",
+    "native_pending_capture_missing"
+  ]) and
+
+  (native_admission_shard_cache_summary(
+    {
+      shard_state_requests:100, shard_manager_waits:20, shard_fetches:20,
+      shard_cache_hits:80, shard_cache_fills:10, shard_cache_fill_races:4,
+      shard_cache_fill_conflicts:1, shard_cache_generation_resets:1,
+      shard_cache_stale_generation_fill_skips:2, shard_cache_wrong_id:0,
+      shard_cache_invalid_header:0, shard_miss_errors:4, shard_fetch_errors:4,
+      shard_manager_wait_errors:3, shard_manager_wait_timeouts:1,
+      shard_manager_wait_notready:1, shard_manager_wait_other_errors:1,
+      shard_manager_wait_late_results:1,
+      shard_cache_entries:4, shard_cache_peak_entries:8
+    };
+    {
+      shard_state_requests:200, shard_manager_waits:30, shard_fetches:30,
+      shard_cache_hits:170, shard_cache_fills:13, shard_cache_fill_races:6,
+      shard_cache_fill_conflicts:2, shard_cache_generation_resets:3,
+      shard_cache_stale_generation_fill_skips:3, shard_cache_wrong_id:2,
+      shard_cache_invalid_header:3, shard_miss_errors:8, shard_fetch_errors:8,
+      shard_manager_wait_errors:6, shard_manager_wait_timeouts:2,
+      shard_manager_wait_notready:3, shard_manager_wait_other_errors:1,
+      shard_manager_wait_late_results:2,
+      shard_cache_entries:6, shard_cache_peak_entries:12
+    }
+  )) as $cache |
+  ($cache.capture_complete == true) and
+  ($cache.counter_source == "shard_manager_waits") and
+  ($cache.manager_wait_outcomes_capture_complete == true) and
+  ($cache.shard_state_requests == 100) and
+  ($cache.shard_cache_hits == 90) and
+  ($cache.shard_manager_waits == 10) and
+  ($cache.shard_fetches == 10) and
+  ($cache.hit_ratio == 0.9) and
+  ($cache.manager_wait_ratio == 0.1) and
+  ($cache.fetch_ratio == 0.1) and
+  ($cache.request_accounting_error == 0) and
+  ($cache.shard_cache_fills == 3) and
+  ($cache.shard_cache_fill_races == 2) and
+  ($cache.shard_cache_fill_conflicts == 1) and
+  ($cache.shard_cache_generation_resets == 2) and
+  ($cache.shard_cache_stale_generation_fill_skips == 1) and
+  ($cache.shard_cache_wrong_id == 2) and
+  ($cache.shard_cache_invalid_header == 3) and
+  ($cache.shard_miss_errors == 4) and
+  ($cache.shard_fetch_errors == 4) and
+  ($cache.shard_manager_wait_errors == 3) and
+  ($cache.shard_manager_wait_timeouts == 1) and
+  ($cache.shard_manager_wait_notready == 2) and
+  ($cache.shard_manager_wait_other_errors == 0) and
+  ($cache.shard_manager_wait_late_results == 1) and
+  ($cache.shard_validation_or_store_errors == 1) and
+  ($cache.manager_wait_outcome_accounting_error == 0) and
+  ($cache.manager_wait_error_accounting_error == 0) and
+  ($cache.manager_wait_alias_consistent == true) and
+  ($cache.miss_error_alias_consistent == true) and
+  ($cache.shard_cache_entries_before == 4) and
+  ($cache.shard_cache_entries_after == 6) and
+  ($cache.shard_cache_peak_entries == 12) and
+
+  # Cycle 12 predates the canonical manager-wait names, but its complete cache
+  # contract used the deprecated aliases for the same logical events.
+  (native_admission_shard_cache_summary(
+    {
+      shard_state_requests:100, shard_fetches:20, shard_cache_hits:80,
+      shard_cache_fills:20, shard_cache_fill_races:2,
+      shard_cache_fill_conflicts:0, shard_cache_generation_resets:1,
+      shard_cache_stale_generation_fill_skips:0, shard_cache_wrong_id:0,
+      shard_cache_invalid_header:0, shard_fetch_errors:0,
+      shard_cache_entries:4, shard_cache_peak_entries:8
+    };
+    {
+      shard_state_requests:200, shard_fetches:30, shard_cache_hits:170,
+      shard_cache_fills:30, shard_cache_fill_races:4,
+      shard_cache_fill_conflicts:1, shard_cache_generation_resets:3,
+      shard_cache_stale_generation_fill_skips:1, shard_cache_wrong_id:2,
+      shard_cache_invalid_header:3, shard_fetch_errors:4,
+      shard_cache_entries:6, shard_cache_peak_entries:12
+    }
+  )) as $cycle12_cache |
+  ($cycle12_cache.capture_complete == true) and
+  ($cycle12_cache.counter_source == "shard_fetches") and
+  ($cycle12_cache.manager_wait_outcomes_capture_complete == false) and
+  ($cycle12_cache.shard_manager_waits == 10) and
+  ($cycle12_cache.shard_fetches == 10) and
+  ($cycle12_cache.shard_miss_errors == 4) and
+  ($cycle12_cache.shard_fetch_errors == 4) and
+  ($cycle12_cache.manager_wait_outcome_accounting_error == null) and
+  ($cycle12_cache.manager_wait_alias_consistent == null) and
+
+  (native_admission_shard_cache_summary(
+    {shard_fetches:50}; {shard_fetches:75}
+  )) as $legacy_cache |
+  ($legacy_cache.capture_complete == false) and
+  ($legacy_cache.shard_manager_waits == null) and
+  ($legacy_cache.shard_fetches == null) and
+  ($legacy_cache.hit_ratio == null) and
+  ($legacy_cache.request_accounting_error == null) and
+
+  (collation_external_wait_summary([
+    {wait_externals_time:1, work_time_real_stats:external_wait_stats(1; 1)},
+    {wait_externals_time:0.5, work_time_real_stats:external_wait_stats(0.5; 2)}
+  ])) as $wait |
+  ($wait.telemetry_available == true) and
+  ($wait.capture_complete == true) and
+  ($wait.records_total == 2) and
+  ($wait.records_with_telemetry == 2) and
+  (($wait.wait_externals_total_s - 1.5 | fabs) < 1e-12) and
+  (($wait.reported_accounted_total_s - 1.5 | fabs) < 1e-12) and
+  (($wait.category_total_s - 1.5 | fabs) < 1e-12) and
+  (($wait.accounting_error_s | fabs) < 1e-12) and
+  (($wait.reported_accounting_error_s | fabs) < 1e-12) and
+  (($wait.category_vs_reported_accounted_error_s | fabs) < 1e-12) and
+  (($wait.accounting_tolerance_envelope_s - 0.0015 | fabs) < 1e-12) and
+  (($wait.max_per_record_absolute_accounting_error_s | fabs) < 1e-12) and
+  ($wait.accounting_within_tolerance == true) and
+  ($wait.external_wait_calls == 30) and
+  ($wait.category_calls == 30) and
+  ($wait.call_accounting_error == 0) and
+  (($wait.categories.round_native_coalescing.seconds - 0.3 | fabs) < 1e-12) and
+  ($wait.categories.round_native_coalescing.calls == 3) and
+
+  # Equal and opposite category errors must not cancel into a passing aggregate.
+  (collation_external_wait_summary([
+    {wait_externals_time:0.01,
+     work_time_real_stats:external_wait_single_category(0.01015; 0.01)},
+    {wait_externals_time:0.01,
+     work_time_real_stats:external_wait_single_category(0.00985; 0.01)}
+  ])) as $cancelled_error |
+  (($cancelled_error.accounting_error_s | fabs) < 1e-12) and
+  (($cancelled_error.category_vs_reported_accounted_error_s | fabs) < 1e-12) and
+  (($cancelled_error.accounting_tolerance_envelope_s - 0.0002 | fabs) < 1e-12) and
+  (($cancelled_error.max_per_record_absolute_accounting_error_s - 0.00015 | fabs) < 1e-12) and
+  ($cancelled_error.accounting_within_tolerance == false) and
+
+  # The reported-accounted comparison is an independent per-record gate.
+  (collation_external_wait_summary([
+    {wait_externals_time:0.01,
+     work_time_real_stats:external_wait_single_category(0.01; 0.01015)}
+  ])) as $reported_error |
+  (($reported_error.accounting_error_s | fabs) < 1e-12) and
+  (($reported_error.reported_accounting_error_s - 0.00015 | fabs) < 1e-12) and
+  (($reported_error.category_vs_reported_accounted_error_s + 0.00015 | fabs) < 1e-12) and
+  ($reported_error.accounting_within_tolerance == false) and
+
+  (collation_external_wait_summary([
+    {wait_externals_time:2.5, work_time_real_stats:"preinit=0.1"}
+  ])) as $legacy_wait |
+  ($legacy_wait.telemetry_available == false) and
+  ($legacy_wait.capture_complete == false) and
+  ($legacy_wait.records_total == 1) and
+  ($legacy_wait.records_with_telemetry == 0) and
+  ($legacy_wait.wait_externals_total_s == null) and
+  ($legacy_wait.accounting_error_s == null) and
+  ($legacy_wait.accounting_tolerance_envelope_s == null) and
+  ($legacy_wait.max_per_record_absolute_accounting_error_s == null) and
+  ($legacy_wait.accounting_within_tolerance == null) and
+  ($legacy_wait.categories.native_probe.seconds == null)
+' >/dev/null
+
+jq -e -L "$jq_dir" -Rs '
+  include "native-benchmark-lib";
+  validator_actor_stats_overlay_impl as $actor |
+  ($actor.actor_type == "ton::overlay::OverlayImpl") and
+  ($actor.load_per_second.last_10s == 1.038) and
+  ($actor.max_execute_messages.last_10m == 180) and
+  ($actor.max_execute_seconds.last_10m == 19.886) and
+  ($actor.max_message_seconds.last_10m == 0.2) and
+  ($actor.max_delay_seconds.lifetime == 7.75) and
+  ($actor.actor_mailbox_quantum_yield_qps.last_10s == 12.5) and
+  ($actor.actor_mailbox_quantum_yield_qps.last_10m == 11.5) and
+  ($actor.actor_mailbox_quantum_yield_qps.lifetime == 10.5) and
+  ($actor.overlay_traffic_fairness_yield_qps.last_10s == 4.5) and
+  ($actor.overlay_fec_generated_callback_qps.last_10s == 100.5) and
+  ($actor.overlay_fec_generated_callback_qps.last_10m == 90.5) and
+  ($actor.overlay_fec_generated_callback_qps.lifetime == 80.5) and
+  ($actor.overlay_fec_signed_callback_qps.last_10s == 70.25) and
+  ($actor.overlay_fec_signed_callback_qps.last_10m == 60.25) and
+  ($actor.overlay_fec_signed_callback_qps.lifetime == 50.25) and
+  ($actor.overlay_fec_fairness_yield_qps.last_10s == 7.5) and
+  ($actor.overlay_fec_fairness_yield_qps.last_10m == 6.5) and
+  ($actor.overlay_fec_fairness_yield_qps.lifetime == 5.5) and
+  ($actor.alive == 6) and
+  ($actor.executing == 1) and
+  ($actor.max_executing_for_seconds == 9.333)
+' >/dev/null <<'EOF'
+================================= ACTORS STATS =================================
+actor_mailbox_quantum_yield.qps	12.5 11.5 10.5
+overlay_traffic_fairness_yield.qps	4.5 3.5 2.5
+overlay_fec_generated_callback.qps	100.5 90.5 80.5
+overlay_fec_signed_callback.qps	70.25 60.25 50.25
+overlay_fec_fairness_yield.qps	7.5 6.5 5.5
+All actors:
+	td::actor::PackageReader
+		load_per_second:	12.898 3.100 2.000
+	ton::overlay::OverlayImpl
+		load_per_second:	1.038 0.400 0.100
+		messages_per_second:	1200 800 700
+		max_execute_messages:	167 180 223
+		max_execute_seconds:	9.333s 19.886s 38.984s
+		max_message_seconds:	0.100 0.200 0.300
+		max_delay:	0.250s 5.500s 7.750s
+		alive: 6 executing: 1 max_executing_for: 9.333s
+	ton::validator::Other
+		load_per_second:	1 2 3
+EOF
+
+# Parse DecryptorAsync independently of neighbouring actor blocks and preserve
+# every scheduler statistic needed to distinguish crypto work from Overlay load.
+jq -e -L "$jq_dir" -Rs '
+  include "native-benchmark-lib";
+  validator_actor_stats_actor_types as $actors |
+  ($actors.overlay_impl.actor_type == "ton::overlay::OverlayImpl") and
+  ($actors.decryptor_async.actor_type == "ton::DecryptorAsync") and
+  ($actors.decryptor_async.load_per_second.last_10s == 10.5) and
+  ($actors.decryptor_async.messages_per_second.last_10m == 900) and
+  ($actors.decryptor_async.max_execute_messages.lifetime == 66) and
+  ($actors.decryptor_async.max_execute_seconds.last_10m == 0.25) and
+  ($actors.decryptor_async.max_message_seconds.last_10s == 0.01) and
+  ($actors.decryptor_async.max_delay_seconds.lifetime == 1.5) and
+  ($actors.decryptor_async.alive == 12) and
+  ($actors.decryptor_async.executing == 2) and
+  ($actors.decryptor_async.max_executing_for_seconds == 0.75)
+' >/dev/null <<'EOF'
+All actors:
+	ton::overlay::OverlayImpl
+		load_per_second:	1 1 1
+	ton::DecryptorAsync
+		load_per_second:	10.5 9.5 8.5
+		messages_per_second:	1000 900 800
+		max_execute_messages:	64 65 66
+		max_execute_seconds:	0.125s 0.250s 0.500s
+		max_message_seconds:	0.010s 0.020s 0.030s
+		max_delay:	0.500s 1.000s 1.500s
+		alive: 12 executing: 2 max_executing_for: 0.750s
+	ton::validator::Other
+		load_per_second:	999 999 999
+EOF
+
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  validator_actor_stats_summary(
+    [{sequence:1,phase:"measure_end",started_at:"a",finished_at:"b",command_exit_code:0,
+      timed_out:false,command_duration_seconds:0.2,
+      overlay_impl:{load_per_second:{last_10s:1,last_10m:2,lifetime:3},
+        max_execute_messages:{last_10s:10,last_10m:20,lifetime:30},
+        max_execute_seconds:{last_10s:4,last_10m:5,lifetime:6},
+        max_message_seconds:{last_10s:0.1,last_10m:0.2,lifetime:0.3},
+        max_delay_seconds:{last_10s:7,last_10m:8,lifetime:9},
+        max_executing_for_seconds:10,alive:2,executing:1,
+        actor_mailbox_quantum_yield_qps:{last_10s:17,last_10m:16,lifetime:15},
+        overlay_traffic_fairness_yield_qps:{last_10s:4,last_10m:3,lifetime:2},
+        overlay_fec_generated_callback_qps:{last_10s:14,last_10m:13,lifetime:12},
+        overlay_fec_signed_callback_qps:{last_10s:11,last_10m:10,lifetime:9},
+        overlay_fec_fairness_yield_qps:{last_10s:8,last_10m:7,lifetime:6}},
+      decryptor_async:{actor_type:"ton::DecryptorAsync",
+        load_per_second:{last_10s:21,last_10m:20,lifetime:19},
+        messages_per_second:{last_10s:2100,last_10m:2000,lifetime:1900},
+        max_execute_messages:{last_10s:61,last_10m:62,lifetime:63},
+        max_execute_seconds:{last_10s:0.4,last_10m:0.5,lifetime:0.6},
+        max_message_seconds:{last_10s:0.01,last_10m:0.02,lifetime:0.03},
+        max_delay_seconds:{last_10s:0.7,last_10m:0.8,lifetime:0.9},
+        max_executing_for_seconds:1.25,alive:12,executing:2}}];
+    {command_exit_code:0,overlay_impl:null,
+      decryptor_async:{actor_type:"ton::DecryptorAsync",alive:3}};
+    {command_exit_code:0,overlay_impl:null,
+      decryptor_async:{actor_type:"ton::DecryptorAsync",alive:4}};
+    {sample_interval_seconds:5,command_timeout_seconds:2,host_guard_seconds:4,
+     load_window_seconds:10,pre_load_raw_artifact:"validator-actor-stats-pre-load.txt",
+     final_raw_artifact:"validator-actor-stats-final.txt"}
+  ) as $summary |
+  ($summary.periodic.samples == 1) and
+  ($summary.periodic.parsed_decryptor_async_samples == 1) and
+  ($summary.periodic.observed_load_window_query_wall_fraction == 0.02) and
+  ($summary.perturbation_bound.serialized_no_overlap == true) and
+  ($summary.perturbation_bound.configured_max_validator_query_wall_fraction == 0.4) and
+  ($summary.overlay_impl.periodic_maxima.max_execute_seconds_10m == 5) and
+  ($summary.overlay_impl.periodic_maxima.max_message_seconds_10m == 0.2) and
+  ($summary.overlay_impl.periodic_maxima.actor_mailbox_quantum_yield_qps_10s == 17) and
+  ($summary.overlay_impl.periodic_maxima.actor_mailbox_quantum_yield_qps_10m == 16) and
+  ($summary.overlay_impl.periodic_maxima.actor_mailbox_quantum_yield_qps_lifetime == 15) and
+  ($summary.overlay_impl.periodic_maxima.overlay_traffic_fairness_yield_qps_10s == 4) and
+  ($summary.overlay_impl.periodic_maxima.overlay_traffic_fairness_yield_qps_lifetime == 2) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_generated_callback_qps_10s == 14) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_generated_callback_qps_10m == 13) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_generated_callback_qps_lifetime == 12) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_signed_callback_qps_10s == 11) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_signed_callback_qps_10m == 10) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_signed_callback_qps_lifetime == 9) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_fairness_yield_qps_10s == 8) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_fairness_yield_qps_10m == 7) and
+  ($summary.overlay_impl.periodic_maxima.overlay_fec_fairness_yield_qps_lifetime == 6) and
+  ($summary.decryptor_async.parsed_periodic_samples == 1) and
+  ($summary.decryptor_async.periodic_maxima.load_per_second_10s == 21) and
+  ($summary.decryptor_async.periodic_maxima.load_per_second_lifetime == 19) and
+  ($summary.decryptor_async.periodic_maxima.messages_per_second_10m == 2000) and
+  ($summary.decryptor_async.periodic_maxima.max_execute_messages_lifetime == 63) and
+  ($summary.decryptor_async.periodic_maxima.max_execute_seconds_10m == 0.5) and
+  ($summary.decryptor_async.periodic_maxima.max_message_seconds_10m == 0.02) and
+  ($summary.decryptor_async.periodic_maxima.max_delay_seconds_lifetime == 0.9) and
+  ($summary.decryptor_async.periodic_maxima.max_executing_for_seconds == 1.25) and
+  ($summary.decryptor_async.periodic_maxima.max_alive == 12) and
+  ($summary.decryptor_async.periodic_maxima.max_executing == 2) and
+  ($summary.decryptor_async.peak_max_execute_seconds_10m_sample.decryptor_async.actor_type ==
+    "ton::DecryptorAsync") and
+  ($summary.pre_load_snapshot.raw_artifact == "validator-actor-stats-pre-load.txt") and
+  ($summary.pre_load_snapshot.decryptor_async.alive == 3) and
+  ($summary.measure_end_snapshot.phase == "measure_end") and
+  ($summary.measure_end_snapshot.decryptor_async.max_execute_messages.lifetime == 63) and
+  ($summary.final_snapshot.raw_artifact == "validator-actor-stats-final.txt") and
+  ($summary.final_snapshot.decryptor_async.alive == 4)
+' >/dev/null
+
+# Cycle 7 images predate the FEC counters. Missing global lines must preserve
+# the parsed OverlayImpl block while exposing the new fields as null.
+jq -e -L "$jq_dir" -Rs '
+  include "native-benchmark-lib";
+  validator_actor_stats_actor_types as $actors |
+  ($actors.overlay_impl.actor_type == "OverlayImpl") and
+  ($actors.overlay_impl.actor_mailbox_quantum_yield_qps == null) and
+  ($actors.overlay_impl.overlay_traffic_fairness_yield_qps.last_10s == 2) and
+  ($actors.overlay_impl.overlay_fec_generated_callback_qps == null) and
+  ($actors.overlay_impl.overlay_fec_signed_callback_qps == null) and
+  ($actors.overlay_impl.overlay_fec_fairness_yield_qps == null) and
+  ($actors.decryptor_async == null)
+' >/dev/null <<'EOF'
+overlay_traffic_fairness_yield.qps	2 1 0.5
+All actors:
+	OverlayImpl
+		load_per_second:	1 1 1
+EOF
+
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  validator_actor_stats_summary(
+    [{sequence:1,phase:"periodic",started_at:"a",finished_at:"b",
+      command_exit_code:0,timed_out:false,command_duration_seconds:0.1,
+      overlay_impl:{actor_type:"OverlayImpl",
+        overlay_traffic_fairness_yield_qps:{last_10s:2,last_10m:1,lifetime:0.5}}}];
+    null;
+    null;
+    {sample_interval_seconds:30,command_timeout_seconds:2,load_window_seconds:30}
+  ) as $legacy |
+  ($legacy.overlay_impl.periodic_maxima.actor_mailbox_quantum_yield_qps_10s == null) and
+  ($legacy.overlay_impl.periodic_maxima.actor_mailbox_quantum_yield_qps_10m == null) and
+  ($legacy.overlay_impl.periodic_maxima.actor_mailbox_quantum_yield_qps_lifetime == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_traffic_fairness_yield_qps_lifetime == 0.5) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_generated_callback_qps_10s == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_generated_callback_qps_10m == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_generated_callback_qps_lifetime == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_signed_callback_qps_10s == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_signed_callback_qps_10m == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_signed_callback_qps_lifetime == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_fairness_yield_qps_10s == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_fairness_yield_qps_10m == null) and
+  ($legacy.overlay_impl.periodic_maxima.overlay_fec_fairness_yield_qps_lifetime == null) and
+  ($legacy.periodic.parsed_decryptor_async_samples == 0) and
+  ($legacy.decryptor_async.parsed_periodic_samples == 0) and
+  ($legacy.decryptor_async.periodic_maxima.load_per_second_10s == null) and
+  ($legacy.decryptor_async.periodic_maxima.messages_per_second_lifetime == null) and
+  ($legacy.decryptor_async.periodic_maxima.max_execute_messages_lifetime == null) and
+  ($legacy.decryptor_async.periodic_maxima.max_execute_seconds_10m == null) and
+  ($legacy.decryptor_async.periodic_maxima.max_message_seconds_10m == null) and
+  ($legacy.decryptor_async.periodic_maxima.max_delay_seconds_lifetime == null) and
+  ($legacy.decryptor_async.periodic_maxima.max_alive == null) and
+  ($legacy.decryptor_async.periodic_maxima.max_executing == null) and
+  ($legacy.decryptor_async.peak_max_execute_seconds_10m_sample == null) and
+  ($legacy.pre_load_snapshot.decryptor_async == null) and
+  ($legacy.measure_end_snapshot.decryptor_async == null) and
+  ($legacy.final_snapshot.decryptor_async == null)
+' >/dev/null
+
+for field in \
+  canonical_follower_transient_liteserver_timeouts \
+  canonical_follower_transient_not_ready \
+  retry_horizon_exhausted \
+  canonical_state_lag_retry_exhausted \
+  adaptive_cwnd \
+  adaptive_max_cwnd \
+  effective_cwnd_cap \
+  clients_at_cwnd_cap \
+  cwnd_cap_limited_acks \
+  ready_source_queue_max_depth \
+  native_fast_path_invocations \
+  native_fragment_refill_waits \
+  native_fragment_refill_timeouts \
+  native_fragment_refill_messages \
+  native_post_commit_idle_waits \
+  native_post_commit_idle_timeouts \
+  native_fragment_capacity_fills \
+  native_size_guard_deferrals \
+  native_size_guard_reserve_bytes \
+  native_size_guard_max_estimated_bytes \
+  native_size_guard_estimator_gap_bytes \
+  native_size_guard_serialized_margin_bytes \
+  native_size_guard_serialized_oversize_bytes \
+  native_stat_checkpoint_rebuilds \
+  native_deadline_seals \
+  native_deadline_deferred \
+  native_deadline_first_fragment_commits \
+  total.ext_msg_native_reconciliation \
+  canonical_reconciliation \
+  cleanup_acceptance \
+  shard_state_cache \
+  external_wait_breakdown \
+  validator_cleanup_valid \
+  validator_cleanup_invalid_reasons \
+  BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS \
+  BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS \
+  BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED \
+  set-ext-messages-broadcast-disabled \
+  validator-ext-messages-broadcast.json \
+  validator-actor-stats-final.txt \
+  decryptor_async \
+  validator_actor_stats; do
+  grep -q "$field" "$wrapper" || {
+    echo "benchmark wrapper does not report $field" >&2
+    exit 1
+  }
+done
+
+for field in \
+  shard_state_requests \
+  shard_manager_waits \
+  shard_fetches \
+  shard_cache_hits \
+  shard_cache_fills \
+  shard_cache_fill_races \
+  shard_cache_fill_conflicts \
+  shard_cache_generation_resets \
+  shard_cache_stale_generation_fill_skips \
+  shard_cache_wrong_id \
+  shard_cache_invalid_header \
+  shard_miss_errors \
+  shard_fetch_errors \
+  shard_manager_wait_errors \
+  shard_manager_wait_timeouts \
+  shard_manager_wait_notready \
+  shard_manager_wait_other_errors \
+  shard_manager_wait_late_results \
+  shard_cache_entries \
+  shard_cache_peak_entries \
+  external_wait_round_live_s \
+  external_wait_round_live_calls \
+  external_wait_round_native_coalescing_s \
+  external_wait_round_native_coalescing_calls \
+  external_wait_generic_try_pop_s \
+  external_wait_generic_try_pop_calls \
+  external_wait_generic_sync_snapshot_s \
+  external_wait_generic_sync_snapshot_calls \
+  external_wait_native_probe_s \
+  external_wait_native_probe_calls \
+  external_wait_native_first_work_s \
+  external_wait_native_first_work_calls \
+  external_wait_native_fragment_refill_s \
+  external_wait_native_fragment_refill_calls \
+  external_wait_native_post_commit_idle_s \
+  external_wait_native_post_commit_idle_calls \
+  external_wait_native_producer_drain_s \
+  external_wait_native_producer_drain_calls \
+  external_wait_native_sync_snapshot_s \
+  external_wait_native_sync_snapshot_calls \
+  external_wait_accounted_s \
+  external_wait_calls; do
+  grep -q "$field" "$jq_dir/native-benchmark-lib.jq" || {
+    echo "benchmark jq library does not report $field" >&2
+    exit 1
+  }
+done
+
+grep -Fq 'actor_stats_sample_seconds=${BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS:-30}' "$wrapper" || {
+  echo "actor-stat sampling must default to the low-perturbation 30-second cadence" >&2
+  exit 1
+}
+
+grep -Fq -- '--argjson decryptor_async "$decryptor_async"' "$wrapper" &&
+  grep -Fq 'parsed_decryptor_async:($decryptor_async != null)' "$wrapper" || {
+    echo "each actor-stat record must carry parsed DecryptorAsync telemetry" >&2
+    exit 1
+  }
+
+apply_line=$(grep -n '^if ! apply_ext_messages_broadcast_setting; then$' "$wrapper" | cut -d: -f1)
+health_gate_line=$(grep -n '^if \[\[ \$genesis_health != "true healthy" \]\]; then$' "$wrapper" | cut -d: -f1)
+pre_load_line=$(grep -n '^if ! capture_validator_stats "$validator_stats_before_file"; then$' "$wrapper" | cut -d: -f1)
+[[ -n $health_gate_line && -n $apply_line && -n $pre_load_line &&
+   $health_gate_line -lt $apply_line && $apply_line -lt $pre_load_line ]] || {
+  echo "external-message broadcast control must run before every pre-load snapshot" >&2
+  exit 1
+}
+
+grep -Fq 'trap cleanup_benchmark_on_exit EXIT' "$wrapper" &&
+  grep -Fq 'restore_ext_messages_broadcast_setting' "$wrapper" &&
+  grep -Fq 'attempt_label=restore-attempt-$ext_messages_broadcast_restore_attempts' "$wrapper" &&
+  grep -Fq 'set_ext_messages_broadcast_disabled 0 "$attempt_label"' "$wrapper" &&
+  grep -Fq 'capture_ext_messages_broadcast_state "$attempt_label"' "$wrapper" &&
+  grep -Fq 'ext_messages_broadcast_settle_seconds=5' "$wrapper" &&
+  grep -Fq -- '--slurpfile ext_messages_broadcast "$ext_messages_broadcast_file"' "$wrapper" &&
+  grep -Fq 'ext_messages_broadcast:$ext_messages_broadcast[0]' "$wrapper" || {
+    echo "external-message broadcast lifecycle must retain retry evidence, restore, and be embedded in reports" >&2
+    exit 1
+  }
+
+# Compose v2.39+ requires the service selector argument to `config --hash`.
+# Keep provenance collection compatible by enumerating the resolved services
+# and hashing them one at a time instead of relying on the old bare flag.
+grep -Fq 'config --services' "$wrapper" &&
+  grep -Fq 'config --hash "$service"' "$wrapper" || {
+    echo "benchmark wrapper must hash each resolved Compose service explicitly" >&2
+    exit 1
+  }
+
+echo "native benchmark reporting tests passed"

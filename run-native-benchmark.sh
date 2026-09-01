@@ -18,9 +18,313 @@ Run this script itself with sudo when Docker requires root access. Optional:
   BENCHMARK_DETAIL_SAMPLE_SECONDS=5
   BENCHMARK_THREAD_SAMPLE_SECONDS=5
   BENCHMARK_MAX_THREADS_PER_CONTAINER=32
+  BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS=30
+  BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS=2 # must be less than sample cadence, max 5
   BENCHMARK_RECREATE_GENESIS=1   # force container recreation even when matching
   BENCHMARK_STRICT_GENESIS_REUSE=1 # fail instead of reconciling a mismatch
+  BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=0|1 # opt-in validator control; unset is a no-op
 EOF
+}
+
+resolve_ext_messages_broadcast_setting() {
+  local is_set=${1:-0} value=${2:-}
+  if [[ $is_set == 0 ]]; then
+    printf 'false\tnull\tnull\n'
+    return 0
+  fi
+  case "$value" in
+    0) printf 'true\t0\tfalse\n' ;;
+    1) printf 'true\t1\ttrue\n' ;;
+    *) return 2 ;;
+  esac
+}
+
+extract_validator_config_json() {
+  local input_file=$1 output_file=$2
+  awk '
+    { sub(/\r$/, "") }
+    $0 == "---------" { inside = 1; next }
+    $0 == "--------" && inside { complete = 1; exit }
+    inside { print }
+    END { if (!inside || !complete) exit 1 }
+  ' "$input_file" |
+    jq -e 'if type == "object" then . else error("validator config is not an object") end' \
+      >"$output_file"
+}
+
+validator_config_ext_messages_broadcast_disabled() {
+  jq -r '
+    (.fullnodeconfig? // null) as $fullnode |
+    if $fullnode == null then false
+    elif ($fullnode | type) != "object" then error("fullnodeconfig is not an object")
+    else ($fullnode.ext_messages_broadcast_disabled // false) as $disabled |
+      if ($disabled | type) == "boolean" then $disabled
+      else error("ext_messages_broadcast_disabled is not boolean")
+      end
+    end
+  ' "$1"
+}
+
+validator_console_reported_exact_success() {
+  awk '
+    { sub(/\r$/, "") }
+    { line[NR] = $0 }
+    END {
+      # Batch validator-engine-console writes this four-line connection
+      # preamble to stdout before the command reply. Accept only that exact
+      # shape and one exact success answer; duplicate or unrelated output is
+      # a failed control operation.
+      if (NR != 5 ||
+          substr(line[1], 1, 14) != "connecting to " || length(line[1]) <= 14 ||
+          substr(line[2], 1, 11) != "local key: " ||
+          length(substr(line[2], 12)) != 64 || substr(line[2], 12) ~ /[^0-9A-Fa-f]/ ||
+          substr(line[3], 1, 12) != "remote key: " ||
+          length(substr(line[3], 13)) != 64 || substr(line[3], 13) ~ /[^0-9A-Fa-f]/ ||
+          line[4] != "conn ready" || line[5] != "success") {
+        exit 1
+      }
+    }
+  ' "$1"
+}
+
+ext_messages_broadcast_exit_status() {
+  local original_status=$1 cleanup_status=$2
+  if (( original_status != 0 )); then
+    printf '%s\n' "$original_status"
+  elif (( cleanup_status != 0 )); then
+    # A benchmark that otherwise passed must fail closed when the persistent
+    # validator setting cannot be restored and verified.
+    printf '4\n'
+  else
+    printf '0\n'
+  fi
+}
+
+write_ext_messages_broadcast_provenance() {
+  jq -n \
+    --arg schema native-benchmark-ext-messages-broadcast-v1 \
+    --arg environment_variable BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED \
+    --arg artifact "$(basename "$ext_messages_broadcast_file")" \
+    --argjson requested "$ext_messages_broadcast_requested" \
+    --argjson requested_value "$ext_messages_broadcast_requested_value" \
+    --argjson desired_disabled "$ext_messages_broadcast_desired_disabled" \
+    --argjson applied "$ext_messages_broadcast_applied" \
+    --argjson settle_seconds "$ext_messages_broadcast_settle_seconds" \
+    --slurpfile before "$ext_messages_broadcast_before_record_file" \
+    --slurpfile apply_control "$ext_messages_broadcast_apply_control_file" \
+    --slurpfile after_apply "$ext_messages_broadcast_after_apply_record_file" \
+    --slurpfile post_load "$ext_messages_broadcast_post_load_record_file" \
+    --slurpfile restoration "$ext_messages_broadcast_restore_record_file" '
+    def state_matches($state; $desired):
+      $state != null and $state.capture_complete == true and $state.consistent == true and
+      $state.get_config.effective_disabled == $desired and
+      $state.disk_config.effective_disabled == $desired;
+    ($before[0] // null) as $before_state |
+    ($apply_control[0] // null) as $control |
+    ($after_apply[0] // null) as $after_state |
+    ($post_load[0] // null) as $post_state |
+    ($restoration[0] // {attempted:false,valid:null}) as $restore |
+    (if $requested == false then true
+     else (($control.exact_success // false) and state_matches($after_state; $desired_disabled))
+     end) as $application_valid |
+    (if $requested == false then true
+     elif $post_state == null then null
+     else state_matches($post_state; $desired_disabled)
+     end) as $post_load_valid |
+    {
+      $schema,$artifact,$environment_variable,$requested,$requested_value,$desired_disabled,
+      applied:($applied == 1),settle_seconds:$settle_seconds,
+      before:$before_state,apply:{control:$control,state:$after_state,valid:$application_valid},
+      post_load:{state:$post_state,valid:$post_load_valid},restoration:$restore,
+      lifecycle_valid:(
+        if $requested == false then true
+        elif $restore.attempted != true then null
+        else
+          ($application_valid and ($post_load_valid == true) and ($restore.valid == true) and
+           (($restore.prior_failure // false) == false))
+        end
+      ),
+      semantics:(if $requested == false then
+        "unset is backward-compatible and performs no validator control query or configuration mutation"
+      else
+        "the requested 0|1 control is applied after genesis health and before pre-load snapshots; in-memory get-config and persisted config.json must agree, and cleanup restores disabled=false"
+      end)
+    }
+  ' >"$ext_messages_broadcast_file"
+}
+
+ext_messages_broadcast_self_test() {
+  command -v jq >/dev/null 2>&1
+  local test_dir setting state_false state_true
+  test_dir=$(mktemp -d)
+  trap 'rm -rf -- "$test_dir"' RETURN
+
+  setting=$(resolve_ext_messages_broadcast_setting 0 '')
+  [[ $setting == $'false\tnull\tnull' ]]
+  setting=$(resolve_ext_messages_broadcast_setting 1 0)
+  [[ $setting == $'true\t0\tfalse' ]]
+  setting=$(resolve_ext_messages_broadcast_setting 1 1)
+  [[ $setting == $'true\t1\ttrue' ]]
+  ! resolve_ext_messages_broadcast_setting 1 '' >/dev/null
+  ! resolve_ext_messages_broadcast_setting 1 2 >/dev/null
+
+  printf '%s\n' \
+    'validator console preamble' \
+    '---------' \
+    '{' \
+    '  "@type": "engine.validator.config",' \
+    '  "fullnodeconfig": {' \
+    '    "@type": "engine.validator.fullNodeConfig",' \
+    '    "ext_messages_broadcast_disabled": true' \
+    '  }' \
+    '}' \
+    '--------' >"$test_dir/get-config.txt"
+  extract_validator_config_json "$test_dir/get-config.txt" "$test_dir/get-config.json"
+  [[ $(validator_config_ext_messages_broadcast_disabled "$test_dir/get-config.json") == true ]]
+  printf '{"@type":"engine.validator.config"}\n' >"$test_dir/default.json"
+  [[ $(validator_config_ext_messages_broadcast_disabled "$test_dir/default.json") == false ]]
+  printf '{"fullnodeconfig":{"ext_messages_broadcast_disabled":false}}\n' \
+    >"$test_dir/explicit-false.json"
+  [[ $(validator_config_ext_messages_broadcast_disabled "$test_dir/explicit-false.json") == false ]]
+  printf '{"fullnodeconfig":{"ext_messages_broadcast_disabled":"false"}}\n' \
+    >"$test_dir/nonboolean.json"
+  ! validator_config_ext_messages_broadcast_disabled "$test_dir/nonboolean.json" >/dev/null 2>&1
+  printf 'missing delimiters\n' >"$test_dir/invalid.txt"
+  ! extract_validator_config_json "$test_dir/invalid.txt" "$test_dir/invalid.json"
+  printf '%s\n' \
+    'connecting to 127.0.0.1:43679' \
+    'local key: 0000000000000000000000000000000000000000000000000000000000000000' \
+    'remote key: 1111111111111111111111111111111111111111111111111111111111111111' \
+    'conn ready' \
+    'success' >"$test_dir/success.txt"
+  validator_console_reported_exact_success "$test_dir/success.txt"
+  cp "$test_dir/success.txt" "$test_dir/extra-success.txt"
+  printf 'success\n' >>"$test_dir/extra-success.txt"
+  ! validator_console_reported_exact_success "$test_dir/extra-success.txt"
+  sed 's/^conn ready$/unexpected output/' "$test_dir/success.txt" \
+    >"$test_dir/unexpected-success.txt"
+  ! validator_console_reported_exact_success "$test_dir/unexpected-success.txt"
+  printf 'success\n' >"$test_dir/bare-success.txt"
+  ! validator_console_reported_exact_success "$test_dir/bare-success.txt"
+
+  [[ $(ext_messages_broadcast_exit_status 0 0) == 0 ]]
+  [[ $(ext_messages_broadcast_exit_status 0 1) == 4 ]]
+  [[ $(ext_messages_broadcast_exit_status 3 0) == 3 ]]
+  [[ $(ext_messages_broadcast_exit_status 3 1) == 3 ]]
+
+  ext_messages_broadcast_file=$test_dir/provenance.json
+  ext_messages_broadcast_before_record_file=$test_dir/before.json
+  ext_messages_broadcast_after_apply_record_file=$test_dir/after-apply.json
+  ext_messages_broadcast_post_load_record_file=$test_dir/post-load.json
+  ext_messages_broadcast_apply_control_file=$test_dir/apply-control.json
+  ext_messages_broadcast_restore_record_file=$test_dir/restore.json
+  ext_messages_broadcast_settle_seconds=5
+  state_false='{"capture_complete":true,"consistent":true,"get_config":{"effective_disabled":false},"disk_config":{"effective_disabled":false}}'
+  state_true='{"capture_complete":true,"consistent":true,"get_config":{"effective_disabled":true},"disk_config":{"effective_disabled":true}}'
+
+  printf 'null\n' >"$ext_messages_broadcast_before_record_file"
+  printf 'null\n' >"$ext_messages_broadcast_after_apply_record_file"
+  printf 'null\n' >"$ext_messages_broadcast_post_load_record_file"
+  printf 'null\n' >"$ext_messages_broadcast_apply_control_file"
+  printf '%s\n' '{"attempted":false,"valid":null}' >"$ext_messages_broadcast_restore_record_file"
+  ext_messages_broadcast_requested=false
+  ext_messages_broadcast_requested_value=null
+  ext_messages_broadcast_desired_disabled=null
+  ext_messages_broadcast_applied=0
+  write_ext_messages_broadcast_provenance
+  jq -e '
+    .requested == false and .requested_value == null and .desired_disabled == null and
+    .applied == false and .before == null and .apply.valid == true and
+    .post_load.valid == true and .restoration.attempted == false and
+    .lifecycle_valid == true
+  ' "$ext_messages_broadcast_file" >/dev/null
+
+  printf '%s\n' "$state_true" >"$ext_messages_broadcast_before_record_file"
+  printf '%s\n' "$state_false" >"$ext_messages_broadcast_after_apply_record_file"
+  printf '%s\n' "$state_false" >"$ext_messages_broadcast_post_load_record_file"
+  printf '%s\n' '{"exact_success":true}' >"$ext_messages_broadcast_apply_control_file"
+  printf '%s\n' '{"attempted":true,"valid":true,"prior_failure":false}' \
+    >"$ext_messages_broadcast_restore_record_file"
+  ext_messages_broadcast_requested=true
+  ext_messages_broadcast_requested_value=0
+  ext_messages_broadcast_desired_disabled=false
+  ext_messages_broadcast_applied=1
+  write_ext_messages_broadcast_provenance
+  jq -e '
+    .requested == true and .requested_value == 0 and .desired_disabled == false and
+    .applied == true and .apply.valid == true and .post_load.valid == true and
+    .restoration.valid == true and .lifecycle_valid == true
+  ' "$ext_messages_broadcast_file" >/dev/null
+
+  printf '%s\n' "$state_false" >"$ext_messages_broadcast_before_record_file"
+  printf '%s\n' "$state_true" >"$ext_messages_broadcast_after_apply_record_file"
+  printf '%s\n' "$state_true" >"$ext_messages_broadcast_post_load_record_file"
+  ext_messages_broadcast_requested_value=1
+  ext_messages_broadcast_desired_disabled=true
+  printf '%s\n' '{"attempted":false,"valid":null}' \
+    >"$ext_messages_broadcast_restore_record_file"
+  write_ext_messages_broadcast_provenance
+  jq -e '
+    .requested == true and .requested_value == 1 and .desired_disabled == true and
+    .apply.valid == true and .post_load.valid == true and .restoration.attempted == false and
+    .lifecycle_valid == null
+  ' "$ext_messages_broadcast_file" >/dev/null
+
+  printf '%s\n' '{"attempted":true,"attempt":1,"valid":true,"prior_failure":false}' \
+    >"$ext_messages_broadcast_restore_record_file"
+  write_ext_messages_broadcast_provenance
+  jq -e '
+    .restoration.attempt == 1 and .restoration.valid == true and
+    .restoration.prior_failure == false and .lifecycle_valid == true
+  ' "$ext_messages_broadcast_file" >/dev/null
+
+  # A failed first restore followed by a verified second restore remains an
+  # invalid experiment even though the persistent setting is finally safe.
+  printf '%s\n' '{"attempted":true,"attempt":2,"valid":true,"prior_failure":true}' \
+    >"$ext_messages_broadcast_restore_record_file"
+  write_ext_messages_broadcast_provenance
+  jq -e '
+    .restoration.attempt == 2 and .restoration.valid == true and
+    .restoration.prior_failure == true and .lifecycle_valid == false
+  ' "$ext_messages_broadcast_file" >/dev/null
+}
+
+# Keep transient Docker/container states distinct from a terminal generator
+# exit. In particular, a collector started beside `compose up -d` must wait
+# through container creation and a temporary failed inspection instead of
+# treating either as the end of the load window.
+actor_stats_container_action() {
+  case "${1:-unknown}" in
+    running) printf 'sample\n' ;;
+    exited|dead) printf 'stop\n' ;;
+    *) printf 'wait\n' ;;
+  esac
+}
+
+actor_stats_container_state_self_test() {
+  [[ $(actor_stats_container_action unknown) == wait ]]
+  [[ $(actor_stats_container_action created) == wait ]]
+  [[ $(actor_stats_container_action restarting) == wait ]]
+  [[ $(actor_stats_container_action paused) == wait ]]
+  [[ $(actor_stats_container_action removing) == wait ]]
+  [[ $(actor_stats_container_action running) == sample ]]
+  [[ $(actor_stats_container_action exited) == stop ]]
+  [[ $(actor_stats_container_action dead) == stop ]]
+}
+
+actor_stats_sleep_seconds() {
+  awk -v now="$1" -v wake="$2" '
+    BEGIN {
+      delay = (wake - now) / 1000
+      printf "%.3f", (delay > 0.01 ? delay : 0.01)
+    }
+  '
+}
+
+actor_stats_sleep_seconds_self_test() {
+  [[ $(actor_stats_sleep_seconds 1000 2500) == 1.500 ]]
+  [[ $(actor_stats_sleep_seconds 1000 1000) == 0.010 ]]
+  [[ $(actor_stats_sleep_seconds 2500 1000) == 0.010 ]]
 }
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -29,16 +333,51 @@ benchmark_jq_dir=$script_dir/benchmark/jq
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   --self-test) exec "$script_dir/benchmark/tests/native-benchmark-reporting-test.sh" ;;
+  --self-test-actor-stats-container-state)
+    actor_stats_container_state_self_test
+    exit 0
+    ;;
+  --self-test-actor-stats-sleep)
+    actor_stats_sleep_seconds_self_test
+    exit 0
+    ;;
+  --self-test-ext-messages-broadcast)
+    ext_messages_broadcast_self_test
+    exit 0
+    ;;
 esac
 
 env_file=${1:-.env.physical}
 run_id=$(date -u +%Y%m%dT%H%M%SZ)
 result_dir=${2:-benchmark-results/$run_id}
+if [[ $env_file != /* ]]; then
+  env_file=$script_dir/$env_file
+fi
+if [[ $result_dir != /* ]]; then
+  result_dir=$script_dir/$result_dir
+fi
 host_sample_seconds=${BENCHMARK_HOST_SAMPLE_SECONDS:-1}
 detail_sample_seconds=${BENCHMARK_DETAIL_SAMPLE_SECONDS:-5}
 thread_sample_seconds=${BENCHMARK_THREAD_SAMPLE_SECONDS:-5}
 max_threads_per_container=${BENCHMARK_MAX_THREADS_PER_CONTAINER:-32}
+actor_stats_sample_seconds=${BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS:-30}
+actor_stats_timeout_seconds=${BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS:-2}
 container_name=native-load-generator
+
+if [[ ${BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED+x} == x ]]; then
+  ext_messages_broadcast_setting_is_set=1
+else
+  ext_messages_broadcast_setting_is_set=0
+fi
+if ! IFS=$'\t' read -r ext_messages_broadcast_requested \
+  ext_messages_broadcast_requested_value ext_messages_broadcast_desired_disabled < <(
+    resolve_ext_messages_broadcast_setting "$ext_messages_broadcast_setting_is_set" \
+      "${BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED:-}"
+  ); then
+  echo "BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED must be unset, 0, or 1" >&2
+  exit 2
+fi
+ext_messages_broadcast_settle_seconds=5
 
 for command_name in docker jq awk git getconf sed sort cut sha256sum timeout; do
   command -v "$command_name" >/dev/null 2>&1 || {
@@ -96,12 +435,37 @@ if (( max_threads_per_container < 1 || max_threads_per_container > 256 )); then
   echo "BENCHMARK_MAX_THREADS_PER_CONTAINER must be between 1 and 256" >&2
   exit 2
 fi
+case "$actor_stats_sample_seconds" in
+  ''|*[!0-9.]*|.*|*.)
+    echo "BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS must be a positive number" >&2
+    exit 2
+    ;;
+esac
+case "$actor_stats_timeout_seconds" in
+  ''|*[!0-9.]*|.*|*.)
+    echo "BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS must be a positive number" >&2
+    exit 2
+    ;;
+esac
+awk -v sample="$actor_stats_sample_seconds" -v command_timeout="$actor_stats_timeout_seconds" '
+  BEGIN { exit !(sample > 0 && command_timeout > 0 && command_timeout <= 5 && command_timeout < sample) }
+' || {
+  echo "actor-stat timeout must be positive, at most 5 seconds, and less than its sample cadence" >&2
+  exit 2
+}
+actor_stats_host_guard_seconds=$(awk -v command_timeout="$actor_stats_timeout_seconds" \
+  'BEGIN { printf "%.3f", command_timeout + 2 }')
 test -r "$benchmark_jq_dir/native-benchmark-lib.jq" || {
   echo "benchmark jq library is missing: $benchmark_jq_dir/native-benchmark-lib.jq" >&2
   exit 2
 }
 
-compose=(docker compose --env-file "$env_file")
+# The benchmark uses fixed container names and its fresh-cycle companion
+# deletes state for this exact project. Pin both selectors here as well so an
+# inherited COMPOSE_FILE/COMPOSE_PROJECT_NAME cannot redirect the subsequent
+# non-destructive run after the guarded deletion boundary.
+compose=(docker compose -f "$script_dir/docker-compose.yaml" --project-directory "$script_dir" \
+  --project-name mylocalton-desktop --env-file "$env_file")
 compose_environment=$("${compose[@]}" config --environment)
 ton_image=$(awk -F= '$1 == "TON_IMAGE" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 ton_branch=$(awk -F= '$1 == "TON_BRANCH" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
@@ -121,6 +485,33 @@ if [[ -z $ton_base_revision || $ton_base_revision == '<no value>' || $ton_base_r
   echo "rebuild it from the matching TON checkout with the VCS_REF command in README.md" >&2
   exit 2
 fi
+
+# Exercise the complete Compose provenance path before creating a result
+# directory or starting a long run. Compose 2.39 requires one explicit service
+# per `config --hash`; sorting keeps metadata deterministic across versions
+# whose `config --services` order is unstable.
+compose_config_sha256=$("${compose[@]}" --profile session-stats --profile native-load-generator config |
+  sha256sum | awk '{print $1}')
+if ! compose_services=$("${compose[@]}" --profile session-stats --profile native-load-generator \
+  config --services); then
+  echo "failed to enumerate resolved Compose services" >&2
+  exit 2
+fi
+compose_services=$(sort <<<"$compose_services")
+if ! compose_service_hash_lines=$(
+  while IFS= read -r service; do
+    [[ -n $service ]] || continue
+    "${compose[@]}" --profile session-stats --profile native-load-generator \
+      config --hash "$service" || exit 1
+  done <<<"$compose_services"
+); then
+  echo "failed to collect one or more resolved Compose service hashes" >&2
+  exit 2
+fi
+compose_service_hashes=$(jq -Rsc '
+  [split("\n")[] | select(length > 0) | split(" ") |
+   select(length >= 2) | {service:.[0],config_hash:.[1]}] | sort_by(.service)
+' <<<"$compose_service_hash_lines")
 
 if [[ -d "$result_dir" && -n $(find "$result_dir" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
   if [[ $# -lt 2 ]]; then
@@ -149,6 +540,18 @@ validator_pool_summary_file=$result_dir/validator-pool-summary.json
 validator_scheduling_log_file=$result_dir/validator-scheduling.log
 validator_scheduling_log_summary_file=$result_dir/validator-scheduling-log-summary.json
 validator_scheduling_summary_file=$result_dir/validator-scheduling-summary.json
+validator_actor_stats_file=$result_dir/validator-actor-stats.jsonl
+validator_actor_stats_pre_load_file=$result_dir/validator-actor-stats-pre-load.txt
+validator_actor_stats_pre_load_metadata_file=$result_dir/validator-actor-stats-pre-load.json
+validator_actor_stats_final_file=$result_dir/validator-actor-stats-final.txt
+validator_actor_stats_final_metadata_file=$result_dir/validator-actor-stats-final.json
+validator_actor_stats_summary_file=$result_dir/validator-actor-stats-summary.json
+ext_messages_broadcast_file=$result_dir/validator-ext-messages-broadcast.json
+ext_messages_broadcast_before_record_file=$result_dir/.validator-ext-messages-broadcast-before.json
+ext_messages_broadcast_after_apply_record_file=$result_dir/.validator-ext-messages-broadcast-after-apply.json
+ext_messages_broadcast_post_load_record_file=$result_dir/.validator-ext-messages-broadcast-post-load.json
+ext_messages_broadcast_apply_control_file=$result_dir/.validator-ext-messages-broadcast-apply-control.json
+ext_messages_broadcast_restore_record_file=$result_dir/.validator-ext-messages-broadcast-restore.json
 runtime_file=$result_dir/container-runtime.json
 image_metadata_file=$result_dir/image-metadata.json
 metadata_file=$result_dir/run-metadata.json
@@ -158,9 +561,225 @@ summary_file=$result_dir/benchmark-summary.json
 : >"$cgroup_stats_file"
 : >"$thread_stats_file"
 : >"$device_stats_file"
+: >"$validator_actor_stats_file"
+printf 'null\n' >"$ext_messages_broadcast_before_record_file"
+printf 'null\n' >"$ext_messages_broadcast_after_apply_record_file"
+printf 'null\n' >"$ext_messages_broadcast_post_load_record_file"
+printf 'null\n' >"$ext_messages_broadcast_apply_control_file"
+jq -n '{attempted:false,valid:null,semantics:"unset runs do not mutate validator configuration"}' \
+  >"$ext_messages_broadcast_restore_record_file"
 
 collector_pids=()
+actor_stats_collector_pid=
 interrupted=0
+ext_messages_broadcast_restore_required=0
+ext_messages_broadcast_applied=0
+ext_messages_broadcast_restore_attempts=0
+ext_messages_broadcast_restore_had_failure=0
+
+run_validator_console_command() {
+  local command_text=$1 output_file=$2 error_file=$3
+  timeout --signal=TERM --kill-after=1s 18s docker exec genesis sh -c '
+    config=/var/ton-work/db/config.json
+    internal_ip=$(hostname -I)
+    internal_ip=${internal_ip%% *}
+    control_port=$(jq -r ".control[0].port // empty" "$config")
+    test -n "$internal_ip" && test -n "$control_port"
+    exec timeout --signal=TERM --kill-after=1s 15s validator-engine-console \
+      -k /var/ton-work/db/client \
+      -p /var/ton-work/db/server.pub \
+      -a "$internal_ip:$control_port" \
+      -c "$1"
+  ' sh "$command_text" >"$output_file" 2>"$error_file"
+}
+
+capture_ext_messages_broadcast_state() {
+  local phase=$1 record_file=$2
+  local prefix=$result_dir/validator-ext-messages-broadcast-$phase
+  local get_config_raw_file=$prefix-get-config.txt
+  local get_config_file=$prefix-get-config.json
+  local get_config_error_file=$prefix-get-config.stderr.log
+  local disk_config_file=$prefix-disk-config.json
+  local disk_config_error_file=$prefix-disk-config.stderr.log
+  local captured_at get_config_raw_sha256 get_config_sha256 disk_config_sha256
+  local get_config_effective disk_config_effective
+
+  captured_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  run_validator_console_command get-config "$get_config_raw_file" "$get_config_error_file" || return
+  extract_validator_config_json "$get_config_raw_file" "$get_config_file" || return
+  timeout --signal=TERM --kill-after=1s 15s \
+    docker cp genesis:/var/ton-work/db/config.json "$disk_config_file" \
+    >/dev/null 2>"$disk_config_error_file" || return
+
+  get_config_effective=$(validator_config_ext_messages_broadcast_disabled "$get_config_file") || return
+  disk_config_effective=$(validator_config_ext_messages_broadcast_disabled "$disk_config_file") || return
+  get_config_raw_sha256=$(sha256sum "$get_config_raw_file" | awk '{print $1}')
+  get_config_sha256=$(sha256sum "$get_config_file" | awk '{print $1}')
+  disk_config_sha256=$(sha256sum "$disk_config_file" | awk '{print $1}')
+  jq -n \
+    --arg captured_at "$captured_at" \
+    --arg phase "$phase" \
+    --arg get_config_raw_artifact "$(basename "$get_config_raw_file")" \
+    --arg get_config_artifact "$(basename "$get_config_file")" \
+    --arg get_config_stderr_artifact "$(basename "$get_config_error_file")" \
+    --arg get_config_raw_sha256 "$get_config_raw_sha256" \
+    --arg get_config_sha256 "$get_config_sha256" \
+    --argjson get_config_effective "$get_config_effective" \
+    --arg disk_config_artifact "$(basename "$disk_config_file")" \
+    --arg disk_config_stderr_artifact "$(basename "$disk_config_error_file")" \
+    --arg disk_config_sha256 "$disk_config_sha256" \
+    --argjson disk_config_effective "$disk_config_effective" \
+    '{$captured_at,$phase,capture_complete:true,
+      get_config:{raw_artifact:$get_config_raw_artifact,artifact:$get_config_artifact,
+        stderr_artifact:$get_config_stderr_artifact,raw_sha256:$get_config_raw_sha256,
+        sha256:$get_config_sha256,effective_disabled:$get_config_effective},
+      disk_config:{artifact:$disk_config_artifact,stderr_artifact:$disk_config_stderr_artifact,
+        sha256:$disk_config_sha256,effective_disabled:$disk_config_effective},
+      consistent:($get_config_effective == $disk_config_effective)}' >"$record_file"
+}
+
+ext_messages_broadcast_state_matches() {
+  local record_file=$1 desired=$2
+  jq -e --argjson desired "$desired" '
+    .capture_complete == true and .consistent == true and
+    .get_config.effective_disabled == $desired and
+    .disk_config.effective_disabled == $desired
+  ' "$record_file" >/dev/null
+}
+
+set_ext_messages_broadcast_disabled() {
+  local requested_value=$1 label=$2 record_file=$3
+  local output_file=$result_dir/validator-ext-messages-broadcast-$label-command.stdout
+  local error_file=$result_dir/validator-ext-messages-broadcast-$label-command.stderr.log
+  local started_at finished_at command_exit_code=0 exact_success=false
+  started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if run_validator_console_command \
+    "set-ext-messages-broadcast-disabled $requested_value" "$output_file" "$error_file"; then
+    command_exit_code=0
+  else
+    command_exit_code=$?
+  fi
+  if (( command_exit_code == 0 )) && validator_console_reported_exact_success "$output_file"; then
+    exact_success=true
+  fi
+  finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  jq -n \
+    --arg started_at "$started_at" \
+    --arg finished_at "$finished_at" \
+    --arg command "set-ext-messages-broadcast-disabled $requested_value" \
+    --arg stdout_artifact "$(basename "$output_file")" \
+    --arg stderr_artifact "$(basename "$error_file")" \
+    --argjson requested_value "$requested_value" \
+    --argjson command_exit_code "$command_exit_code" \
+    --argjson exact_success "$exact_success" \
+    '{$started_at,$finished_at,$command,$requested_value,$command_exit_code,$exact_success,
+      $stdout_artifact,$stderr_artifact}' >"$record_file" || return
+  [[ $exact_success == true ]]
+}
+
+apply_ext_messages_broadcast_setting() {
+  [[ $ext_messages_broadcast_requested == true ]] || return 0
+  echo "Capturing validator external-message broadcast configuration before opt-in control"
+  capture_ext_messages_broadcast_state before "$ext_messages_broadcast_before_record_file" || {
+    write_ext_messages_broadcast_provenance
+    echo "failed to capture validator configuration before external-message broadcast control" >&2
+    return 1
+  }
+
+  # Runtime propagation precedes config.json persistence in validator-engine.
+  # Mark restoration pending before the call because even an error response may
+  # leave the live FullNode setting changed.
+  ext_messages_broadcast_restore_required=1
+  if ! set_ext_messages_broadcast_disabled "$ext_messages_broadcast_requested_value" apply \
+    "$ext_messages_broadcast_apply_control_file"; then
+    write_ext_messages_broadcast_provenance
+    echo "validator did not report exact success for external-message broadcast control" >&2
+    return 1
+  fi
+  ext_messages_broadcast_applied=1
+  sleep "$ext_messages_broadcast_settle_seconds" || return 1
+  if ! capture_ext_messages_broadcast_state after-apply \
+    "$ext_messages_broadcast_after_apply_record_file" ||
+     ! ext_messages_broadcast_state_matches "$ext_messages_broadcast_after_apply_record_file" \
+       "$ext_messages_broadcast_desired_disabled"; then
+    write_ext_messages_broadcast_provenance
+    echo "validator in-memory and persisted external-message broadcast settings did not match the request" >&2
+    return 1
+  fi
+  write_ext_messages_broadcast_provenance
+}
+
+restore_ext_messages_broadcast_setting() {
+  [[ $ext_messages_broadcast_restore_required == 1 ]] || return 0
+  local attempt_label control_record_file state_record_file
+  local command_valid=false settle_valid=false state_valid=false restore_valid=false
+  ext_messages_broadcast_restore_attempts=$((ext_messages_broadcast_restore_attempts + 1))
+  attempt_label=restore-attempt-$ext_messages_broadcast_restore_attempts
+  control_record_file=$result_dir/.validator-ext-messages-broadcast-$attempt_label-control.json
+  state_record_file=$result_dir/.validator-ext-messages-broadcast-$attempt_label-state.json
+  printf 'null\n' >"$control_record_file"
+  printf 'null\n' >"$state_record_file"
+
+  echo "Restoring validator external-message broadcasting before exit" >&2
+  if set_ext_messages_broadcast_disabled 0 "$attempt_label" "$control_record_file"; then
+    command_valid=true
+  fi
+  if sleep "$ext_messages_broadcast_settle_seconds"; then
+    settle_valid=true
+  fi
+  if [[ $settle_valid == true ]] &&
+     capture_ext_messages_broadcast_state "$attempt_label" "$state_record_file" &&
+     ext_messages_broadcast_state_matches "$state_record_file" false; then
+    state_valid=true
+  fi
+  if [[ $command_valid == true && $state_valid == true ]]; then
+    restore_valid=true
+  else
+    ext_messages_broadcast_restore_had_failure=1
+  fi
+  if ! jq -n \
+    --argjson attempted true \
+    --argjson attempt "$ext_messages_broadcast_restore_attempts" \
+    --argjson prior_failure "$ext_messages_broadcast_restore_had_failure" \
+    --argjson command_valid "$command_valid" \
+    --argjson settle_valid "$settle_valid" \
+    --argjson state_valid "$state_valid" \
+    --argjson valid "$restore_valid" \
+    --slurpfile control "$control_record_file" \
+    --slurpfile state "$state_record_file" \
+    '{$attempted,$attempt,prior_failure:($prior_failure == 1),$command_valid,$settle_valid,$state_valid,$valid,
+      requested_disabled:false,control:($control[0] // null),state:($state[0] // null),
+      semantics:"cleanup always restores the safe default disabled=false; a prior failed attempt remains visible and invalidates an otherwise successful experiment"}' \
+    >"$ext_messages_broadcast_restore_record_file"; then
+    ext_messages_broadcast_restore_had_failure=1
+    return 1
+  fi
+  if ! write_ext_messages_broadcast_provenance; then
+    ext_messages_broadcast_restore_had_failure=1
+    return 1
+  fi
+  if [[ $restore_valid == true ]]; then
+    ext_messages_broadcast_restore_required=0
+  fi
+  [[ $restore_valid == true ]]
+}
+
+patch_ext_messages_broadcast_reports() {
+  local temp_file
+  if [[ -s ${metadata_file:-} ]]; then
+    temp_file=$result_dir/.run-metadata-ext-messages-broadcast.json
+    jq --slurpfile configuration "$ext_messages_broadcast_file" \
+      '.ext_messages_broadcast = $configuration[0]' "$metadata_file" >"$temp_file" &&
+      mv -- "$temp_file" "$metadata_file" || return
+  fi
+  if [[ -s ${summary_file:-} ]]; then
+    temp_file=$result_dir/.benchmark-summary-ext-messages-broadcast.json
+    jq --slurpfile configuration "$ext_messages_broadcast_file" '
+      .ext_messages_broadcast = $configuration[0] |
+      .run.ext_messages_broadcast = $configuration[0]
+    ' "$summary_file" >"$temp_file" && mv -- "$temp_file" "$summary_file" || return
+  fi
+}
 
 stop_collectors() {
   local pid
@@ -173,6 +792,45 @@ stop_collectors() {
   collector_pids=()
 }
 
+stop_actor_stats_collector() {
+  if [[ -n ${actor_stats_collector_pid:-} ]]; then
+    kill "$actor_stats_collector_pid" 2>/dev/null || true
+    wait "$actor_stats_collector_pid" 2>/dev/null || true
+    actor_stats_collector_pid=
+  fi
+}
+
+wait_actor_stats_collector() {
+  if [[ -n ${actor_stats_collector_pid:-} ]]; then
+    wait "$actor_stats_collector_pid" 2>/dev/null || true
+    actor_stats_collector_pid=
+  fi
+}
+
+cleanup_collectors() {
+  stop_collectors
+  stop_actor_stats_collector
+}
+
+cleanup_benchmark_on_exit() {
+  local original_status=$?
+  local cleanup_status=0 final_status
+  trap - EXIT
+  set +e
+  cleanup_collectors
+  if ! restore_ext_messages_broadcast_setting; then
+    cleanup_status=1
+    # One bounded retry handles a transient console/readback failure while the
+    # recorded prior failure still invalidates an otherwise successful run.
+    restore_ext_messages_broadcast_setting || true
+  fi
+  if ! patch_ext_messages_broadcast_reports; then
+    cleanup_status=1
+  fi
+  final_status=$(ext_messages_broadcast_exit_status "$original_status" "$cleanup_status")
+  exit "$final_status"
+}
+
 handle_signal() {
   interrupted=1
   echo "interrupt received; stopping native load generator" >&2
@@ -180,7 +838,8 @@ handle_signal() {
 }
 
 trap handle_signal INT TERM
-trap stop_collectors EXIT
+write_ext_messages_broadcast_provenance
+trap cleanup_benchmark_on_exit EXIT
 
 capture_validator_stats() {
   local output_file=$1
@@ -196,6 +855,249 @@ capture_validator_stats() {
       -a "$internal_ip:$control_port" \
       -c getstats
   ' >"$output_file" 2>>"$result_dir/validator-stats.stderr.log"
+}
+
+capture_validator_actor_stats_raw() {
+  local output_file=$1
+  # The inner timeout terminates validator-engine-console inside the container,
+  # so a timed-out sample cannot overlap the next query. The slightly longer
+  # outer timeout is only a guard against a stuck Docker client.
+  timeout --signal=TERM --kill-after=1s "${actor_stats_host_guard_seconds}s" \
+    docker exec genesis sh -c '
+      config=/var/ton-work/db/config.json
+      internal_ip=$(hostname -I)
+      internal_ip=${internal_ip%% *}
+      control_port=$(jq -r ".control[0].port // empty" "$config")
+      test -n "$internal_ip" && test -n "$control_port"
+      exec timeout --signal=TERM --kill-after=1s "$1" validator-engine-console \
+        -k /var/ton-work/db/client \
+        -p /var/ton-work/db/server.pub \
+        -a "$internal_ip:$control_port" \
+        -c get-actor-stats
+    ' sh "${actor_stats_timeout_seconds}s" \
+    >"$output_file" 2>>"$result_dir/validator-actor-stats.stderr.log"
+}
+
+capture_validator_actor_stats_record() {
+  local raw_file=$1 record_file=$2 phase=$3 sequence=$4
+  local started_at finished_at started_ms finished_ms duration_seconds exit_code output_bytes
+  local target_epoch_ms=${5:-null} target_offset_seconds=null
+  local actor_types='{"overlay_impl":null,"decryptor_async":null}'
+  local overlay_impl=null decryptor_async=null
+  started_at=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+  started_ms=$(date +%s%3N)
+  printf '[%s] phase=%s sequence=%s\n' "$started_at" "$phase" "$sequence" \
+    >>"$result_dir/validator-actor-stats.stderr.log"
+  if capture_validator_actor_stats_raw "$raw_file"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  finished_at=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+  finished_ms=$(date +%s%3N)
+  duration_seconds=$(awk -v start="$started_ms" -v finish="$finished_ms" \
+    'BEGIN { printf "%.3f", (finish - start) / 1000 }')
+  if [[ $target_epoch_ms =~ ^[0-9]+$ ]]; then
+    target_offset_seconds=$(awk -v start="$started_ms" -v target="$target_epoch_ms" \
+      'BEGIN { printf "%.3f", (start - target) / 1000 }')
+  else
+    target_epoch_ms=null
+  fi
+  output_bytes=$(wc -c <"$raw_file" 2>/dev/null || echo 0)
+  if (( exit_code == 0 )); then
+    actor_types=$(jq -L "$benchmark_jq_dir" -Rs '
+      include "native-benchmark-lib";
+      validator_actor_stats_actor_types
+    ' "$raw_file" 2>/dev/null || printf '{"overlay_impl":null,"decryptor_async":null}\n')
+    overlay_impl=$(jq -c '
+      if (.overlay_impl | type) == "object" and .overlay_impl.actor_type != null
+      then .overlay_impl else null end
+    ' <<<"$actor_types" 2>/dev/null || echo null)
+    decryptor_async=$(jq -c '
+      if (.decryptor_async | type) == "object" and .decryptor_async.actor_type != null
+      then .decryptor_async else null end
+    ' <<<"$actor_types" 2>/dev/null || echo null)
+  fi
+  jq -cn \
+    --arg schema native-benchmark-validator-actor-stats-v1 \
+    --arg phase "$phase" \
+    --argjson sequence "$sequence" \
+    --arg started_at "$started_at" \
+    --arg finished_at "$finished_at" \
+    --argjson started_at_epoch_ms "$started_ms" \
+    --argjson finished_at_epoch_ms "$finished_ms" \
+    --argjson command_duration_seconds "$duration_seconds" \
+    --argjson command_timeout_seconds "$actor_stats_timeout_seconds" \
+    --argjson command_exit_code "$exit_code" \
+    --argjson output_bytes "$output_bytes" \
+    --argjson target_epoch_ms "$target_epoch_ms" \
+    --argjson target_offset_seconds "$target_offset_seconds" \
+    --argjson overlay_impl "$overlay_impl" \
+    --argjson decryptor_async "$decryptor_async" \
+    '{$schema,$phase,$sequence,$started_at,$finished_at,$started_at_epoch_ms,
+      $finished_at_epoch_ms,$command_duration_seconds,$command_timeout_seconds,
+      $command_exit_code,$output_bytes,$target_epoch_ms,$target_offset_seconds,
+      timed_out:($command_exit_code == 124 or $command_exit_code == 137),
+      query_completed:($command_exit_code == 0),
+      parsed:(($overlay_impl != null) or ($decryptor_async != null)),
+      parsed_overlay_impl:($overlay_impl != null),
+      parsed_decryptor_async:($decryptor_async != null),
+      $overlay_impl,$decryptor_async}' >"$record_file"
+}
+
+read_generator_measure_end_epoch_ms() {
+  docker logs --tail 100 "$container_name" 2>/dev/null | jq -Rsr '
+    [split("\n")[] | fromjson? |
+     select(.schema == "native-load-v2" and (.measure_end_unix_ms // null) != null)] |
+    (last.measure_end_unix_ms // empty)
+  ' 2>/dev/null || true
+}
+
+read_actor_stats_generator_container_state() {
+  local state
+  if state=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null); then
+    case "$state" in
+      created|running|paused|restarting|removing|exited|dead)
+        printf '%s\n' "$state"
+        ;;
+      *)
+        printf 'unknown\n'
+        ;;
+    esac
+  else
+    # A replacement container may be briefly absent by name, and a Docker
+    # client call may fail transiently. Neither observation proves the load
+    # generator stopped.
+    printf 'unknown\n'
+  fi
+}
+
+collect_validator_actor_stats() {
+  local sequence=0 sample_raw sample_record now_ms next_periodic_ms next_discovery_ms
+  local interval_ms timeout_ms measure_end_ms= measure_end_captured=0 wake_ms sleep_seconds
+  local container_state container_action previous_state= startup_deadline_ms
+  sample_raw=$result_dir/.validator-actor-stats-sample.txt
+  sample_record=$result_dir/.validator-actor-stats-sample.json
+  interval_ms=$(awk -v seconds="$actor_stats_sample_seconds" \
+    'BEGIN { printf "%.0f", seconds * 1000 }')
+  timeout_ms=$(awk -v seconds="$actor_stats_timeout_seconds" \
+    'BEGIN { printf "%.0f", seconds * 1000 }')
+
+  # `compose up -d` and the first background inspection are not atomic. Wait
+  # for an explicit running state rather than using a false/failed inspection
+  # as the loop condition. A terminal state before startup is a real early
+  # generator exit; the deadline only protects the wrapper from an unavailable
+  # Docker daemon or a container that remains stuck in a transitional state.
+  now_ms=$(date +%s%3N)
+  startup_deadline_ms=$((now_ms + 60000))
+  while :; do
+    container_state=$(read_actor_stats_generator_container_state)
+    container_action=$(actor_stats_container_action "$container_state")
+    if [[ $container_state != "$previous_state" ]]; then
+      printf '[%s] phase=collector event=startup_state state=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$container_state" \
+        >>"$result_dir/validator-actor-stats.stderr.log"
+      previous_state=$container_state
+    fi
+    case "$container_action" in
+      sample)
+        break
+        ;;
+      stop)
+        printf '[%s] phase=collector event=stopped_before_running state=%s\n' \
+          "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$container_state" \
+          >>"$result_dir/validator-actor-stats.stderr.log"
+        rm -f -- "$sample_raw" "$sample_record"
+        return 0
+        ;;
+    esac
+    now_ms=$(date +%s%3N)
+    if (( now_ms >= startup_deadline_ms )); then
+      printf '[%s] phase=collector event=startup_wait_timeout state=%s timeout_seconds=60\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$container_state" \
+        >>"$result_dir/validator-actor-stats.stderr.log"
+      rm -f -- "$sample_raw" "$sample_record"
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  printf '[%s] phase=collector event=running_observed\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
+    >>"$result_dir/validator-actor-stats.stderr.log"
+  now_ms=$(date +%s%3N)
+  next_periodic_ms=$((now_ms + interval_ms))
+  next_discovery_ms=$now_ms
+  while :; do
+    container_state=$(read_actor_stats_generator_container_state)
+    container_action=$(actor_stats_container_action "$container_state")
+    case "$container_action" in
+      stop)
+        break
+        ;;
+      wait)
+        # Once running has been observed, an inspection failure, pause, or
+        # restart is not evidence of termination. Keep one serialized
+        # collector alive until Docker reports an actual terminal state.
+        sleep 0.25
+        continue
+        ;;
+    esac
+
+    now_ms=$(date +%s%3N)
+    if [[ -z $measure_end_ms ]] && (( now_ms >= next_discovery_ms )); then
+      measure_end_ms=$(read_generator_measure_end_epoch_ms)
+      if ! [[ $measure_end_ms =~ ^[0-9]+$ ]]; then
+        measure_end_ms=
+      fi
+      next_discovery_ms=$((now_ms + 5000))
+    fi
+
+    if [[ -n $measure_end_ms ]] && (( measure_end_captured == 0 && now_ms >= measure_end_ms )); then
+      sequence=$((sequence + 1))
+      capture_validator_actor_stats_record \
+        "$sample_raw" "$sample_record" measure_end "$sequence" "$measure_end_ms"
+      jq -c . "$sample_record" >>"$validator_actor_stats_file"
+      measure_end_captured=1
+      now_ms=$(date +%s%3N)
+      next_periodic_ms=$((now_ms + interval_ms))
+    elif (( now_ms >= next_periodic_ms )); then
+      # Do not start an ordinary sample when the scheduled measure-end query is
+      # less than one command-timeout away; one serialized measure-end sample
+      # is both cheaper and more precisely aligned.
+      if [[ -n $measure_end_ms ]] && (( measure_end_captured == 0 &&
+           measure_end_ms > now_ms && measure_end_ms - now_ms <= timeout_ms )); then
+        next_periodic_ms=$measure_end_ms
+      else
+        sequence=$((sequence + 1))
+        capture_validator_actor_stats_record \
+          "$sample_raw" "$sample_record" periodic "$sequence"
+        jq -c . "$sample_record" >>"$validator_actor_stats_file"
+        now_ms=$(date +%s%3N)
+        next_periodic_ms=$((now_ms + interval_ms))
+      fi
+    fi
+
+    now_ms=$(date +%s%3N)
+    wake_ms=$((now_ms + 2000))
+    if (( next_periodic_ms < wake_ms )); then
+      wake_ms=$next_periodic_ms
+    fi
+    if [[ -z $measure_end_ms ]] && (( next_discovery_ms < wake_ms )); then
+      wake_ms=$next_discovery_ms
+    elif [[ -n $measure_end_ms ]] && (( measure_end_captured == 0 && measure_end_ms < wake_ms )); then
+      wake_ms=$measure_end_ms
+    fi
+    sleep_seconds=$(actor_stats_sleep_seconds "$now_ms" "$wake_ms")
+    container_state=$(read_actor_stats_generator_container_state)
+    container_action=$(actor_stats_container_action "$container_state")
+    case "$container_action" in
+      sample) sleep "$sleep_seconds" ;;
+      stop) break ;;
+      wait) sleep 0.25 ;;
+    esac
+  done
+  rm -f -- "$sample_raw" "$sample_record"
 }
 
 parse_validator_stat() {
@@ -497,8 +1399,33 @@ collect_container_stats() {
   done
 }
 
-echo "Building the genesis image from local $ton_base_image before deciding reuse"
-"${compose[@]}" build genesis
+images_prebuilt=${BENCHMARK_IMAGES_PREBUILT:-0}
+if [[ $images_prebuilt != 0 && $images_prebuilt != 1 ]]; then
+  echo "BENCHMARK_IMAGES_PREBUILT must be 0 or 1" >&2
+  exit 2
+fi
+compose_build_args=(--build)
+if [[ $images_prebuilt == 1 ]]; then
+  # The guarded fresh-cycle runner builds both derived images before deleting
+  # state. Avoid hashing/building the same contexts three more times after the
+  # destructive boundary; Compose still verifies that the tagged images exist
+  # when it creates the containers below.
+  compose_build_args=()
+  echo "Using derived images prebuilt by the guarded fresh-cycle runner"
+  for prebuilt_service in genesis "$container_name"; do
+    prebuilt_image=$("${compose[@]}" --profile native-load-generator config --images "$prebuilt_service" | tail -n 1)
+    prebuilt_revision=$(docker image inspect -f \
+      '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+      "$prebuilt_image" 2>/dev/null || true)
+    if [[ -z $prebuilt_image || $prebuilt_revision != "$ton_base_revision" ]]; then
+      echo "prebuilt $prebuilt_service image is missing or does not match TON revision $ton_base_revision" >&2
+      exit 2
+    fi
+  done
+else
+  echo "Building the genesis image from local $ton_base_image before deciding reuse"
+  "${compose[@]}" build genesis
+fi
 
 genesis_health=$(docker inspect -f \
   '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
@@ -528,14 +1455,30 @@ fi
 
 if [[ $genesis_matches == true ]]; then
   echo "Reusing the matching, already-healthy genesis container; starting session-stats only"
-  "${compose[@]}" --profile session-stats up -d --build --no-deps session-stats
+  "${compose[@]}" --profile session-stats up -d "${compose_build_args[@]}" --no-deps session-stats
 else
   echo "Starting/recreating genesis and session-stats with $env_file"
-  "${compose[@]}" --profile session-stats up -d --build --force-recreate genesis session-stats
+  "${compose[@]}" --profile session-stats up -d "${compose_build_args[@]}" --force-recreate genesis session-stats
 fi
 
-echo "Building the native-load-generator image before opening the benchmark window"
-"${compose[@]}" --profile native-load-generator build "$container_name"
+if [[ $images_prebuilt != 1 ]]; then
+  echo "Building the native-load-generator image before opening the benchmark window"
+  "${compose[@]}" --profile native-load-generator build "$container_name"
+fi
+
+genesis_health=$(docker inspect -f \
+  '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+  genesis 2>/dev/null || true)
+if [[ $genesis_health != "true healthy" ]]; then
+  echo "genesis must be running and healthy before benchmark validator controls are applied" >&2
+  exit 2
+fi
+if ! apply_ext_messages_broadcast_setting; then
+  if [[ $interrupted -eq 1 ]]; then
+    exit 130
+  fi
+  exit 2
+fi
 
 # Snapshot cumulative ExtMessagePool counters immediately around the load.
 # The delta exposes whether the pool scanned non-executable messages, formed
@@ -554,6 +1497,8 @@ if ! [[ $validator_session_stats_start_line =~ ^[0-9]+$ ]]; then
   validator_session_stats_start_line=0
 fi
 
+capture_validator_actor_stats_record \
+  "$validator_actor_stats_pre_load_file" "$validator_actor_stats_pre_load_metadata_file" pre_load 0
 echo "Starting a fresh native-load-generator container"
 "${compose[@]}" --profile native-load-generator up -d --force-recreate --no-deps "$container_name"
 
@@ -568,6 +1513,8 @@ collect_cgroup_and_device_stats &
 collector_pids+=("$!")
 collect_thread_stats &
 collector_pids+=("$!")
+collect_validator_actor_stats &
+actor_stats_collector_pid=$!
 docker logs --follow "$container_name" &
 collector_pids+=("$!")
 
@@ -588,9 +1535,57 @@ fi
 finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 finished_epoch=$(date +%s)
 stop_collectors
+wait_actor_stats_collector
 docker logs "$container_name" >"$generator_log_file" 2>&1 || true
+capture_validator_actor_stats_record \
+  "$validator_actor_stats_final_file" "$validator_actor_stats_final_metadata_file" post_drain 0
+jq -L "$benchmark_jq_dir" -s \
+  --slurpfile pre_load "$validator_actor_stats_pre_load_metadata_file" \
+  --slurpfile final "$validator_actor_stats_final_metadata_file" \
+  --argjson sample_interval_seconds "$actor_stats_sample_seconds" \
+  --argjson command_timeout_seconds "$actor_stats_timeout_seconds" \
+  --argjson host_guard_seconds "$actor_stats_host_guard_seconds" \
+  --argjson load_window_seconds "$((finished_epoch - started_epoch))" \
+  --arg pre_load_raw_artifact "$(basename "$validator_actor_stats_pre_load_file")" \
+  --arg final_raw_artifact "$(basename "$validator_actor_stats_final_file")" '
+  include "native-benchmark-lib";
+  validator_actor_stats_summary(.; $pre_load[0]; $final[0]; {
+    sample_interval_seconds:$sample_interval_seconds,
+    command_timeout_seconds:$command_timeout_seconds,
+    command_kill_grace_seconds:1,
+    host_guard_seconds:$host_guard_seconds,
+    load_window_seconds:$load_window_seconds,
+    pre_load_raw_artifact:$pre_load_raw_artifact,
+    final_raw_artifact:$final_raw_artifact,
+    cadence_semantics:"serialized start-to-start cadence; a slow query consumes its interval and calls never overlap"
+  })
+' "$validator_actor_stats_file" >"$validator_actor_stats_summary_file"
 if ! capture_validator_stats "$validator_stats_after_file"; then
   : >"$validator_stats_after_file"
+fi
+if [[ $ext_messages_broadcast_requested == true ]]; then
+  if ! capture_ext_messages_broadcast_state post-load \
+    "$ext_messages_broadcast_post_load_record_file" ||
+     ! ext_messages_broadcast_state_matches "$ext_messages_broadcast_post_load_record_file" \
+       "$ext_messages_broadcast_desired_disabled"; then
+    echo "validator external-message broadcast setting changed before post-load capture" >&2
+    if (( benchmark_exit_code == 0 )); then
+      benchmark_exit_code=4
+    fi
+  fi
+  write_ext_messages_broadcast_provenance
+  if ! restore_ext_messages_broadcast_setting; then
+    echo "failed to restore and verify validator external-message broadcasting" >&2
+    if (( benchmark_exit_code == 0 )); then
+      benchmark_exit_code=4
+    fi
+    # Retry immediately so a failed first cleanup does not leave the persistent
+    # flag changed throughout report generation. The EXIT handler remains the
+    # final fallback for this and every earlier failure path.
+    if ! restore_ext_messages_broadcast_setting; then
+      exit "$benchmark_exit_code"
+    fi
+  fi
 fi
 docker logs --since "$started_at" genesis 2>&1 |
   awk '/consensus_schedule_summary/' >"$validator_scheduling_log_file" || true
@@ -613,20 +1608,26 @@ scheduler_before=$(parse_validator_stat "$validator_stats_before_file" "total.ex
 scheduler_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_scheduler")
 batch_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_batch_admission")
 batch_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_batch_admission")
+reconciliation_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_reconciliation")
+reconciliation_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_reconciliation")
 pending_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_pending")
 pending_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_pending")
-jq -n \
+jq -L "$benchmark_jq_dir" -n \
   --argjson scheduler_before "$scheduler_before" \
   --argjson scheduler_after "$scheduler_after" \
   --argjson batch_before "$batch_before" \
   --argjson batch_after "$batch_after" \
+  --argjson reconciliation_before "$reconciliation_before" \
+  --argjson reconciliation_after "$reconciliation_after" \
   --argjson pending_before "$pending_before" \
   --argjson pending_after "$pending_after" '
+  include "native-benchmark-lib";
   def delta($before; $after; $exclude):
     reduce ($after | keys_unsorted[]) as $key ({};
       if ($exclude | index($key)) != null then .
       else .[$key] = (($after[$key] // 0) - ($before[$key] // 0))
       end);
+  validator_pool_cleanup_acceptance($reconciliation_after; $pending_after) as $cleanup |
   {
     semantics:"validator-engine cumulative ExtMessagePool counters sampled immediately before and after generator execution; scheduler delta should show near one scanned message per selected message and source runs approaching the configured run target",
     scheduler:{
@@ -640,9 +1641,26 @@ jq -n \
       capture_complete:(($batch_before | length) > 0 and ($batch_after | length) > 0),
       before:$batch_before,
       after:$batch_after,
-      delta:delta($batch_before; $batch_after; [])
+      delta:delta($batch_before; $batch_after; []),
+      shard_state_cache:native_admission_shard_cache_summary($batch_before; $batch_after)
     },
-    native_pending:{before:$pending_before,after:$pending_after}
+    canonical_reconciliation:{
+      semantics:"local candidate acceptance only tracks source/nonce hints; irreversible native prefix cleanup is authorized by shard-client-confirmed masterchain-referenced account state",
+      capture_complete:(($reconciliation_before | length) > 0 and ($reconciliation_after | length) > 0),
+      clean_after:(($reconciliation_after | length) > 0 and (($reconciliation_after.pending_sources // -1) == 0)),
+      before:$reconciliation_before,
+      after:$reconciliation_after,
+      delta:delta($reconciliation_before; $reconciliation_after; ["pending_sources","last_mc_seqno","last_shard_seqno"])
+    },
+    native_pending:{
+      capture_complete:(($pending_before | length) > 0 and ($pending_after | length) > 0),
+      clean_after:(($pending_after | length) > 0 and (($pending_after.messages // -1) == 0)),
+      before:$pending_before,
+      after:$pending_after
+    },
+    cleanup_acceptance:($cleanup + {
+      semantics:"a usable run must capture validator cleanup telemetry, leave no locally accepted source awaiting canonical reconciliation, and leave no native message in the validator pool"
+    })
   }
 ' >"$validator_pool_summary_file"
 
@@ -719,6 +1737,8 @@ jq -L "$benchmark_jq_dir" -Rsc \
     native_work_counter_values($rows; $name) | add // 0;
   def native_work_counter_max($rows; $name):
     native_work_counter_values($rows; $name) | max // 0;
+  def native_work_counter_min_positive($rows; $name):
+    native_work_counter_values($rows; $name) | map(select(. > 0)) | min // 0;
   def collated_summary($rows):
     ($rows | map(.block_stats.transactions? // 0) | add // 0) as $transfers |
     ($rows | map(.bytes? // 0) | add // 0) as $block_bytes |
@@ -738,7 +1758,14 @@ jq -L "$benchmark_jq_dir" -Rsc \
       actual_block_bytes:($rows | map(.bytes?) | distribution),
       collated_data_bytes:($rows | map(.collated_data_bytes?) | distribution),
       estimated_block_bytes:($rows | map(.block_limits.bytes?) | distribution),
+      estimator_gap_bytes:($rows | map(
+        if (.bytes? | type) == "number" and (.block_limits.bytes? | type) == "number"
+        then .bytes - .block_limits.bytes
+        else null
+        end
+      ) | distribution),
       native_fast_path_counters:{
+        invocations:native_work_counter_sum($rows; "native_fast_path_invocations"),
         microbatches:native_work_counter_sum($rows; "native_microbatches"),
         input:native_work_counter_sum($rows; "native_microbatch_input"),
         accepted:native_work_counter_sum($rows; "native_microbatch_accepted"),
@@ -749,7 +1776,32 @@ jq -L "$benchmark_jq_dir" -Rsc \
         max_microbatch_unique_accounts:native_work_counter_max($rows; "native_microbatch_max_unique_accounts"),
         account_cells:native_work_counter_sum($rows; "native_account_cells_built"),
         staged_dict_sets:native_work_counter_sum($rows; "native_staged_dict_sets"),
+        state_accounts_installed:native_work_counter_sum($rows; "native_state_accounts_installed"),
+        checkpoint_base_snapshots:native_work_counter_sum(
+          $rows; "native_stat_checkpoint_base_snapshots"
+        ),
+        checkpoint_rebuilds:native_work_counter_sum($rows; "native_stat_checkpoint_rebuilds"),
+        fragment_refill_waits:native_work_counter_sum($rows; "native_fragment_refill_waits"),
+        fragment_refill_timeouts:native_work_counter_sum($rows; "native_fragment_refill_timeouts"),
+        fragment_refill_messages:native_work_counter_sum($rows; "native_fragment_refill_messages"),
+        post_commit_idle_waits:native_work_counter_sum($rows; "native_post_commit_idle_waits"),
+        post_commit_idle_timeouts:native_work_counter_sum($rows; "native_post_commit_idle_timeouts"),
+        fragment_capacity_fills:native_work_counter_sum($rows; "native_fragment_capacity_fills"),
         hard_preflight_failures:native_work_counter_sum($rows; "native_hard_preflight_failures"),
+        size_guard_deferrals:native_work_counter_sum($rows; "native_size_guard_deferrals"),
+        size_guard_reserve_bytes:native_work_counter_max($rows; "native_size_guard_reserve_bytes"),
+        size_guard_max_estimated_bytes:native_work_counter_max(
+          $rows; "native_size_guard_max_estimated_bytes"
+        ),
+        size_guard_max_estimator_gap_bytes:native_work_counter_max(
+          $rows; "native_size_guard_estimator_gap_bytes"
+        ),
+        size_guard_min_positive_serialized_margin_bytes:native_work_counter_min_positive(
+          $rows; "native_size_guard_serialized_margin_bytes"
+        ),
+        size_guard_max_serialized_oversize_bytes:native_work_counter_max(
+          $rows; "native_size_guard_serialized_oversize_bytes"
+        ),
         canonical_roots_reused:native_work_counter_sum($rows; "native_canonical_root_reused"),
         canonical_accounts_reused:native_work_counter_sum($rows; "native_canonical_accounts_reused"),
         deadline_seals:native_work_counter_sum($rows; "native_deadline_seals"),
@@ -762,6 +1814,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
       work_time_s:($rows | map(.work_time?) | distribution),
       cpu_work_time_s:($rows | map(.cpu_work_time?) | distribution),
       wait_externals_time_s:($rows | map(.wait_externals_time?) | distribution),
+      external_wait_breakdown:collation_external_wait_summary($rows),
       stages_real_s:{
         preinit:stage_distribution($rows; "preinit"),
         native_prepare:stage_distribution($rows; "native_prepare"),
@@ -1092,6 +2145,7 @@ jq -L "$benchmark_jq_dir" -Rs '
     max_wire_batch_source_run: ($records | map(.wire_batch_source_run_max_size // 0) | max),
     max_source_issue_burst:($records | map(.source_issue_burst_max_size // 0) | max),
     max_active_tasks_per_source:($records | map(.max_active_tasks_per_source // 0) | max),
+    max_clients_at_cwnd_cap:($records | map(.clients_at_cwnd_cap // 0) | max),
     max_sources_at_canonical_backlog_cap:($records |
       map(.sources_at_canonical_backlog_cap // 0) | max),
     max_mempool_accept_tps: ($records | map(.mempool_accept_tps // 0) | max),
@@ -1163,6 +2217,37 @@ jq -L "$benchmark_jq_dir" -Rs '
     } end),
     task_errors_by_reason:($final.task_errors_by_reason // null),
     retries_by_reason:($final.retries_by_reason // null),
+    retry_policy:(if $final == null then null else {
+      retry_exhausted:($final.retry_exhausted // 0),
+      retry_horizon_exhausted:($final.retry_horizon_exhausted // 0),
+      retry_exhausted_sources:($final.retry_exhausted_sources // 0),
+      canonical_state_lag_retry_exhausted:($final.canonical_state_lag_retry_exhausted // 0),
+      retry_horizon_s:($final.retry_horizon_s // null),
+      canonical_state_lag_retry_backoff_ms:(
+        $final.canonical_state_lag_retry_backoff_ms // null
+      ),
+      canonical_state_lag_retry_max_backoff_ms:(
+        $final.canonical_state_lag_retry_max_backoff_ms // null
+      )
+    } end),
+    adaptive_cwnd:(if $final == null then null else {
+      configured_global_cap:($final.adaptive_max_cwnd // 0),
+      effective_global_cap:($final.effective_cwnd_cap // null),
+      initial_window:($final.initial_congestion_window // null),
+      final_window:($final.congestion_window // null),
+      sampled_peak:($final.congestion_window_sampled_peak // null),
+      max_clients_at_cap:($records | map(.clients_at_cwnd_cap // 0) | max),
+      cap_limited_acks:($final.cwnd_cap_limited_acks // 0),
+      semantics:"message-count admission window; independent from the unresolved/proof max_inflight bound"
+    } end),
+    ready_source_scheduler:(if $final == null then null else {
+      head_blocked_ready_notifications:($final.head_blocked_ready_notifications // 0),
+      legacy_head_blocked_ready_scans:($final.head_blocked_ready_scans // 0),
+      queue_pushes:($final.ready_source_queue_pushes // 0),
+      stale_entries:($final.ready_source_queue_stale_entries // 0),
+      excluded_rotations:($final.ready_source_queue_excluded_rotations // 0),
+      max_depth:($final.ready_source_queue_max_depth // 0)
+    } end),
     histogram_overflow:{
       rtt:($final.rtt_ms | if . == null then null else
         {overflow:(.overflow // null),lower_bound_ms:(.overflow_lower_bound_ms // null),
@@ -1220,6 +2305,11 @@ if [[ $generator_container_exit_code -eq 0 ]] &&
 elif [[ $generator_container_exit_code -eq 0 ]] &&
      ! jq -e '.valid_canonical_run == true' "$generator_summary_file" >/dev/null; then
   echo "generator exited successfully but canonical benchmark validation failed" >&2
+  benchmark_exit_code=3
+fi
+if [[ $generator_container_exit_code -eq 0 ]] &&
+   ! jq -e '.cleanup_acceptance.valid == true' "$validator_pool_summary_file" >/dev/null; then
+  echo "generator exited successfully but validator canonical cleanup validation failed" >&2
   benchmark_exit_code=3
 fi
 if jq -e '.canonical_observer_invalid_or_lagging_at_end == true' "$generator_summary_file" >/dev/null; then
@@ -1448,12 +2538,6 @@ git_status_sha256=$(printf '%s' "$git_status" | sha256sum | awk '{print $1}')
 git_diff_sha256=$({
   "${benchmark_git[@]}" diff --binary HEAD 2>/dev/null || printf '%s' '__git_diff_unavailable__'
 } | sha256sum | awk '{print $1}')
-compose_config_sha256=$("${compose[@]}" --profile session-stats --profile native-load-generator config |
-  sha256sum | awk '{print $1}')
-compose_service_hashes=$("${compose[@]}" --profile session-stats --profile native-load-generator \
-  config --hash 2>/dev/null |
-  jq -Rsc '[split("\n")[] | select(length > 0) | split(" ") |
-    select(length >= 2) | {service:.[0],config_hash:.[1]}]')
 docker_version=$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)
 compose_version=$(docker compose version --short 2>/dev/null || true)
 docker_cgroup_driver=$(docker info --format '{{.CgroupDriver}}' 2>/dev/null || true)
@@ -1513,6 +2597,7 @@ jq -n \
   --argjson interrupted "$interrupted" \
   --slurpfile containers "$runtime_file" \
   --slurpfile images "$image_metadata_file" \
+  --slurpfile ext_messages_broadcast "$ext_messages_broadcast_file" \
   --argjson reproducibility_reasons "$reproducibility_reasons" \
   '{$schema,$run_id,$started_at,$finished_at,$elapsed_seconds,$env_file,$env_sha256,
     $git_revision,$git_dirty,
@@ -1526,6 +2611,7 @@ jq -n \
     host_topology:{smt_active:($smt_active == 1),numa_nodes:$numa_nodes,lscpu:$cpu_topology},
     $generator_container_exit_code,$benchmark_exit_code,
     interrupted:($interrupted == 1),containers:$containers[0],images:$images[0],
+    ext_messages_broadcast:$ext_messages_broadcast[0],
     reproducibility:{valid:($reproducibility_reasons | length == 0),
                      reasons:$reproducibility_reasons,
                      semantics:"separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"}}' >"$metadata_file"
@@ -1538,14 +2624,20 @@ jq -n \
   --slurpfile validator_pipeline "$validator_pipeline_summary_file" \
   --slurpfile validator_pool "$validator_pool_summary_file" \
   --slurpfile validator_scheduling "$validator_scheduling_summary_file" \
+  --slurpfile validator_actor_stats "$validator_actor_stats_summary_file" \
+  --slurpfile ext_messages_broadcast "$ext_messages_broadcast_file" \
   '{run:$run[0],generator:$generator[0],session_stats:$session_stats[0],
     validator_pipeline:$validator_pipeline[0],validator_pool:$validator_pool[0],
     validator_scheduling:$validator_scheduling[0],
+    validator_actor_stats:$validator_actor_stats[0],
+    ext_messages_broadcast:$ext_messages_broadcast[0],
     resources:$resources[0],
     acceptance:($generator[0].capacity_acceptance + {
+      validator_cleanup_valid:$validator_pool[0].cleanup_acceptance.valid,
+      validator_cleanup_invalid_reasons:$validator_pool[0].cleanup_acceptance.invalid_reasons,
       reproducible:$run[0].reproducibility.valid,
       reproducibility_reasons:$run[0].reproducibility.reasons,
-      semantics:"proof correctness, run completion, ingress capacity, chain capacity, and reproducibility are independent acceptance dimensions"
+      semantics:"proof correctness, run completion, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
     })}' \
   >"$summary_file"
 

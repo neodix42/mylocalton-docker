@@ -26,9 +26,13 @@ valid_for_seconds=${NATIVE_LOAD_VALID_FOR_SECONDS:-120}
 workers=${NATIVE_LOAD_WORKERS:-1}
 max_retries=${NATIVE_LOAD_MAX_RETRIES:-3}
 retry_backoff_ms=${NATIVE_LOAD_RETRY_BACKOFF_MS:-10}
+retry_horizon_seconds=${NATIVE_LOAD_RETRY_HORIZON_SECONDS:-30}
+canonical_state_lag_retry_backoff_ms=${NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_BACKOFF_MS:-250}
+canonical_state_lag_retry_max_backoff_ms=${NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_MAX_BACKOFF_MS:-2000}
 auto_nonce=${NATIVE_LOAD_AUTO_NONCE:-1}
 adaptive_inflight=${NATIVE_LOAD_ADAPTIVE_INFLIGHT:-1}
 adaptive_initial_rtt_seconds=${NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS:-1}
+adaptive_max_cwnd=${NATIVE_LOAD_ADAPTIVE_MAX_CWND:-0}
 source_offset=${NATIVE_LOAD_SOURCE_OFFSET:-0}
 finality_poll_seconds=${NATIVE_LOAD_FINALITY_POLL_SECONDS:-10}
 finality_sample_sources=${NATIVE_LOAD_FINALITY_SAMPLE_SOURCES:-256}
@@ -46,7 +50,11 @@ if ! printf '%s\n' "$generator_help" | grep -q -- '--submit-batch-size' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--submit-coalesce-ms' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-poll-seconds' ||
    ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-query-timeout' ||
-   ! printf '%s\n' "$generator_help" | grep -q -- '--adaptive-initial-rtt-seconds'; then
+   ! printf '%s\n' "$generator_help" | grep -q -- '--adaptive-initial-rtt-seconds' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--adaptive-max-cwnd' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--retry-horizon-seconds' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-state-lag-retry-backoff-ms' ||
+   ! printf '%s\n' "$generator_help" | grep -q -- '--canonical-state-lag-retry-max-backoff-ms'; then
   echo "TON image does not contain the batched, canonical-aware native-load-generator; rebuild/pull the updated TON image first" >&2
   exit 2
 fi
@@ -83,7 +91,11 @@ set -- /usr/local/bin/native-load-generator \
   --workers "$workers" \
   --max-retries "$max_retries" \
   --retry-backoff-ms "$retry_backoff_ms" \
+  --retry-horizon-seconds "$retry_horizon_seconds" \
+  --canonical-state-lag-retry-backoff-ms "$canonical_state_lag_retry_backoff_ms" \
+  --canonical-state-lag-retry-max-backoff-ms "$canonical_state_lag_retry_max_backoff_ms" \
   --adaptive-initial-rtt-seconds "$adaptive_initial_rtt_seconds" \
+  --adaptive-max-cwnd "$adaptive_max_cwnd" \
   --source-offset "$source_offset" \
   --finality-poll-seconds "$finality_poll_seconds" \
   --finality-sample-sources "$finality_sample_sources" \

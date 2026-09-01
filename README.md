@@ -104,7 +104,7 @@ Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested so
 docker compose --profile native-load-generator up --build native-load-generator
 ```
 
-The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only load keys from the dedicated `native-load-wallets` volume. It never runs inside the validator container and cannot read the validator database or validator keys. Account nonces are discovered from proof-checked canonical state by default. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, `NATIVE_LOAD_SUBMIT_BATCH_SIZE` amortizes liteserver round trips, and `NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE` groups ascending nonces from one source so one pinned account lookup can validate a run. `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. `NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS` seeds the application congestion window from the measured admission RTT. Global and per-source canonical backlog limits pause new offers before nonce-ordered mempool work grows without bound. The proof-checked canonical block follower drives that backpressure and distinguishes pending duplicates from canonical too-old responses. Its independent query timeout and bounded reconnect policy are configured with `NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS` and `NATIVE_LOAD_CANONICAL_RETRY_*`; recovered transport timeouts remain visible but do not invalidate an otherwise complete proof-checked run. The laptop defaults are deliberately conservative. Metrics are printed as JSON once per configured report interval and distinguish offered, batched wire queries, mempool admission, canonical-chain inclusion, repair work, backpressure, and proof-checked masterchain-anchored source nonces.
+The generator reads `/usr/share/data/global.config.json` from the shared config volume and read-only load keys from the dedicated `native-load-wallets` volume. It never runs inside the validator container and cannot read the validator database or validator keys. Account nonces are discovered from proof-checked canonical state by default. `NATIVE_LOAD_SIGNERS` controls parallel in-memory Ed25519 signing, `NATIVE_LOAD_SUBMIT_BATCH_SIZE` amortizes liteserver round trips, and `NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE` groups ascending nonces from one source so one pinned account lookup can validate a run. `TON_NATIVE_EXECUTOR_THREADS` controls validator admission/execution workers. `NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS` seeds the application congestion window from the measured admission RTT. `NATIVE_LOAD_ADAPTIVE_MAX_CWND` is a global message-count ceiling distributed exactly across generator workers and connections; zero preserves the historical inflight-only limit. It limits admission pressure, while `NATIVE_LOAD_INFLIGHT` remains the separate end-to-end unresolved/proof backlog bound. Global and per-source canonical backlog limits pause new offers before nonce-ordered mempool work grows without bound. The proof-checked canonical block follower drives that backpressure and distinguishes pending duplicates from canonical too-old responses. Its independent query timeout and bounded reconnect policy are configured with `NATIVE_LOAD_CANONICAL_QUERY_TIMEOUT_SECONDS` and `NATIVE_LOAD_CANONICAL_RETRY_*`; recovered transport timeouts remain visible but do not invalidate an otherwise complete proof-checked run. The laptop defaults are deliberately conservative. Metrics are printed as JSON once per configured report interval and distinguish offered, batched wire queries, mempool admission, canonical-chain inclusion, repair work, backpressure, and proof-checked masterchain-anchored source nonces.
 
 The generator issues one fair, bounded contiguous nonce burst per source turn and
 waits `NATIVE_LOAD_SUBMIT_COALESCE_MS` (2 ms by default) for signer completions
@@ -112,8 +112,24 @@ before assembling a batch. A retrying lowest unresolved admission task blocks
 newer unsent tasks from that source, but an already admitted nonce is removed
 from the admission head and does not prevent later batches from pipelining while
 canonical proof catches up. `source_issue_burst_*`,
-`head_blocked_ready_scans`, per-source cap gauges, and typed task/retry reasons
-make both batch underfill and head-of-line tails explicit.
+`head_blocked_ready_notifications`, `ready_source_queue_*`, per-source cap
+gauges, and typed task/retry reasons make both batch underfill and head-of-line
+tails explicit. The legacy `head_blocked_ready_scans` counter remains zero when
+the source-head queue is operating correctly.
+
+The tracked physical profile uses a 20 ms coalescing window. Cycle 4's 2 ms
+window averaged only 3.17 messages per 64-message batch and caused 1.08 million
+liteserver queries for 3.42 million wire attempts. Twenty milliseconds remains
+below that run's 50 ms median admission RTT, so Cycle 5 uses it to reduce
+per-query state pinning and actor scheduling pressure while preserving the same
+message batch and source-run limits.
+
+Cycle 5 improved the wire batch average to 8.70, but its uncapped aggregate
+CWND still reached 1,593 messages while the validator had acceptance gaps near
+65 seconds. The physical profile therefore caps adaptive growth at 768
+messages: exactly one complete 64-message batch for each of 12 connections.
+The JSON stream and `generator-summary.json` expose the configured and effective
+cap, clients currently at the cap, ACKs clipped by it, and the sampled CWND peak.
 
 `TON_SIMPLEX_MAX_TPS=1` is an explicit saturation-only mode used by the physical
 profile. It makes the native basechain/shardchain work-driven and publishes each
@@ -159,6 +175,46 @@ consensus wall times from structured `consensus.stats.events` even when normal
 validator verbosity suppresses INFO summaries; its provenance section states
 that internal actor wake/timer reasons are not observed.
 
+`BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED` is an opt-in, host-side experiment
+control. Leaving it unset is backward-compatible and performs no validator
+configuration query. Explicit `0` and `1` both run the same guarded control
+path after `genesis` is healthy and before every pre-load snapshot; `1` disables
+external-message broadcasting for the run and `0` is the paired control. This
+host variable is not read from the Compose `--env-file`, so pass it on the
+command line. For a fresh paired comparison, use the same source, image,
+profile, and sampler settings:
+
+```bash
+sudo env BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=0 ./benchmark/run-fresh-native-cycle.sh .env.physical
+sudo env BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=1 ./benchmark/run-fresh-native-cycle.sh .env.physical
+```
+
+The wrapper requires the console command's known connection preamble followed
+by one exact `success` reply, waits a fixed five seconds for actor propagation,
+and verifies both the validator's
+in-memory `get-config` view and persisted `/var/ton-work/db/config.json`. It
+rechecks the requested value after the post-drain actor and validator snapshots,
+then restores and verifies the safe default `0`. The EXIT handler retries that
+cleanup on errors and signals without replacing an earlier nonzero benchmark
+status; an otherwise successful run fails closed if restoration cannot be
+verified. SIGKILL or host loss cannot run a shell trap, so follow either with a
+guarded fresh cycle (which deletes the exact benchmark volumes) or manually set
+the validator control back to `0` before reusing the database.
+
+The raw command/config artifacts and hashes are indexed by
+`validator-ext-messages-broadcast.json`. The same lifecycle object appears as
+`ext_messages_broadcast` in `run-metadata.json` and `benchmark-summary.json`.
+For an explicit control its `lifecycle_valid` stays `null` until post-load
+readback and restoration both complete; failed restore attempts remain in
+attempt-numbered command and readback artifacts even if cleanup retry succeeds.
+Whole-config hashes are provenance only because unrelated validator config can
+evolve during a run; the hard gate is agreement of the normalized boolean in
+both readbacks. In this one-validator topology, mode `1` keeps direct liteserver
+injection, local ExtMessagePool admission, and collation intact while removing
+redundant external-message gossip work. Label such results as a local
+single-validator no-gossip diagnostic, not multi-validator or production-network
+capacity.
+
 For a 24-vCPU/128-GB/2-TB physical desktop, use the tracked `.env.physical`
 profile. It keeps every published management endpoint on loopback, assigns
 whole SMT core pairs to the validator and generator, and leaves native spam
@@ -172,6 +228,7 @@ docker build \
   --build-arg TON_ARCH=native \
   --build-arg NINJA_JOBS=20 \
   --build-arg VCS_REF="$(git describe --always --dirty)" \
+  --build-arg VCS_DATE="$(git show -s --format=%cI HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t ghcr.io/corton-nommander/ton:max-tps-native .
 ```
@@ -196,12 +253,15 @@ accidentally start load. The configured run has a 60-second ramp, 60-second
 warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile
 (42 minutes of configured phases, plus initial nonce discovery).
 
-The same-host baseline allocates 18 vCPU to genesis, 4 vCPU to the generator,
-and caps Session Stats at 1 vCPU on the remaining SMT pair. This moves one full
-core pair toward the measured bottleneck: genesis saturated its old allocation,
-while the generator peaked below three cores. The validator runs 16 scheduler
-threads, leaving two of its allocated CPUs for database and network work. The
-first 4k TPS target is requested offered load, not a claim that 4k was produced.
+The same-host baseline allocates 18 vCPU (nine complete SMT core pairs) to
+genesis, 4 vCPU to the generator, and caps Session Stats at 1 vCPU on the
+remaining SMT pair. Valid Cycle 1 used about one generator core at 4k TPS, and
+Cycle 3 still peaked below two generator cores while genesis repeatedly reached
+its old 16-vCPU allocation. Moving one physical core pair to the candidate and
+canonical path addresses the measured imbalance without constraining the load
+source. The validator runs 16 scheduler threads, leaving two of its allocated
+CPUs for database and network work. The first 4k
+TPS target is requested offered load, not a claim that 4k was produced.
 Use the reported maximum and sustained `sign_tps`, `offered_tps`, and
 canonical-chain TPS to prove which component reached its ceiling. Larger hosts
 should scale the CPU sets and quotas explicitly after checking NUMA and sibling
@@ -221,13 +281,44 @@ Stop the staircase at the first invalid run or when canonical backpressure,
 candidate deadline sealing, or deadline failures recur; changing several
 capacity variables at once makes the limiting stage ambiguous.
 
+For a deliberately fresh source-build plus benchmark cycle, use the guarded
+runner. It pins the Compose file and project and refuses to delete anything
+unless the resolved model contains exactly the expected services, named
+volumes, and named genesis database mount. This permanently deletes the local
+chain, generated load wallets, and Session Stats database for
+`mylocalton-desktop`:
+
+```bash
+sudo ./benchmark/run-fresh-native-cycle.sh .env.physical
+```
+
+The physical profile gives genesis a 30-minute health-check start period because
+sequential generation of 49,152 fresh wallet keys takes about 23 minutes on the
+reference desktop. The wrapper therefore remains attached to the same clean
+cycle until genesis becomes healthy instead of requiring a second invocation.
+The guarded runner prebuilds both derived images before deleting state and marks
+them as prebuilt for the benchmark wrapper, avoiding redundant context hashing
+and builds after the destructive boundary.
+
+The native collation queue is conservatively capped at 18,432 messages and the
+zero-state block soft/hard limits are 8.5/9 MiB. These leave serialized headroom
+below the 10 MiB consensus maximum, reinforced by the validator's native
+candidate size-reserve guard. Admission uses a 90-second elapsed retry horizon,
+more than twice the longest 31.5-second consensus pause observed in Cycle 2.
+The exact canonical-state-lag response has a separate 250ms-to-2s bounded
+backoff and does not reduce the AIMD window. A source whose nonce head remains
+unresolved at the horizon is quarantined and makes the benchmark invalid rather
+than stranding every source in a global ready-task scan.
+
 It writes `benchmark-results/<UTC timestamp>/benchmark-summary.json`, the full
 generator log, generator peaks/final JSON, an independent Session Stats canonical
 summary, and continuous host/container samples.
 CPU is summarized as Docker percent, equivalent cores, and percentage of total
 host capacity; RAM includes average and maximum use. The wrapper returns the
-generator's exit code, or `3` when its canonical completion invariants fail, so
-an unsettled drain or incomplete canonical run remains a failed benchmark.
+generator's exit code, or `3` when either its canonical completion invariants or
+the validator's canonical-cleanup invariants fail, so an unsettled drain,
+incomplete canonical run, missing cleanup snapshot, or nonempty native pool
+remains a failed benchmark.
 Raw and summarized telemetry also covers per-CPU utilization, bounded top
 validator/generator threads, cgroup-v2 CPU throttling/PSI/memory/OOM/I/O, and
 physical block-device counters. Cumulative network and I/O deltas are split
@@ -237,10 +328,106 @@ Docker/Compose versions, CPU/SMT/NUMA topology, image IDs, registry digests, and
 OCI source labels. Dirty source or unpinned images are reported as separate
 reproducibility reasons; they never change proof correctness.
 
-`benchmark-summary.json.acceptance` keeps four decisions separate: canonical
-proof correctness, complete settled execution, ingress-capacity validity, and
-chain-capacity validity, followed by independent reproducibility. Each failed
-decision has stable reason codes. A literal JSON `false` is retained as false,
+The wrapper also serializes `get-actor-stats` queries during generator execution
+to catch actor monopolies that aggregate CPU samples hide. The default cadence is
+30 seconds (`BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS=30`) with a two-second
+server-side command timeout (`BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS=2`). The
+timeout must remain below the cadence and is hard-capped at five seconds. Calls
+never overlap: a slow call consumes its cadence interval, and the final query is
+issued only after the periodic collector has exited. Controlled low-perturbation
+cycles use `BENCHMARK_ACTOR_STATS_SAMPLE_SECONDS=3600`; that suppresses ordinary
+periodic queries during the current workload while retaining the explicit
+pre-load, measurement-end, and post-drain snapshots. Once the generator publishes
+its absolute measurement boundary, the collector schedules that serialized
+sample independently of the periodic cadence. Compact
+during-load records go to `validator-actor-stats.jsonl`; unmodified pre-load and
+post-drain console responses are kept in `validator-actor-stats-pre-load.txt` and
+`validator-actor-stats-final.txt`; and `validator-actor-stats-summary.json`
+reports query failures/timeouts, observed query wall fraction, and `OverlayImpl`
+load, execution-message/time maxima, single-message time, delay, currently
+executing time, the opt-in actor-runtime quantum rate
+`actor_mailbox_quantum_yield.qps`, `overlay_traffic_fairness_yield.qps`, and the Cycle 8 FEC-path
+rates `overlay_fec_generated_callback.qps`,
+`overlay_fec_signed_callback.qps`, and `overlay_fec_fairness_yield.qps`.
+The same raw records and boundary snapshots also expose `ton::DecryptorAsync`
+load/messages, execution-message/time maxima, single-message time, delay, and
+alive/executing state so crypto-worker pressure can be separated from Overlay
+mailbox pressure. Images predating the mailbox or FEC counters report those
+fields as `null`; actor-stat output without `DecryptorAsync` reports null
+snapshots, zero parsed samples, and null maxima rather than weakening the benchmark.
+These samples are deliberately best-effort diagnostics and never affect proof,
+capacity, cleanup, or reproducibility acceptance. Their configured and observed
+sampling cost is repeated under `benchmark-summary.json.validator_actor_stats`
+so results can be rejected if measurement perturbation is excessive.
+
+`validator-pool-summary.json.canonical_reconciliation` proves the validator's
+native-message cleanup boundary. Local `blockAccepted` callbacks only track
+reversible source/nonce hints; the pool purges a nonce prefix only after the
+shard client has applied the masterchain-referenced shard state and read that
+source's canonical account nonce. A complete run requires zero final
+`pending_sources`, zero native pending messages, and proof resolution of the
+complete offered-hash cohort; an admission response lost after storage may be
+classified later from canonical proof rather than double-counted as admission.
+This catches candidates that were locally accepted but replaced by a later
+catchain session. Reconciliation publishes a whole basechain shard-top
+fingerprint only after a fully successful scan. Masterchain states with the
+same fingerprint increment `unchanged_state_skips` before source grouping;
+when only part of a multi-shard topology changes, the per-shard fallback uses
+`unchanged_top_skips` and `unchanged_source_skips`. An incomplete or failed
+scan publishes neither cache, so the same top remains retryable and the
+existing failure and pending-source counters still fail closed.
+
+`validator-pool-summary.json.batch_admission.shard_state_cache` reports the
+exact immutable shard-state cache as run deltas. `shard_state_requests` is the
+logical lookup count, `shard_cache_hits` is the cached subset, and
+`shard_manager_waits` counts logical cache misses handed to ValidatorManager.
+A manager wait may hit its own positive cache or join its exact-`BlockIdExt`
+worker, so this is deliberately not a physical DB or network read count.
+`shard_fetches` remains a deprecated equal-value compatibility alias. The
+summary publishes hit/manager-wait ratios and the invariant error
+`shard_state_requests - shard_cache_hits - shard_manager_waits`.
+
+`shard_miss_errors` is the canonical aggregate miss-resolution error counter;
+`shard_fetch_errors` is its deprecated equal-value alias. The manager-await
+subset is split into `shard_manager_wait_timeouts`,
+`shard_manager_wait_notready`, and `shard_manager_wait_other_errors`, while
+`shard_manager_wait_late_results` counts successful awaits observed after the
+caller's absolute deadline and rejected before validation or cache insertion.
+The derived report checks both alias pairs, the error-breakdown identity, and
+the complete miss-outcome identity including fills, non-conflicting fill
+races, stale-generation skips, errors, and late results. It also exposes
+generation resets, validation counters, final/current peak entry gauges, and
+validation-or-store errors outside the manager-await subset. Cycle 12's full
+cache captures remain readable by falling back to its `shard_fetches` and
+`shard_fetch_errors` names, but naturally report the new detailed manager-wait
+outcomes as unavailable. Images predating that full cache contract retain the
+raw `before`, `after`, and `delta` objects but set this derived summary's
+`capture_complete` to `false` and its counters and ratios to `null`.
+
+Every collated basechain/masterchain view in `validator-pipeline-summary.json`
+also has `external_wait_breakdown`. This wall-clock-only summary totals the ten
+mutually exclusive queue lifecycle categories (`round_live`,
+`round_native_coalescing`, `generic_try_pop`, `generic_sync_snapshot`,
+`native_probe`, `native_first_work`, `native_fragment_refill`,
+`native_post_commit_idle`, `native_producer_drain`, and
+`native_sync_snapshot`), their call counts and fractions, and reconciles their
+sum plus `external_wait_accounted_s` with the existing `wait_externals_time`.
+`accounting_within_tolerance` requires all three comparisons to agree within
+`max(0.0001 seconds, 0.1%)` independently for every collated record, so signed
+errors from different records cannot cancel. The aggregate view retains each
+signed error total, the sum of the per-record tolerances in
+`accounting_tolerance_envelope_s`, and the largest per-record error across all
+three comparisons in `max_per_record_absolute_accounting_error_s`. The gate is
+diagnostic and does not change benchmark acceptance. Legacy or mixed records keep the existing
+`wait_externals_time_s` distribution and report unavailable derived totals as
+`null` with `capture_complete:false`.
+
+`benchmark-summary.json.acceptance` keeps canonical proof correctness, complete
+settled execution, ingress-capacity validity, chain-capacity validity,
+validator canonical cleanup, and reproducibility as independent decisions.
+Each failed decision has stable reason codes. Missing reconciliation or pending
+pool snapshots fail closed rather than silently accepting an old image or a
+failed validator-console query. A literal JSON `false` is retained as false,
 not converted to null. Run `./run-native-benchmark.sh --self-test` to exercise
 the report invariants without Docker.
 Treat `canonical_chain_measure_peak_1s_tps` and

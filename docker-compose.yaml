@@ -156,9 +156,10 @@ services:
       - NATIVE_TPS_MAX_BLOCKS_PER_INTERVAL
     healthcheck:
       test: /usr/local/bin/lite-client -a 127.0.0.1:40004 -p /var/ton-work/db/liteserver.pub -t 3 -c last
-      interval: ${HEALTHCHECK_INTERVAL}
+      interval: ${HEALTHCHECK_INTERVAL:-15s}
       timeout: 5s
-      retries: 20
+      retries: ${GENESIS_HEALTHCHECK_RETRIES:-20}
+      start_period: ${GENESIS_HEALTHCHECK_START_PERIOD:-60s}
     deploy:
       resources:
         limits:
@@ -208,9 +209,13 @@ services:
       - NATIVE_LOAD_WORKERS
       - NATIVE_LOAD_MAX_RETRIES
       - NATIVE_LOAD_RETRY_BACKOFF_MS
+      - NATIVE_LOAD_RETRY_HORIZON_SECONDS
+      - NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_BACKOFF_MS
+      - NATIVE_LOAD_CANONICAL_STATE_LAG_RETRY_MAX_BACKOFF_MS
       - NATIVE_LOAD_AUTO_NONCE
       - NATIVE_LOAD_ADAPTIVE_INFLIGHT
       - NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS
+      - NATIVE_LOAD_ADAPTIVE_MAX_CWND
       - NATIVE_LOAD_SOURCE_OFFSET
       - NATIVE_LOAD_FINALITY_POLL_SECONDS
       - NATIVE_LOAD_FINALITY_SAMPLE_SOURCES

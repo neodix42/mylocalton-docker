@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.vscode
+.env
+.env.*
+benchmark-results
+private
+state
+local-build
+Dockerfile.local
+.DS_Store
+*.log
