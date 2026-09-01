@@ -1660,3 +1660,49 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   staircase. Cycle 35 remains the higher proof-TPS profile (14,948.825) but
   does not provide this three-block cadence.
 - Artifact directory: `benchmark-results/20260901T173628Z`.
+
+## Cycle 39 — 15.5k target staircase, new valid >=3-blocks/s throughput high (20260901T180013Z)
+
+- TON image revision label: `9cd0de4e`; Docker harness revision: `268257c`.
+  This is an exact Cycle 38 runtime staircase: the sorted genesis and
+  native-load-generator benchmark-environment arrays differ only in
+  `NATIVE_LOAD_TARGET_TPS=15000 -> 15500`. The TON/generator source labels,
+  4,096 sources, 12 connections, six workers/signers, 96-message batches,
+  16-message source runs, one admission RPC per client, 1,152 global CWND,
+  0.0768-s initial RTT,
+  30-ms submit coalescing, timing, no-gossip topology, 8,192-entry candidate
+  allowance, and 2,048-message transport window are unchanged. The harness
+  tree was clean; its revision advances only because the Cycle 38 report was
+  committed after that run.
+- Every substantive acceptance dimension passed: proof correctness,
+  completion, ingress capacity, chain capacity, canonical cleanup, follower,
+  and broadcast lifecycle. Exact proof evidence matched 11,964,934 canonical
+  source/nonce/external-cell hashes with zero conflicts, follower errors,
+  reorgs, duplicate nonce conflicts, or nonce gaps; final catch-up completed
+  and the native pool/reconciliation state was clean. `reproducible=false`
+  remains solely the unchanged external Session Stats image-label caveat.
+- Offered/admitted/proof-chain TPS was 15,100.004 / 15,100.004 / 15,002.319.
+  Against Cycle 38 this is +327.614 / +327.614 / +323.804 TPS (+2.22% / +2.22%
+  / +2.21%). It becomes the highest valid sustained proof result recorded in
+  this campaign, narrowly exceeding Cycle 35's 14,948.825 TPS by 53.494 TPS
+  while retaining the faster cadence. The 24,864 canonical one-second maximum
+  is a burst, not a sustained-capacity claim.
+- Cadence improves rather than trades away: 2,338 proof blocks in 700 seconds
+  is 3.340 blocks/s (Cycle 38: 2,270 / 700 = 3.243 blocks/s). Proof packing is
+  essentially flat at 4,485.296 transfers/block versus 4,519.948 (-0.77%),
+  with the same 8,192 maximum. Measured canonical backpressure remains zero;
+  sampled backlog falls 115,145 to 103,132 (-10.43%), and clean drain remains
+  short at 5.899 seconds (Cycle 38: 5.358 seconds).
+- The sub-second cadence policy has more margin at the higher target. Total
+  collation, collation wall, and accepted-block interval p99 were 503.738 /
+  546.905 / 672.765 ms, improving Cycle 38 by 21.506 / 29.762 / 37.063 ms.
+  Absolute total/wall/accepted maxima were 664.734 / 721.029 / 947.704 ms,
+  all below one second; collate-start p99/max were 718.023 / 901.886 ms. Thus
+  the target increase did not produce a hidden long-tail cadence regression.
+- Retain `9cd0de4e` and advance the clean staircase to a 16k target with this
+  exact runtime profile before changing source again. This result has zero
+  backpressure, lower p99 and backlog, and 3.34 blocks/s at a new sustained
+  high, so it establishes real headroom. The first invalid capacity or cadence
+  rung should become the source-optimization boundary; until then, changing
+  the immediate actor fast lane would confound the capacity curve.
+- Artifact directory: `benchmark-results/20260901T180013Z`.
