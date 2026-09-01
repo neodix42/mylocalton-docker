@@ -1343,3 +1343,40 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   canonical backpressure, and all three sub-second p99 gates. It is not
   combined with a block-size, CWND, lane-count, or source change.
 - Artifact directory: `benchmark-results/20260901T122050Z`.
+
+## Cycle 32 — 40-ms coalescing rejected (20260901T124204Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `f96c6b0`.
+  Both source trees were clean. This is the exact Cycle 31 16.5k injector
+  geometry: 4,096 sources, 12 connections, six workers/signers, 768 global
+  CWND, 0.05-s initial RTT, 64-message batches, 16-message source runs,
+  timing, no-gossip topology, 8,192-entry candidate allowance, and
+  2,048-message transport window are unchanged. The sole runtime change is
+  bounded leading-edge submit coalescing, 30 to 40 ms.
+- Proof correctness, completion, cleanup, follower, and broadcast-lifecycle
+  gates passed, with zero measured canonical backpressure, a 109,633 sampled
+  backlog peak, and a 6.758-second clean drain. Offered/admitted/proof-chain
+  TPS was 14,400.797 / 14,400.797 / 14,399.681. The target-attainment gates
+  correctly fail (`offer_target_not_attained` and
+  `insufficient_load_over_canonical_throughput`), so this is neither a 16.5k
+  capacity result nor a chain limit. The canonical one-second maximum was
+  27,648 TPS, a burst rather than sustained capacity. `reproducible=false`
+  remains solely the external Session Stats image-label caveat.
+- The requested p99 values remain below one second—total collation, collation
+  wall, and accepted-block interval were 621.7 / 672.3 / 776.1 ms—but all
+  regress from Cycle 31. Absolute total/wall/accepted maxima were 763.4 /
+  810.0 / 2,146.2 ms. Proof packing was 5,862.188 transfers/block over 1,717
+  proof blocks (maximum 8,192).
+- The 40-ms deadline is rejected. Relative to Cycle 31, offered TPS fell
+  4.79% and proof TPS fell 4.66%; sampled backlog rose 8.0% and drain rose
+  24.6%. Wire batches changed only 42.177 to 42.337 messages on average
+  (+0.38%), while admission queries fell only 5.0%; therefore the extra
+  wait added latency without material batching benefit. All 12 clients still
+  hit their 768 cap and RTT remained 50/200/500 ms.
+- Retain the 30-ms policy. The next committed source treatment adds a bounded
+  per-client admission-query credit, so a wider message window cannot issue
+  multiple concurrent lite-server RPCs on the same connection. It will be
+  validated first at the known-good 15k workload before its separate 16.5k
+  staircase; this is deliberately not combined with a candidate/block-size,
+  lane-count, or consensus change.
+- Artifact directory: `benchmark-results/20260901T124204Z`.
