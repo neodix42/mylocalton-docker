@@ -1027,3 +1027,44 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   proof/cleanup gates and make total collation, collation wall, and accepted
   block interval p99 each less than one second.
 - Artifact directory: `benchmark-results/20260901T092140Z`.
+
+## Cycle 24 — 8,192-entry cadence recovery, valid 12k baseline (20260901T094506Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `cbebb6f`.
+  Both source trees were clean. This fresh-state treatment retains Cycle 23's
+  checkpoint-coalescing source, 12,000 target, 4,096 sources, 60/60/700/300
+  timing, no-gossip topology, 2,048 transport window, and 768 CWND. Its sole
+  runtime change is the fair logical candidate allowance: 10,240 to 8,192
+  entries (16 512-message fragments).
+- Result: all formal proof correctness, completion, ingress/chain capacity,
+  canonical cleanup, follower, and broadcast-lifecycle gates passed.
+  Offered/admitted/proof-chain TPS was 12,000.006 / 12,000.006 /
+  11,995.419, with zero canonical-backpressure, a 49,232 sampled backlog peak,
+  and a 1.327-second clean drain to zero residue. The complete canonical
+  one-second maximum was 23,125 TPS, a burst rather than a sustained result.
+  `reproducible=false` remains solely the Session Stats image-label caveat.
+- This restores every requested sub-second p99 gate while preserving the 12k
+  proof result: total collation p99 was 678.7 ms, collation-wall p99 736.8 ms,
+  and accepted-block interval p99 852.1 ms. Compared with Cycle 22's prior
+  compliant 10,240-cap baseline, those are improvements from 805.8/871.7/
+  963.4 ms. Total collation and wall maxima were also below one second at
+  734.1/785.1 ms; the accepted-interval maximum was 1.417 seconds and remains
+  visible as a rare scheduling tail.
+- Proof contained 1,594 native blocks averaging 5,260.225 transfers and
+  reached the 8,192-entry cap. This is denser than Cycle 22's 4,506.849 average
+  while avoiding Cycle 23's 5,971.532-transfer cadence regression. Measured
+  exact checkpoint rebuilds fell to 21,939 (from Cycle 22's 26,172); native
+  commit p99 was 144.9 ms versus Cycle 22's 191.3 ms. Grouping remains modest
+  (1.103 fragments/group): 21,451 of 21,939 groups flushed at ingress, 488 at
+  capacity, and no rollback/deadline/fanout/headroom event occurred. Therefore
+  the result credits the smaller candidate cap and bounded source path as a
+  combined valid configuration, not a claim that four-fragment coalescing is
+  independently responsible for the latency gain.
+- This is the new proof-checked ~12k single-validator no-gossip baseline for
+  the offered-rate staircase. The next isolated run retains every Cycle 24
+  control and increases only `NATIVE_LOAD_TARGET_TPS` to 13,500. It must retain
+  proof/cleanup validity, <=1% canonical-backpressure, and all three p99 values
+  below one second. If target attainment is injector-window-limited with all
+  clients at the 768 CWND cap, a separate 1,536-CWND A/B follows; it must not
+  be conflated with a chain-capacity claim.
+- Artifact directory: `benchmark-results/20260901T094506Z`.
