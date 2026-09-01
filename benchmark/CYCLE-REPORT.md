@@ -1890,3 +1890,58 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   considered, with unchanged qcap=1 and explicit proof that wire-batch density
   rises rather than merely adding deadline queueing.
 - Artifact directory: `benchmark-results/20260901T193522Z`.
+
+## Cycle 43 — restored-C39 15.5k confirmation, borderline backpressure rejection (20260901T200039Z)
+
+- TON and native-generator image revision labels are `7d5f775a`; Docker
+  harness revision is `3f3f0b8`. This is an exact restored-source
+  confirmation of Cycle 39's content: `7d5f775a` and Cycle 39's
+  `9cd0de4e` resolve to the same Git tree (`106654e...`). The `.env` SHA-256,
+  Compose configuration/service hashes, and normalized sorted container
+  benchmark environment, CPU, and resource hashes match the prior runtime
+  profile. It retains 4,096 sources, 12 connections, six workers/signers,
+  96-message batches, 16-message source runs, one admission RPC per client,
+  1,152 global CWND, 0.0768-s initial RTT, 30-ms coalescing, 8,192 candidate
+  entries, and a 2,048-message native transport window; the target is 15,500
+  TPS.
+- Proof correctness, run completion, canonical cleanup, follower, and
+  broadcast-lifecycle gates pass. The final proof matches 11,715,622 exact
+  canonical source/nonce/external-cell hashes with zero hash conflicts, nonce
+  gaps, duplicate or external nonce conflicts, follower errors, reorgs, or
+  retry exhaustion. Final catch-up, drain, and native transport/pool cleanup
+  complete. `reproducible=false` remains solely the unchanged unlabeled
+  Session Stats image caveat.
+- The result is nevertheless not capacity-qualified. Offered/admitted TPS is
+  14,743.853, or 95.1216% of target: it clears the 14,725-TPS offer floor by
+  only 18.853 TPS. Canonical backpressure totals 111 events and 7.018791
+  seconds, 1.002684% of the 700-second measurement window. This is 18.791 ms
+  over the <=1% gate, so ingress and chain capacity both fail only
+  `canonical_backpressure_above_one_percent`; correctness and completion do
+  not fail.
+- Proof-chain TPS is 14,635.263, down 367.056 TPS (-2.447%) from Cycle 39's
+  valid 15,002.319 TPS. Packing falls 4,485.296 to 4,340.284 transfers/block
+  (same 8,192 maximum), while block production rises 2,338 to 2,357 blocks:
+  3.367 blocks/s. This demonstrates that the rejection is ingress/backlog
+  pressure rather than failure to retain the >=3-blocks/s cadence objective.
+  The 26,624 one-second canonical bucket is a transient burst, not sustained
+  throughput.
+- All p99 cadence measures remain sub-second: total collation / collation
+  wall / accepted interval / collate start / validation are 512.723 / 559.172
+  / 684.073 / 729.833 / 91.896 ms. Rare accepted and start maxima reach
+  1,327.347 / 1,567.134 ms, so this run also has less absolute-tail margin
+  than Cycle 39. Backpressure/backlog/drain regress from Cycle 39's zero BP,
+  103,132 peak backlog, and 5.899-s drain to 7.019 s BP, 130,303 peak backlog,
+  and 6.444-s drain.
+- Injection and transport controls behaved as configured: CWND is capped at
+  1,152 on all 12 clients, the per-client admission-query cap is one with
+  observed peak one, wire batches average 90.290 messages (maximum 96), and
+  no full-batch dispatch occurs. Transport stays bounded at 2,560 high-water
+  with 2,048/512 maximum producer/consumer batches and ends with zero live,
+  reserved, pending, or unpushed work.
+- Do not promote 15.5k as a stable capacity rung and do not run the coupled
+  batch-128/CWND-1536 injector treatment from this borderline control: it
+  adds window pressure to exactly the failure mode observed here. Return to a
+  strict 15k restored-source control before a larger-window A/B. If that
+  control passes comfortably, use a separate one-RPC-per-client batch-128
+  experiment with all other runtime dimensions fixed.
+- Artifact directory: `benchmark-results/20260901T200039Z`.
