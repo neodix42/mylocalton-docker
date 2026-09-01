@@ -1421,3 +1421,46 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   and staged-state work, with an explicit proof/cleanup/all-three-p99 A/B
   before any further rate claim.
 - Artifact directory: `benchmark-results/20260901T132352Z`.
+
+## Cycle 34 — 20-ms post-commit pack grace, valid source-only improvement (20260901T140340Z)
+
+- TON image revision label: `ac05d8d3`; Docker harness revision: `c75d316`.
+  This is a strict source-only A/B against Cycle 33's high-density injector:
+  15k target, 4,096 sources, 12 connections, six workers/signers, 96-message
+  batches, 16-message source runs, one admission RPC per client, 1,152 global
+  CWND, 0.0768-s initial RTT, 30-ms submit coalescing, timing, no-gossip
+  topology, 8,192-entry candidate allowance, and 2,048-message transport
+  window are unchanged. The source changes only the already-committed
+  checkpoint-safe post-commit empty-queue packing grace from 10 to 20 ms;
+  partial-fragment grace remains 10 ms and the wait remains soft-timeout
+  clamped.
+- All proof correctness, completion, ingress/chain capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Offered/admitted/
+  proof-chain TPS was 14,619.196 / 14,619.196 / 14,534.811, improving Cycle
+  33's 14,363.719 / 14,250.388. Six short backlog pauses totalled 0.140 s
+  (0.0200% of measurement), the sampled peak was 121,293 below the 131,072
+  guard, and drain was a clean 6.510 s. The complete canonical one-second
+  maximum was 26,112 TPS, a burst rather than sustained capacity.
+  `reproducible=false` remains solely the external Session Stats image-label
+  caveat.
+- The user p99 policy remains satisfied: total collation, collation wall, and
+  accepted-block interval p99 were 615.9 / 667.4 / 819.3 ms. Absolute
+  total/wall/accepted maxima were 708.4 / 805.0 / 2,338.0 ms; the rare
+  accepted tail is reported separately and means the grace should not be
+  lengthened blindly.
+- The packing mechanism is directly confirmed. Proof blocks fell 2,281 to
+  1,648 (-27.75%) while transfers/block rose 4,366.954 to 6,164.947 (+41.17%).
+  Post-commit idle timeouts fell 2,284 to 1,639 despite more idle waits
+  (8,174 to 11,019); query-credit behavior and batch density were effectively
+  unchanged at all 12 credits and 88.335 messages/query. Thus the gain is not
+  an injector artifact. Checkpoint rebuilds rose 15.0%, and native commit /
+  staged-dictionary work rose with fuller candidates, identifying the next
+  source bottleneck.
+- Retain the 20-ms post-commit pack grace for the high-density profile. It is
+  a source-only win over Cycle 33 but does not yet replace the distinct Cycle
+  30 30-ms/64-message/768-CWND 15k baseline (14,819.585 proof TPS). The next
+  committed source treatment targets bulk-safe staged ShardAccounts
+  dictionary updates and exact checkpoint work; it will be tested first at
+  this same high-density workload with proof/cleanup/backpressure and all
+  three p99 gates unchanged.
+- Artifact directory: `benchmark-results/20260901T140340Z`.
