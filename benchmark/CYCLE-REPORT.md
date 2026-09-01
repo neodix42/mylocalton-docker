@@ -1223,3 +1223,44 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   permits per existing client. Any such change is a separate committed source
   treatment and will be retested first against the Cycle 26 15k/768 baseline.
 - Artifact directory: `benchmark-results/20260901T111218Z`.
+
+## Cycle 29 — 18 one-batch lanes, valid but liteserver-fragmented (20260901T113700Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `169f949`.
+  Both source trees were clean. This is a separate injection-topology treatment
+  against Cycle 26: 15k target, 4,096 sources, timing, no-gossip topology,
+  8,192-entry candidate allowance, 2,048-message transport window, 6 workers,
+  6 signers, and all queue guards are unchanged. Connections increase 12 to
+  18 and global CWND 768 to 1,152, preserving exactly 64 permits per client
+  (three lanes per worker, not two batches per lane). The 0.0768-second
+  initial RTT seed correspondingly starts each lane at approximately 64.
+- All formal proof correctness, completion, ingress/chain capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Offered/admitted/
+  proof-chain TPS was 14,361.034 / 14,361.034 / 14,271.970 with zero measured
+  canonical-backpressure, a 96,583 sampled backlog peak, and a 6.016-second
+  clean drain. It is nevertheless below Cycle 26's 14,592.386 proof TPS at
+  12 lanes/768 CWND. The complete canonical one-second maximum was 24,818 TPS,
+  a burst rather than sustained capacity. `reproducible=false` remains solely
+  the external Session Stats image-label caveat.
+- All requested p99 gates remain below one second (total/wall/accepted
+  523.0 / 573.3 / 729.9 ms), but those smaller tails are not a throughput win:
+  proof packing fell from Cycle 26's 5,845.317 to 4,337.438 transfers/block,
+  increasing proof blocks from 1,745 to 2,300. Absolute total/wall/accepted
+  maxima were 634.1 / 694.6 / 1,137.3 ms; the rare accepted maximum remains
+  separate from the p99 policy.
+- The causal evidence rejects more independent streams into this one
+  liteserver. Every one of 18 clients reached its 64-message cap, but p50/p95
+  RTT rose from Cycle 26's 50/200 ms to 100/500 ms, while wire-batch density
+  fell from 30.413 to 27.276 messages/query. All 411,182 dispatches were
+  coalescing-deadline releases and none was a full batch, so 18 lanes created
+  more fragmented admission work rather than usable parallelism. The lower
+  native stage times reflect less dense blocks, not a faster chain.
+- This rejects further connection/lane scaling and retains 12 connections,
+  768 global CWND (one 64-message batch per client) as the generator baseline.
+  The next isolated injection treatment changes only
+  `NATIVE_LOAD_SUBMIT_COALESCE_MS` from 20 to 30 at that retained 15k profile.
+  The 30-ms bounded leading-edge delay remains below the 50-ms median
+  admission RTT and targets the observed deadline-dispatch/query-fragmentation
+  cost; it must retain proof/cleanup validity and all three sub-second p99
+  gates before any further source or target change.
+- Artifact directory: `benchmark-results/20260901T113700Z`.
