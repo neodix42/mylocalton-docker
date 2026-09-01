@@ -908,3 +908,36 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   collation-wall, and accepted-interval p99 <1 second; otherwise adaptive
   checkpoint coalescing is the next source-level treatment.
 - Artifact directory: `benchmark-results/20260901T074907Z`.
+
+## Cycle 21 — 12,288-entry cap treatment, near sub-second cadence (20260901T080919Z)
+
+- TON image revision label: `b1393d52`; Docker harness revision: `1e83e1b`.
+  Both trees were clean. This fresh-state treatment retains Cycle 20's 12k
+  target, 2,048 transport window, 768 CWND, 4,096 sources, no-gossip topology,
+  and timing. The sole change is the conservative 24-fragment
+  `TON_NATIVE_COLLATOR_QUEUE_LIMIT=12288` instead of 18,432.
+- Result: benchmark-capacity valid 12k run. Offered/admitted/proof-chain TPS
+  was 11,999.974 / 11,999.974 / 11,992.004 with zero canonical backpressure;
+  proof, completion, capacity, cleanup, follower, and broadcast-lifecycle
+  gates passed. Drain took 0.897 seconds to zero backlog. The maximum complete
+  canonical one-second bucket was 24,576 TPS, a burst rather than sustained
+  capacity.
+- The smaller candidate restored the collation-side sub-second target without
+  sacrificing sustained throughput: total collation p99 fell from Cycle 20's
+  1.026 seconds to 860.3 ms, and collation-wall p99 fell from 1.107 seconds to
+  928.7 ms. It increased proof-block frequency to 1,911 blocks while lowering
+  average packing to 4,386.400 transfers; the configured 12,288 cap was
+  reached. Cancellation remained bounded at 220,099 / 9,744,327 selected
+  messages (2.26%) with a 2,560-message transport high-water and no residue.
+- It is still narrowly cadence-policy-invalid for the user's full
+  sub-second-block-generation requirement: accepted-block interval p99 was
+  1.040 seconds, despite total collation and collation-wall p99 passing. Its
+  1.16-second accepted maximum remains explicit. Therefore do not advance the
+  12k rate or call this the compliant maximum yet.
+- The next isolated configuration rung retains all Cycle 21 conditions but
+  lowers the logical candidate cap to 10,240 (20 fair 512-message fragments).
+  It must retain the 12k proof/capacity result and bring *all three* p99
+  measures—total collation, collation wall, and accepted-block interval—below
+  one second. If that fails, simple cap sizing is insufficient and adaptive
+  transactional checkpoint coalescing becomes the next source treatment.
+- Artifact directory: `benchmark-results/20260901T080919Z`.
