@@ -790,3 +790,48 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   an otherwise-identical 10k/768-CWND control before widening the injector
   window.
 - Artifact directory: `benchmark-results/20260901T063654Z`.
+
+## Cycle 18 — bounded transport-prefill control, 1,024 window (20260901T070740Z)
+
+- TON image revision label: `b1393d52`; Docker harness revision: `363525e`.
+  Both trees were clean. This is the first fresh-state result for the committed
+  bounded native transport-prefill implementation and its telemetry harness.
+  It retains the Cycle 17 10,000-TPS one-validator no-gossip profile exactly:
+  4,096 sources, 60/60/700/300 seconds, 18,432 candidate entries, 768 global
+  CWND, and all proof/drain gates. The explicit control uses
+  `TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW=1024`.
+- Result: valid 10k capacity run. Offered/admitted/proof-chain TPS was
+  10,000.067 / 10,000.067 / 9,998.534, with zero canonical-backpressure
+  seconds. Proof correctness, completion, ingress and chain capacity,
+  canonical cleanup, final follower catch-up, and broadcast-setting lifecycle
+  all passed; drain to the anchored tip took 0.728 seconds. The largest fully
+  contained canonical one-second bucket was 23,259 TPS, a burst rather than a
+  sustained capacity number.
+- This corrects Cycle 17's injector starvation under the same 768-CWND
+  setting: that prior run offered only 9,329.920 TPS while all clients were
+  capped; this prefill control reaches the full 10k target without a guard
+  pause. The source/cycle pair is the relevant evidence; it does not turn the
+  one-validator no-gossip configuration into a production-network claim.
+- Transport telemetry proves the intended bounded behavior. Across the run it
+  selected 8,237,799 messages, pushed 8,225,973, and consumed 7,972,252;
+  cancellation accounting recorded 265,547 discarded speculative messages
+  (3.22% of selected) with no live residue. The configured 1,024-message
+  transport window observed a 1,536-message high-water mark because the design
+  permits exactly one additional 512-message producer look-ahead. Initial
+  pushes reached 1,024 while consumer microbatches remained 512. This is a
+  bounded resident hand-off, not a restored unbounded callback backlog.
+- Packing and the requested fast cadence both improved while retaining the
+  existing 18,432 entry safety cap. Proof contained 2,199 native blocks
+  averaging 3,178.251 transfers (maximum 15,122); sampled collations averaged
+  3,177.876 transfers across 2,210 blocks. Collation total time was 254.9 ms
+  average, 576.9 ms p95, and 846.2 ms p99; accepted-block interval was 317.2
+  ms average, 690.9 ms p95, and 951.8 ms p99. Those p99 values meet the
+  sub-second gate, although the 1.47–1.55 second absolute tails remain
+  explicitly visible.
+- Fragment-refill waiting still dominates (218.9 of 358.3 seconds external
+  wait), so the next isolated treatment changes only the configured transport
+  window to 2,048 while keeping this committed source, 768 CWND, target,
+  topology, and all capacity/cadence gates fixed. The observed high-water,
+  cancellation ratio, max push batch, and p99 cadence are its key regression
+  checks.
+- Artifact directory: `benchmark-results/20260901T070740Z`.
