@@ -1068,3 +1068,43 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   clients at the 768 CWND cap, a separate 1,536-CWND A/B follows; it must not
   be conflated with a chain-capacity claim.
 - Artifact directory: `benchmark-results/20260901T094506Z`.
+
+## Cycle 25 — 13.5k staircase rung, valid sub-second baseline (20260901T100645Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `b001848`.
+  Both source trees were clean. This is the direct fresh-state rate step from
+  Cycle 24: 4,096 sources, 60/60/700/300-second timing, one-validator
+  no-gossip topology, 8,192-entry candidate allowance, 2,048-message
+  transport window, and 768 CWND are unchanged. The sole workload change is
+  the offered target: 12,000 to 13,500 TPS.
+- Result: all formal proof correctness, completion, ingress/chain capacity,
+  canonical cleanup, follower, and broadcast-lifecycle gates passed.
+  Offered/admitted/proof-chain TPS was 13,500.001 / 13,500.001 /
+  13,461.536. There was zero measured canonical-backpressure, a 43,427
+  sampled backlog peak, and a 3.188-second clean drain to zero residue. The
+  complete canonical one-second maximum was 23,005 TPS, which is a burst and
+  not a sustained-capacity result. `reproducible=false` remains solely the
+  external Session Stats image-label caveat.
+- This is the new user-compliant single-validator baseline. Total collation,
+  collation wall, and accepted-block-interval p99 were 608.8 / 665.9 /
+  785.5 ms, all below one second and improved from Cycle 24's 678.7 / 736.8 /
+  852.1 ms despite the 12.2% proof-TPS increase. The corresponding absolute
+  maxima were 711.5 / 789.1 / 1,293.6 ms; the accepted-interval maximum is a
+  rare scheduling tail and is reported separately from the p99 policy.
+- Proof contained 1,788 native blocks averaging 5,262.648 transfers and
+  reached the 8,192-entry cap, effectively unchanged packing from Cycle 24
+  (5,260.225). Measured native commit average fell from 64.838 to 58.102 ms;
+  staged-dictionary and exact checkpoint work were 28.562 and 21.388 ms per
+  collated candidate. Checkpoint grouping remained bounded and clean: 22,284
+  groups, 1.117 fragments/group, 602 capacity and 21,681 ingress flushes, one
+  latency flush, and zero rollback/deadline/fanout/headroom events.
+- All 12 generator clients reached the intentionally conservative 768 CWND
+  cap, with 10,659,372 additive increases clipped. That does not invalidate
+  this run because it fully attained 13.5k; it means the next rate rung must
+  retain the same cap first so a later injector limit is measured rather than
+  hidden. The next isolated experiment therefore changes only
+  `NATIVE_LOAD_TARGET_TPS` to 15,000 and retains all proof, cleanup,
+  backpressure, and all-three-p99 sub-second gates. A 1,536-CWND A/B is only
+  justified if that control cannot attain target while chain cadence remains
+  healthy.
+- Artifact directory: `benchmark-results/20260901T100645Z`.
