@@ -1608,6 +1608,8 @@ scheduler_before=$(parse_validator_stat "$validator_stats_before_file" "total.ex
 scheduler_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_scheduler")
 batch_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_batch_admission")
 batch_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_batch_admission")
+transport_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_transport")
+transport_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_transport")
 reconciliation_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_reconciliation")
 reconciliation_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_reconciliation")
 pending_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_pending")
@@ -1617,6 +1619,8 @@ jq -L "$benchmark_jq_dir" -n \
   --argjson scheduler_after "$scheduler_after" \
   --argjson batch_before "$batch_before" \
   --argjson batch_after "$batch_after" \
+  --argjson transport_before "$transport_before" \
+  --argjson transport_after "$transport_after" \
   --argjson reconciliation_before "$reconciliation_before" \
   --argjson reconciliation_after "$reconciliation_after" \
   --argjson pending_before "$pending_before" \
@@ -1628,6 +1632,7 @@ jq -L "$benchmark_jq_dir" -n \
       else .[$key] = (($after[$key] // 0) - ($before[$key] // 0))
       end);
   validator_pool_cleanup_acceptance($reconciliation_after; $pending_after) as $cleanup |
+  native_transport_summary($transport_before; $transport_after) as $native_transport |
   {
     semantics:"validator-engine cumulative ExtMessagePool counters sampled immediately before and after generator execution; scheduler delta should show near one scanned message per selected message and source runs approaching the configured run target",
     scheduler:{
@@ -1644,6 +1649,7 @@ jq -L "$benchmark_jq_dir" -n \
       delta:delta($batch_before; $batch_after; []),
       shard_state_cache:native_admission_shard_cache_summary($batch_before; $batch_after)
     },
+    native_transport:$native_transport,
     canonical_reconciliation:{
       semantics:"local candidate acceptance only tracks source/nonce hints; irreversible native prefix cleanup is authorized by shard-client-confirmed masterchain-referenced account state",
       capture_complete:(($reconciliation_before | length) > 0 and ($reconciliation_after | length) > 0),

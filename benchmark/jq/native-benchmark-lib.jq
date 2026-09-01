@@ -831,3 +831,34 @@ def validator_pool_cleanup_acceptance($reconciliation_after; $pending_after):
     valid:(($reasons | length) == 0),
     invalid_reasons:$reasons
   };
+
+# Preserve every native transport field for forensic use, emit arithmetic
+# between-snapshot deltas, and keep lifetime maxima as observed values instead
+# of pretending they reset at the measurement boundary.
+def native_transport_summary($before; $after):
+  ["high_water", "max_push_batch", "max_pop_batch"] as $observed_fields |
+  def delta:
+    if (($before | type) != "object") or (($after | type) != "object") then {}
+    else reduce ($after | keys_unsorted[]) as $key ({};
+      if ($observed_fields | index($key)) != null then .
+      else .[$key] = (($after[$key] // 0) - ($before[$key] // 0))
+      end)
+    end;
+  {
+    semantics:(
+      "ExtMessagePool native transport telemetry sampled immediately before and " +
+      "after generator execution; high-water and maximum batch sizes are " +
+      "validator-lifetime observations, while delta is the between-snapshot " +
+      "arithmetic change for every other reported field"
+    ),
+    capture_complete:(
+      (($before | type) == "object") and (($before | length) > 0) and
+      (($after | type) == "object") and (($after | length) > 0)
+    ),
+    before:$before,
+    after:$after,
+    delta:delta,
+    observed_high_water:field_or_null($after; "high_water"),
+    observed_max_push_batch:field_or_null($after; "max_push_batch"),
+    observed_max_pop_batch:field_or_null($after; "max_pop_batch")
+  };

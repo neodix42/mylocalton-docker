@@ -154,6 +154,16 @@ while each native transfer's `valid_until` remains the effective expiry. Keep
 `NATIVE_LOAD_VALID_FOR_SECONDS` longer than ramp, warm-up, measurement, and
 drain combined.
 
+`TON_NATIVE_EXT_MSG_TRANSPORT_WINDOW` controls the bounded native
+ExtMessagePool-to-Collator prefill independently of that candidate allowance.
+It defaults to 1,024 (two 512-message scheduler fragments), accepts
+512-message multiples, clamps values above 8,192, and is capped by the
+candidate queue limit; invalid values fall back to the default. Keep the
+physical profile at 1,024 for the compatibility baseline and change it only in
+a one-variable benchmark
+cycle. `validator-pool-summary.json` records the native transport's before and
+after snapshots, deltas, and observed high-water/max-push/max-pop diagnostics.
+
 Size arithmetic must use the same layer on both sides. A signed native external BoC is 176 bytes. Inside a v4 batch, 512 transfers serialize to 101,399 bytes with unique endpoints (198.0 bytes/transfer), or 81,456 bytes with a shared destination (159.1 bytes/transfer). Those batch sizes include the compact account table, but they are not complete block costs: the block also carries the updated `ShardAccounts` dictionary, Merkle/proof cells, headers, and limit-estimator allowance. Use the measured `actual_block_bytes_per_transfer` and `estimated_block_bytes_per_transfer` in `validator-pipeline-summary.json` when dividing the configured block limit; never divide it by the 104-byte transfer leaf alone.
 
 `run-native-benchmark.sh` reuses an already-running healthy `genesis` container

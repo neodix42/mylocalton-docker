@@ -100,6 +100,42 @@ jq -n -e -L "$jq_dir" '
     "native_pending_capture_missing"
   ]) and
 
+  (native_transport_summary(
+    {
+      selected:100, pushed:90, consumed:80, push_completed:90, push_reserved:0,
+      pending:10, live_queued:10, live_unpushed:0,
+      high_water:512, push_batches:1, push_batch_items:90, max_push_batch:512,
+      pop_batches:1, pop_batch_items:80, max_pop_batch:512,
+      producer_empty:4, consumer_empty:5
+    };
+    {
+      selected:220, pushed:210, consumed:200, push_completed:210, push_reserved:0,
+      pending:10, live_queued:10, live_unpushed:0,
+      high_water:2048, push_batches:2, push_batch_items:210, max_push_batch:2048,
+      pop_batches:3, pop_batch_items:200, max_pop_batch:512,
+      producer_empty:9, consumer_empty:12
+    }
+  )) as $transport |
+  ($transport.capture_complete == true) and
+  ($transport.delta.selected == 120) and
+  ($transport.delta.pushed == 120) and
+  ($transport.delta.consumed == 120) and
+  ($transport.delta.push_batch_items == 120) and
+  ($transport.delta.pop_batch_items == 120) and
+  ($transport.delta.producer_empty == 5) and
+  ($transport.delta.consumer_empty == 7) and
+  (($transport.delta | has("high_water")) | not) and
+  (($transport.delta | has("max_push_batch")) | not) and
+  (($transport.delta | has("max_pop_batch")) | not) and
+  ($transport.observed_high_water == 2048) and
+  ($transport.observed_max_push_batch == 2048) and
+  ($transport.observed_max_pop_batch == 512) and
+
+  (native_transport_summary({}; {})) as $missing_transport |
+  ($missing_transport.capture_complete == false) and
+  ($missing_transport.delta == {}) and
+  ($missing_transport.observed_high_water == null) and
+
   (native_admission_shard_cache_summary(
     {
       shard_state_requests:100, shard_manager_waits:20, shard_fetches:20,
@@ -498,6 +534,8 @@ for field in \
   native_deadline_seals \
   native_deadline_deferred \
   native_deadline_first_fragment_commits \
+  total.ext_msg_native_transport \
+  native_transport \
   total.ext_msg_native_reconciliation \
   canonical_reconciliation \
   cleanup_acceptance \
@@ -540,6 +578,9 @@ for field in \
   shard_manager_wait_late_results \
   shard_cache_entries \
   shard_cache_peak_entries \
+  observed_high_water \
+  observed_max_push_batch \
+  observed_max_pop_batch \
   external_wait_round_live_s \
   external_wait_round_live_calls \
   external_wait_round_native_coalescing_s \
