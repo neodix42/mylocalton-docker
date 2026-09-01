@@ -941,3 +941,40 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   one second. If that fails, simple cap sizing is insufficient and adaptive
   transactional checkpoint coalescing becomes the next source treatment.
 - Artifact directory: `benchmark-results/20260901T080919Z`.
+
+## Cycle 22 — 10,240-entry cap treatment, valid 12k sub-second-p99 baseline (20260901T082923Z)
+
+- TON image revision label: `b1393d52`; Docker harness revision: `757512c`.
+  Both trees were clean. This fresh-state cycle changes only Cycle 21's logical
+  candidate allowance from 12,288 to 10,240 (20 fair 512-message fragments).
+  The 12k target, 2,048 transport window, 768 CWND, 4,096 sources, timing,
+  no-gossip topology, and proof controls remain fixed.
+- Result: valid 12k capacity run and the first configuration in this sequence
+  that satisfies every practical sub-second p99 gate. Offered/admitted/proof
+  TPS was 11,967.324 / 11,967.324 / 11,966.682. It had six short
+  canonical-backpressure events totaling 0.838 seconds (0.120% of the window,
+  within the ≤1% gate), then cleanly drained in 1.047 seconds with zero
+  residue. Proof correctness, completion, capacity, cleanup, follower, and
+  broadcast-lifecycle decisions all passed. Its complete canonical one-second
+  peak was 26,112 TPS, a burst rather than sustained capacity.
+- Cadence is now inside the requested p99 envelope: total collation was
+  805.8 ms p99, collation wall 871.7 ms p99, and accepted-block interval
+  963.4 ms p99. Proof contained 1,856 native blocks averaging 4,506.849
+  transfers and reached the 10,240-entry cap. This is therefore the current
+  proof-checked ~12k single-validator no-gossip baseline that preserves
+  sub-second *p99* block generation.
+- The exact tail caveat remains material: total collation and wall maxima were
+  1.016 and 1.092 seconds, and one accepted-block interval reached 6.107
+  seconds. Those rare scheduling/consensus tails are not hidden by the p99
+  pass. The sampled canonical backlog also reached 130,951, close to the
+  131,072 guard, so a direct 15k configuration jump would not be a sound
+  capacity claim even though the formal capacity gate passed.
+- Transport remains bounded and clean (2,560 high-water, 2,048 max push,
+  512 max pop); cancellation was 227,570 / 9,738,258 selected messages
+  (2.34%) with no live residue. The next throughput step is consequently a
+  source-level adaptive transactional checkpoint-coalescing treatment: retain
+  512-message fairness and the 10,240 cap, but reduce redundant exact
+  dictionary/storage checkpoints under dense ingress with strict deadline,
+  rollback, size-preflight, proof, and sub-second-tail tests. Retest this
+  12k baseline before lifting the offered-rate staircase.
+- Artifact directory: `benchmark-results/20260901T082923Z`.
