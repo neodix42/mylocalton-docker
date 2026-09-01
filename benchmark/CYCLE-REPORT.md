@@ -1755,3 +1755,70 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   configuration, while a 16.5k staircase is expected to fail the current
   capacity margin rather than identify a useful new limit.
 - Artifact directory: `benchmark-results/20260901T182252Z`.
+
+## Cycle 41 — rejected initial native-pump immediate source A/B at 16k (20260901T190005Z)
+
+- TON and native-generator image revision labels are `394a374a`; the clean
+  Docker harness revision is `4ce6722`. This is a strict source A/B of Cycle
+  40 (`9cd0de4e`): the `.env` SHA-256, Compose configuration and per-service
+  hashes, CPU sets and resource limits, and sorted genesis/generator benchmark
+  environment arrays are identical. It retains the 16,000-TPS target, 4,096
+  sources, 12 connections, six workers/signers, 96-message batches, 16-message
+  source runs, one admission RPC per client, 1,152 global CWND, 0.0768-s
+  initial RTT, 30-ms coalescing, 8,192-entry candidate allowance, and
+  2,048-message transport window. The only runtime image-label difference is
+  `9cd0de4e -> 394a374a`.
+- The source treatment is limited to the initial native callback producer:
+  `ExtMessagePool` registers the live callback, then starts only that initial
+  native pump with `start_immediate`; wake/refill and generic producers remain
+  deferred. The patch also uses a private named start mode and requires native
+  streaming for the immediate branch. It is therefore a source scheduling A/B,
+  not an injector, Simplex, capacity, or topology change.
+- Proof correctness, completion, cleanup, follower, and broadcast-lifecycle
+  gates passed. The final proof matched 11,993,947 exact canonical
+  source/nonce/external-cell hashes with zero hash conflicts, nonce gaps,
+  duplicate nonce conflicts, follower errors, or reorgs; final follower
+  catch-up and native-pool/reconciliation cleanup completed. As before,
+  `reproducible=false` is solely the Session Stats image-label caveat.
+  However, the run is not capacity-qualified: offered/admitted TPS was
+  15,077.154, only 94.232% of the 16k target and 122.846 TPS below the
+  15,200-TPS ingress threshold. The formal ingress gate consequently reports
+  `offer_target_not_attained`, and the chain-capacity gate reports
+  `insufficient_load_over_canonical_throughput`; those are the only acceptance
+  failures.
+- Proof-chain TPS is 14,991.529, down 159.249 TPS (-1.05%) from Cycle 40's
+  valid 15,150.778. The >=3-blocks/s requirement still passes at 2,335 proof
+  blocks / 700 seconds = 3.336 blocks/s (Cycle 40: 3.354). Packing falls from
+  4,510.389 to 4,487.828 transfers/block, with the same 8,192 maximum; the
+  one-second canonical burst maximum falls from 28,544 to 25,984.
+- Required p99 cadence remains sub-second but regresses: total collation /
+  collation wall / accepted interval are 540.561 / 583.552 / 667.778 ms,
+  versus 503.894 / 554.649 / 648.169 ms in Cycle 40. Collate-start p99 is
+  746.626 ms versus 738.700 ms. Some absolute tails improve (accepted-interval
+  maximum 1,237.115 ms versus 1,419.564 ms), but that does not offset the
+  capacity-gate failure; validated-block p99/max also rise from 85.921 / 200.534
+  to 94.264 / 248.065 ms.
+- Backpressure and backlog lose the Cycle 40 margin: 24 canonical-backpressure
+  events pause the measured window for 1.532 seconds (0.219%; Cycle 40: zero),
+  sampled backlog rises 114,472 to 130,038, and drain is essentially flat at
+  5.353 seconds (Cycle 40: 5.342). Native transport remains bounded and clean:
+  high-water is 2,561 (Cycle 40: 2,560), maximum push/pop batches remain
+  2,048 / 512, and final reserved, pending, live-queued, and live-unpushed
+  counts are all zero.
+- The treatment achieved its narrow local aim but not an end-to-end gain.
+  `native_first_work` falls from 216.752640 seconds across 2,369 calls
+  (91.495 ms/call) to 204.880159 seconds across 2,368 calls (86.520 ms/call):
+  -11.872481 seconds, or -4.975 ms/call (-5.44%). That saving is partly offset
+  by native fragment-refill wait rising 78.876 to 85.134 seconds and
+  post-commit-idle wait rising 54.097 to 55.552 seconds. With fewer accepted
+  transfers, checkpoint groups also become smaller (560.624 versus 579.499
+  entries/group) and delayed items rise 67,763 to 93,824. These are consistent
+  with a changed scheduling balance, but one A/B run cannot prove that the
+  source change rather than normal run variation caused every downstream tail.
+- Reject `394a374a` as the capacity baseline and restore/retain `9cd0de4e` for
+  the valid 16k profile; do not advance to 16.5k. The evidence supports keeping
+  the initial-pump timing observation as diagnostic information, not retaining
+  the treatment. Any future injector or source experiment must start from the
+  restored baseline, alter one dimension, repeat the exact formal gates, and
+  compare first-work/refill/idle timing separately from proof TPS.
+- Artifact directory: `benchmark-results/20260901T190005Z`.
