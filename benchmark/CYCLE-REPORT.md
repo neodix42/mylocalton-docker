@@ -1706,3 +1706,52 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   rung should become the source-optimization boundary; until then, changing
   the immediate actor fast lane would confound the capacity curve.
 - Artifact directory: `benchmark-results/20260901T180013Z`.
+
+## Cycle 40 — 16k target staircase, maximum valid sustained proof TPS (20260901T182252Z)
+
+- TON image revision label: `9cd0de4e`; Docker harness revision: `41e320f`.
+  This is an exact Cycle 39 runtime staircase: the sorted genesis and
+  native-load-generator benchmark-environment arrays differ only in
+  `NATIVE_LOAD_TARGET_TPS=15500 -> 16000`. The TON/generator source labels,
+  4,096 sources, 12 connections, six workers/signers, 96-message batches,
+  16-message source runs, one admission RPC per client, 1,152 global CWND,
+  0.0768-s initial RTT, 30-ms submit coalescing, timing, no-gossip topology,
+  8,192-entry candidate allowance, and 2,048-message transport window are
+  unchanged. The clean harness revision differs only because the Cycle 39
+  report was committed after that run.
+- All formal proof correctness, completion, ingress/chain-capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Exact proof evidence
+  matched 12,109,834 canonical source/nonce/external-cell hashes with zero
+  conflicts, follower errors, reorgs, duplicate nonce conflicts, or nonce
+  gaps; final catch-up completed and native-pool cleanup passed.
+  `reproducible=false` remains solely the unchanged external Session Stats
+  image-label caveat.
+- Offered/admitted/proof-chain TPS was 15,242.720 / 15,242.720 / 15,150.778.
+  That is a new valid sustained proof maximum, +148.459 TPS (+0.99%) over
+  Cycle 39, with a 28,544 canonical one-second burst maximum that must not be
+  presented as sustained capacity. The formal 16k ingress pass is narrow:
+  offered load is 95.267% of target, only 42.720 TPS above the 15,200-TPS
+  95% threshold. The +500 target produces only +142.716 offered TPS, so the
+  staircase is visibly flattening.
+- The >=3-blocks/s requirement is retained: 2,348 proof blocks in 700 seconds
+  is 3.354 blocks/s (Cycle 39: 3.340). Proof packing is 4,510.389
+  transfers/block (+0.56%, maximum 8,192), canonical backpressure remains
+  zero, sampled backlog rises modestly 103,132 to 114,472, and clean drain
+  improves 5.899 to 5.342 seconds.
+- Required p99 cadence gates remain safely sub-second: total collation,
+  collation wall, and accepted-block interval were 503.894 / 554.649 /
+  648.169 ms. Their corresponding maxima were 727.869 / 764.623 / 1,419.564
+  ms; collate-start p99/max were 738.700 / 1,242.014 ms. Thus normal cadence
+  improves or holds at 16k, but the two rare interval maxima above one second
+  remove the all-samples sub-second margin Cycle 39 happened to show.
+- Retain 16k as the current maximum valid runtime rung, but do not advance to
+  16.5k without an isolated treatment: the formal ingress margin is only
+  0.267 percentage points and the rare interval tail has crossed one second.
+  The next work should separately diagnose a source or ingress bottleneck and
+  then A/B one change at this 16k profile. All 12 clients reached both the
+  observed CWND and query caps, yet prior wider-CWND/query-credit experiments
+  regressed; do not bundle those knobs or source changes into another target
+  step. A confirmation repeat at 16k is appropriate before promoting a new
+  configuration, while a 16.5k staircase is expected to fail the current
+  capacity margin rather than identify a useful new limit.
+- Artifact directory: `benchmark-results/20260901T182252Z`.
