@@ -709,3 +709,41 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   The next source treatment remains a bounded wider transport prefill, but the
   immediate safe capacity staircase is 8,000 TPS with rebroadcast disabled.
 - Artifact directory: `benchmark-results/20260901T055222Z`.
+
+## Cycle 16 — 8,000-TPS no-gossip staircase (20260901T061338Z)
+
+- TON image revision label: `13335a11`; Docker harness revision: `b02835a`.
+  Both source trees were clean. This fresh-state run keeps every valid Cycle 15
+  control, including the verified-and-restored one-validator
+  `BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=1` setting, and changes only the
+  offered target from 6,000 to 8,000 TPS. It remains a single-validator
+  no-gossip ceiling measurement, not a production-network configuration.
+- Result: valid 8k capacity run. Offered/admitted/proof-chain TPS was
+  7,999.941 / 7,999.941 / 7,999.488. Target attainment was 99.9993% and
+  measured canonical backpressure was zero. Proof correctness, completion,
+  ingress and chain-capacity gates, canonical cleanup, final follower catch-up,
+  and the broadcast setting lifecycle all passed. Drain to the anchored tip
+  took 1.273 seconds and ended with zero canonical backlog. The fully
+  contained canonical one-second maximum was 21,446 TPS; it is a burst rather
+  than the sustained result.
+- The higher offered rate improved useful packing without requiring a larger
+  candidate: proof contained 2,450 native basechain blocks averaging 2,282.303
+  transfers (maximum 12,054), while sampled collation recorded 2,465 blocks
+  averaging 2,282.806 transfers. The maximum observed estimated candidate was
+  2.93 MB, still far below the 8.5/9 MB soft/hard limits; no size-guard
+  deferral or hard preflight failure occurred. Reducing the candidate cap would
+  therefore add consensus work without solving the observed limiter.
+- The explicit sub-second construction gate continues to hold at 8k: measured
+  collator total time was 222.6 ms average, 505.4 ms p95, and 762.9 ms p99;
+  CPU work was only 26.5 ms average. Accepted-block interval was 284.7 ms
+  average, 540.5 ms p95, and 817.9 ms p99. A few absolute maxima exceeded one
+  second, so the next rung must retain the p99 gate and investigate any tail
+  regression rather than claim a hard all-sample bound.
+- External transport timing is still the dominant opportunity: 381.0 seconds
+  of measured queue wait split into 78.9 seconds first-work, 207.9 seconds
+  fragment-refill, and 93.2 seconds post-commit idle. The safe immediate next
+  experiment is the otherwise-identical 10,000-TPS staircase rung; if it
+  becomes capacity-invalid, a bounded wider native transport prefill is the
+  next source change, with proof, cancellation-accounting, clean-drain, and
+  sub-second p99 regressions all gated.
+- Artifact directory: `benchmark-results/20260901T061338Z`.
