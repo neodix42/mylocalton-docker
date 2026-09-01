@@ -1264,3 +1264,42 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   cost; it must retain proof/cleanup validity and all three sub-second p99
   gates before any further source or target change.
 - Artifact directory: `benchmark-results/20260901T113700Z`.
+
+## Cycle 30 — 30-ms submit coalescing, valid 15k generator baseline (20260901T115801Z)
+
+- TON image revision label: `bd57ea20`; Docker harness revision: `45110fd`.
+  Both source trees were clean. This is a strict fresh-state A/B against the
+  retained Cycle 26 12-lane/768-CWND profile: 15k target, 4,096 sources,
+  12 connections, 6 workers/signers, 64-message batch, 16-message source run,
+  timing, no-gossip topology, 8,192-entry candidate allowance, and 2,048
+  transport window are unchanged. The sole runtime change is the bounded
+  leading-edge submit coalescing deadline: 20 to 30 ms.
+- All formal proof correctness, completion, ingress/chain capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Offered/admitted/
+  proof-chain TPS was 14,902.544 / 14,902.544 / 14,819.585, improving Cycle
+  26's 14,682.113 / 14,592.386. There was zero measured
+  canonical-backpressure, a 116,818 sampled backlog peak below the 131,072
+  guard, and a 5.825-second clean drain. The complete canonical one-second
+  maximum was 27,351 TPS, a burst rather than sustained capacity.
+  `reproducible=false` remains solely the external Session Stats image-label
+  caveat.
+- This preserves every user sub-second p99 requirement: total collation,
+  collation wall, and accepted-block interval p99 were 572.6 / 620.5 / 764.8
+  ms (Cycle 26: 581.9 / 636.7 / 766.7 ms). Absolute total/wall/accepted maxima
+  were 744.7 / 849.5 / 1,005.4 ms; the rare accepted maximum is separately
+  visible and does not replace the p99 policy.
+- The direct mechanism is query coalescing, not a block-size change. Wire
+  batches grew from 30.413 to 35.648 messages on average (+17.2%), and
+  admission queries fell from 382,316 to 330,507 (-13.6%) while preserving
+  64-message maxima. All dispatches remained bounded deadline releases (zero
+  full-batch releases), p50/p95 RTT stayed 50/200 ms, and all 12 clients
+  remained at the known-good 768 cap. Proof packing was effectively unchanged
+  (5,845.875 transfers/block), so the improvement is attributable to lower
+  liteserver MC-pin/shard-state query amplification.
+- This is the retained 15k injection baseline. The next isolated staircase
+  step changes only `NATIVE_LOAD_TARGET_TPS` to 16,500, retaining 12
+  connections, CWND 768, 30-ms coalescing, and all proof/cleanup/backpressure/
+  all-three-p99 gates. A higher coalescing deadline is not tested at 15k
+  because this profile already attains the target closely; changing it together
+  with rate would confound the capacity result.
+- Artifact directory: `benchmark-results/20260901T115801Z`.
