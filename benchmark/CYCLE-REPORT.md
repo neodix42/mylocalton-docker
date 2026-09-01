@@ -669,3 +669,43 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   bounded transport prefill, not a block-size reduction, as the next code
   treatment if disabling rebroadcast does not remove the stalls.
 - Artifact directory: `benchmark-results/20260901T053132Z`.
+
+## Cycle 15 — external-message rebroadcast disabled (20260901T055222Z)
+
+- TON image revision label: `13335a11`; Docker harness revision: `d299bdf`.
+  Both source trees were clean. This is the paired fresh-state treatment for
+  Cycle 14: every workload, CPU, queue, CWND, and proof control was identical,
+  but the guarded one-validator control set
+  `BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=1`. The wrapper verified matching
+  in-memory and persisted disabled state before load and post-load, then
+  restored normal rebroadcast and verified the restoration before exit.
+- Result: valid 6k capacity run. Offered/admitted/proof-chain TPS was
+  5,999.979 / 5,999.979 / 6,000.571. Target attainment was 99.9996%; measured
+  canonical backpressure was exactly zero; final proof catch-up, canonical
+  cleanup, nonce/hash accounting, and drain were all clean. Drain to the
+  anchored tip took 1.411 seconds. The maximum fully contained canonical
+  one-second bucket was 19,702 TPS, a burst rather than the sustained result.
+- This is a configuration-supported single-validator *ceiling* result, not a
+  production-network claim: local liteserver injection still enters the pool,
+  while outbound Overlay gossip is deliberately suppressed. The successful A/B
+  therefore isolates the cost of needless rebroadcast on this one-validator
+  desktop topology; it must not be enabled in a topology that needs other
+  validators or nodes to receive the external messages.
+- The treatment removed the Cycle 14 capacity failure rather than merely
+  shifting it to drain. Its sampled canonical backlog peaked at 26,181 rather
+  than the 131,072 guard, basechain packing rose 56.8% from 1,044.229 to
+  1,637.116 transfers per collated block, and host/genesis average CPU fell
+  from 64.16%/7.22 cores to 50.45%/4.45 cores. Canonical proof packing was
+  1,639.718 transfers per block across 2,558 blocks.
+- Sub-second behavior held under the valid load. Measured collation was
+  209.0 ms average, 518.2 ms p95, and 682.2 ms p99 (971.1 ms maximum); accepted
+  basechain interval was 272.5 ms average, 523.6 ms p95, and 841.2 ms p99.
+  Thus there is still no evidence that reducing candidate size improves this
+  desktop ceiling.
+- Remaining work is now visible rather than masked by outbound gossip. Native
+  external waits totalled 375.8 seconds: first work fell from Cycle 14's
+  310.9 seconds to 57.3 seconds, but fragment refill and post-commit idle were
+  208.8 and 109.0 seconds. Native compute was only 24.1 ms per collation.
+  The next source treatment remains a bounded wider transport prefill, but the
+  immediate safe capacity staircase is 8,000 TPS with rebroadcast disabled.
+- Artifact directory: `benchmark-results/20260901T055222Z`.
