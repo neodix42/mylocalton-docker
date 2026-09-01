@@ -1380,3 +1380,44 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   staircase; this is deliberately not combined with a candidate/block-size,
   lane-count, or consensus change.
 - Artifact directory: `benchmark-results/20260901T124204Z`.
+
+## Cycle 33 — one-RPC 96-message admission path, valid but packing-limited (20260901T132352Z)
+
+- TON image revision label: `927e94f4`; Docker harness revision: `7c72c85`.
+  Both source trees were clean. This is the first integrated treatment of the
+  committed per-client admission-query credit: 12 connections, six
+  workers/signers, 4,096 sources, 15k target, 30-ms coalescing, timing,
+  no-gossip topology, 8,192-entry candidate allowance, and 2,048-message
+  transport window are retained. A 1,152 global message CWND and 0.0768-s
+  initial RTT seed provide exactly one 96-message capacity per client;
+  96-message batches and `submit_max_queries_per_client=1` prevent a client
+  from issuing two concurrent admission RPCs. This is a coherent injector
+  architecture treatment, not a naked CWND increase.
+- All proof correctness, completion, ingress/chain capacity, canonical
+  cleanup, follower, and broadcast-lifecycle gates passed. Offered/admitted/
+  proof-chain TPS was 14,363.719 / 14,363.719 / 14,250.388 (95.76% target).
+  There was one 51.05-ms global-backlog pause (0.0000729 of the measurement),
+  a 122,706 sampled backlog peak below the 131,072 guard, and a 7.773-second
+  clean drain. The canonical one-second maximum was 23,840 TPS, a burst
+  rather than sustained capacity. `reproducible=false` remains solely the
+  external Session Stats image-label caveat.
+- The user p99 policy is comfortably satisfied: total collation, collation
+  wall, and accepted-block interval p99 were 537.8 / 579.7 / 662.6 ms.
+  Absolute total/wall/accepted maxima were 643.7 / 687.4 / 1,183.3 ms; the
+  rare accepted maximum is reported separately. Proof had 2,281 blocks
+  averaging 4,366.954 transfers (maximum 8,192).
+- The query-credit mechanism itself is proven. All 12 client credits reached
+  the sampled cap, `max_per_client_admission_queries=1`, and 92,602 bounded
+  query-credit stalls occurred. It issued 129,169 admission queries for
+  11,404,543 messages: 88.292 messages/query on average (maximum 96), versus
+  Cycle 30's 330,507 queries and 35.648 messages/query. This is a 60.9%
+  query reduction and 147.7% density increase without concurrent-RPC fanout.
+- It is nevertheless not the retained throughput profile: proof TPS is 3.84%
+  below Cycle 30 and packing is 25.3% lower, producing 28.7% more blocks.
+  The smaller p99 values reflect shorter, less-full blocks rather than higher
+  capacity. Retain the 30-ms/64-message/768-CWND profile for injection
+  throughput; preserve the query-credit design as a safe high-density control.
+  The next source investigation targets bounded collator ready-window packing
+  and staged-state work, with an explicit proof/cleanup/all-three-p99 A/B
+  before any further rate claim.
+- Artifact directory: `benchmark-results/20260901T132352Z`.
