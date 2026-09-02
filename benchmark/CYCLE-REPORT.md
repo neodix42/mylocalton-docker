@@ -2422,3 +2422,40 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   metadata decode after acceptance while preserving acceptance/finalization
   ordering.
 - Artifact directory: `benchmark-results/20260902T024203Z`.
+
+## Cycle 55 — valid finalized-native metadata handoff A/B (20260902T032711Z)
+
+- This is a strict C54 source A/B. Runtime `.env`, Compose/service hashes,
+  resource limits, 500-ms first-block timeout, workload, packing/injector
+  controls, and broadcast lifecycle are identical. The only source revision
+  change is `9ec58b53 -> 4205a3f0`, which parses finalized native metadata once
+  in StateResolver, value-owns it in `FinalizeBlock`, and transfers it to pool
+  tracking only after `accept_block` succeeds.
+- All formal correctness, completion, ingress-capacity, chain-capacity, and
+  validator-cleanup gates pass. C55 exits normally with zero canonical BP,
+  retries, errors, hash/nonce conflicts, follower failures, reorgs, direct-link
+  fallbacks, or final native/transport/reconciliation residue. All 11,849,921
+  accepted messages proof-match and are purged; the only reproducibility caveat
+  remains the unrelated unlabeled Session Stats image.
+- Throughput is statistically unchanged: offered is 14,999.914 TPS and proof
+  14,992.504 TPS (-0.045% vs C54), with zero BP. Packing improves
+  5,069.95 -> 5,128.62 transfers/block (max 8,192); block rate is
+  2,050/700 = 2.929/s and drain 1.255 s. Treat the block-rate difference as
+  arrival/packing variation, not a performance regression or 3-bps claim.
+- The targeted measured final-cert-observed -> block-accepted phase improves
+  materially on basechain: avg/p99/max 263.29/891.82/2,289.25 ->
+  201.63/451.72/852.27 ms. Masterchain avg/p99 improves
+  139.99/320.44 -> 128.07/249.04 ms, although its maximum is stochasticly
+  higher (688.44 -> 784.15 ms). This is consistent with removing the duplicate
+  post-accept candidate decode; it is not by itself a general consensus-tail
+  cure.
+- Measured cadence p99 remains sub-second. C55 improves base start max to
+  953.8 ms and MC accepted max to 892.1 ms, while base accepted and MC start
+  retain rare 1,083.8/1,023.0-ms maxima. Measured skips/unmapped events remain
+  zero; all-run startup/outside-window tails are not promoted.
+- Retain `4205a3f0` as the safe 15k source baseline. It has focused ownership/
+  cancellation tests and a clean proof run; do not claim a new TPS or cadence
+  record from this single A/B. The next decision is a clean 15.5k target rung
+  on this retained source, before attempting further coupled injector or
+  timing changes.
+- Artifact directory: `benchmark-results/20260902T032711Z`.
