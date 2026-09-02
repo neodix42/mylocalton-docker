@@ -2305,3 +2305,41 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   target separately; if it fails, revert the timeout config before changing
   candidate persistence.
 - Artifact directory: `benchmark-results/20260902T010108Z`.
+
+## Cycle 52 — valid 500-ms Simplex timeout repeat; absolute cadence not yet deterministic (20260902T012304Z)
+
+- This is a strict C51 repeat. Both TON images carry direct-link source
+  `85791a42`, both source trees are clean, and runtime `.env` SHA-256,
+  Compose hash, CPU limits, container environments, and
+  `SIMPLEX_FIRST_BLOCK_TIMEOUT_MS=500` are identical. OCI image digests are
+  rebuilt artifacts and the clean Docker report revision advances normally;
+  neither changes runtime source/config semantics.
+- All proof correctness, completion, ingress-capacity, chain-capacity,
+  validator-cleanup, catch-up, drain, and broadcast lifecycle gates pass.
+  C52 proof-matches 11,849,903 transfers with zero hash/nonce/external
+  conflicts, retry exhaustion, follower errors, reorgs, drain timeout, or
+  final canonical/pool residue. `reproducible=false` remains only the known
+  unlabeled Session Stats image caveat.
+- C51 -> C52 remains a stable ~15k, zero-backpressure operating point:
+  offered/admitted 14,999.999 -> 14,999.990, proof
+  14,995.286 -> 15,002.524, sampled peak/end backlog 62,003/17,889 ->
+  37,882/18,486, and drain 1.465 -> 1.066 seconds. Packing is
+  5,051.43 (max 8,192), and measured block rate is 2,076/700 = 2.966/s.
+- P99 cadence remains comfortably sub-second, but C51's all-subsecond measured
+  maxima do not repeat. C52 basechain start/accepted maxima are
+  1,045.62/1,443.08 ms and masterchain start/accepted maxima are
+  1,433.01/1,256.73 ms, despite individual base/master collation and
+  validation maxima remaining below 0.700/0.330 seconds. Measured skip votes
+  and unmapped events are zero; all-run base skip votes remain three, and the
+  all-run base start tail reaches 4.117 seconds. This is an occasional
+  consensus scheduling/persistence tail, not a direct-link fallback: C52 has
+  47,017,065 direct-link hits, zero fallbacks, and first-work improves versus
+  C51.
+- Retain 500 ms as a harmless 15k timeout-control setting, but do not claim it
+  deterministically fixes absolute subsecond cadence and do not alter packing
+  grace again. The next source A/B should batch CandidateResolver's two
+  durable candidate writes into one existing DB transaction before a notarize
+  vote, then repeat against this exact C52 configuration. That directly targets
+  the observed persistence-before-vote race while preserving atomic candidate
+  contents/index durability.
+- Artifact directory: `benchmark-results/20260902T012304Z`.
