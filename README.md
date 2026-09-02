@@ -161,8 +161,14 @@ It defaults to 1,024 (two 512-message scheduler fragments), accepts
 candidate queue limit; invalid values fall back to the default. Keep the
 physical profile at 1,024 for the compatibility baseline and change it only in
 a one-variable benchmark
-cycle. `validator-pool-summary.json` records the native transport's before and
-after snapshots, deltas, and observed high-water/max-push/max-pop diagnostics.
+cycle. The current native pool retains a separate callback-local low-watermark
+prefix of two fair 512-message fragments while a bounded queue push waits for
+consumer space. It is not candidate capacity or an unbounded callback
+snapshot: the maximum selected-ahead hand-off is the configured physical window
+plus 1,024 messages. `validator-pool-summary.json` records the native
+transport's before/after snapshots, deltas, observed high-water/max-push/max-pop
+diagnostics, prefetch activity, and empty-pop events that occurred while a
+native push was already reserved.
 
 Checkpoint-coalescing treatments are reported under
 `validator-pipeline-summary.json` at
