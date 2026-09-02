@@ -332,7 +332,7 @@ benchmark_jq_dir=$script_dir/benchmark/jq
 
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
-  --self-test) exec "$script_dir/benchmark/tests/native-benchmark-reporting-test.sh" ;;
+  --self-test) exec bash "$script_dir/benchmark/tests/native-benchmark-reporting-test.sh" ;;
   --self-test-actor-stats-container-state)
     actor_stats_container_state_self_test
     exit 0

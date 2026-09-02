@@ -5,6 +5,8 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 jq_dir=$script_dir/../jq
 wrapper=$script_dir/../../run-native-benchmark.sh
 
+"$script_dir/native-transfer-runs-config-test.sh"
+
 command -v jq >/dev/null 2>&1 || {
   echo "required command is not installed: jq" >&2
   exit 2

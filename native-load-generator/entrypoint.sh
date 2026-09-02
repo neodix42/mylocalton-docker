@@ -9,6 +9,8 @@ signers=${NATIVE_LOAD_SIGNERS:-4}
 inflight=${NATIVE_LOAD_INFLIGHT:-8192}
 submit_batch_size=${NATIVE_LOAD_SUBMIT_BATCH_SIZE:-1}
 submit_source_run_size=${NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE:-1}
+native_transfer_runs=${NATIVE_LOAD_NATIVE_TRANSFER_RUNS:-0}
+native_transfer_run_size=${NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE:-16}
 submit_coalesce_ms=${NATIVE_LOAD_SUBMIT_COALESCE_MS:-2}
 submit_max_queries_per_client=${NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT:-0}
 max_canonical_backlog=${NATIVE_LOAD_MAX_CANONICAL_BACKLOG:-262144}
@@ -111,6 +113,23 @@ set -- /usr/local/bin/native-load-generator \
 
 case "$auto_nonce" in
   1|true|TRUE|yes|YES) set -- "$@" --auto-nonce ;;
+esac
+
+case "$native_transfer_runs" in
+  0|false|FALSE|no|NO)
+    ;;
+  1|true|TRUE|yes|YES)
+    if ! printf '%s\n' "$generator_help" | grep -q -- '--native-signed-runs' ||
+       ! printf '%s\n' "$generator_help" | grep -q -- '--native-signed-run-size'; then
+      echo "NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1 requires a v5-capable native-load-generator image" >&2
+      exit 2
+    fi
+    set -- "$@" --native-signed-runs --native-signed-run-size "$native_transfer_run_size"
+    ;;
+  *)
+    echo "NATIVE_LOAD_NATIVE_TRANSFER_RUNS must be 0 or 1, got '$native_transfer_runs'" >&2
+    exit 2
+    ;;
 esac
 
 case "$adaptive_inflight" in

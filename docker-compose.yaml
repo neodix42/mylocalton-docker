@@ -47,6 +47,11 @@ services:
       - CUSTOM_PARAMETERS
       - CUSTOM_CONFIG_SMC_URL
       - VERSION_CAPABILITIES
+      # Disabled by default. When explicitly enabled for a fresh v5 chain,
+      # start-genesis resolves these to GlobalVersion 15 plus capability 1024.
+      - NATIVE_TRANSFER_RUNS_ENABLED=${NATIVE_TRANSFER_RUNS_ENABLED:-0}
+      - NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=${NATIVE_TRANSFER_RUNS_GLOBAL_VERSION:-15}
+      - NATIVE_TRANSFER_RUNS_CAPABILITY=${NATIVE_TRANSFER_RUNS_CAPABILITY:-1024}
       - GLOBAL_ID # read about this and other parameters here https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters
       - MAX_VALIDATORS
       - MAX_MAIN_VALIDATORS
@@ -193,6 +198,10 @@ services:
       - NATIVE_LOAD_INFLIGHT
       - NATIVE_LOAD_SUBMIT_BATCH_SIZE
       - NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE
+      # Future v5 source-signed NativeTransferRun mode. The entrypoint keeps
+      # this off unless explicitly requested, so v14 workloads are unchanged.
+      - NATIVE_LOAD_NATIVE_TRANSFER_RUNS=${NATIVE_LOAD_NATIVE_TRANSFER_RUNS:-0}
+      - NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=${NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE:-16}
       - NATIVE_LOAD_SUBMIT_COALESCE_MS
       - NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT
       - NATIVE_LOAD_MAX_CANONICAL_BACKLOG

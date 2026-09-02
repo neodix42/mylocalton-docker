@@ -10,6 +10,7 @@ RUN mkdir -p /scripts/web  \
     /var/ton-work/logs
 
 COPY --chmod=744 docker/scripts/start-genesis.sh /scripts
+COPY --chmod=744 docker/scripts/native-transfer-runs-config.sh /scripts
 COPY --chmod=744 docker/scripts/post-genesis.sh /scripts
 COPY --chmod=744 docker/scripts/run-spam.sh /scripts
 COPY --chmod=744 docker/scripts/run-native-spam.sh /scripts
