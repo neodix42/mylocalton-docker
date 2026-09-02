@@ -2489,3 +2489,29 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   1,100.124/1,023.252 ms. Retain this as the first clean >=3-block/s 15.5k
   rung, not a strict every-interval-subsecond-cadence claim.
 - Artifact directory: `benchmark-results/20260902T035250Z`.
+
+## Cycle 57 — completed high-fanout prefetch soak, not a capacity A/B (20260902T063908Z)
+
+- This run exercises the retained two-fragment native transport prefetch in
+  `0dc269ec`, but it is intentionally **not** a C56-style controlled TPS
+  comparison. The physical profile changed from C56's 4,096 sources, 96-item
+  submissions, 1-query client cap, 1,152 CWND, 700-second window, and 8,192
+  collator queue to 24,576 sources, 64-item submissions, uncapped query
+  credit, 768 CWND, 1,800 seconds, and an 18,432 queue. The Docker revision
+  `1865c4a` only records the prefetch documentation.
+- It completes proof-correctly and cleans up correctly: 9,639,353 admissions
+  are reconciled without canonical backpressure, conflicts, reorgs, follower
+  failures, or final native/transport/reconciliation residue. The run drains
+  in 11.495 seconds. It has 1,485 transient admission timeouts/retries, so it
+  is useful as a high-fanout timeout/recovery soak rather than a clean
+  transport-throughput observation.
+- The changed generator profile offers/admitted 5,030.587/5,030.447 TPS and
+  proves 4,988.120 TPS across 3,046 measured native blocks. It fails only the
+  independent ingress and chain-capacity gates (`offer_target_not_attained`,
+  `insufficient_load_over_canonical_throughput`); correctness, completion,
+  cleanup, and canonical proof gates pass. Do not use it to claim a TPS
+  ceiling or a prefetch uplift.
+- A fresh controlled 15.5k/700-second C56-profile A/B follows before making a
+  performance attribution. As in prior runs, `reproducible=false` is solely
+  the unrelated Session Stats image without a source-revision label.
+- Artifact directory: `benchmark-results/20260902T063908Z`.
