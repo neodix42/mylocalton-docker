@@ -2515,3 +2515,31 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   performance attribution. As in prior runs, `reproducible=false` is solely
   the unrelated Session Stats image without a source-revision label.
 - Artifact directory: `benchmark-results/20260902T063908Z`.
+
+## Cycle 58 — two-fragment transport-prefetch regression (20260902T075859Z)
+
+- This is the controlled C56 source A/B for `0dc269ec`: the 15.5k target,
+  700-second measure, 4,096 sources, 96-item submission batches, 1-query
+  client cap, 1,152 CWND, 8,192 collator queue, 2,048 physical transport
+  window, resource topology, packing controls, and 500-ms first-block timeout
+  are restored. The source delta from C56's `4205a3f0` is the bounded
+  two-fragment callback-local transport prefetch; Docker `139b287` only
+  records prior benchmark evidence.
+- The run is canonically correct, complete, and cleanup-clean: all 6,388,072
+  measured offered/admitted messages proof-match, no nonce/hash conflict,
+  follower failure, reorg, or final native/transport/reconciliation residue
+  remains, and drain completes in 8.684 seconds. It has no timeouts or
+  transport errors, but 16 transient `not_ready` server retries.
+- It is nevertheless a clear performance regression. Offered/admitted TPS is
+  9,125.817 and measured chain-window TPS is 9,131.200 (proof cohort
+  8,994.133), so the ingress and chain-capacity gates correctly fail only for
+  insufficient target attainment. Packing falls from C56's 5,062.187 to
+  2,693.126 transfers/block, despite retaining the 8,192 maximum, and native
+  block count rises 2,140 -> 2,370.
+- The mechanism is visible in transport accounting: the extra selected prefix
+  reaches the intended 3,072 high-water mark, but cancellation discard rises
+  395,318 -> 1,792,965 and unpushed discard 25,412 -> 201,635. Retain this as
+  a negative A/B, not a capacity ceiling or an improvement. Narrow or remove
+  the two-fragment eager publication before advancing the performance series.
+- As elsewhere, `reproducible=false` is only the unrelated unlabeled Session
+  Stats image. Artifact directory: `benchmark-results/20260902T075859Z`.
