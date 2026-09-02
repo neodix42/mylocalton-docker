@@ -2187,3 +2187,43 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   do not tune previously rejected callback-local exclusion caches or widen the
   injector geometry as a response to this result.
 - Artifact directory: `benchmark-results/20260901T234107Z`.
+
+## Cycle 49 — valid direct-link repeat at 15k; cadence-rate limit confirmed (20260902T000652Z)
+
+- This is a strict repeat of Cycle 48: the TON/generator OCI source label is
+  `6838a2b2`, both source trees are clean, and runtime `.env` SHA-256,
+  Compose/service hashes, sorted container environments, CPU/memory pinning,
+  broadcast control, and the complete 15k workload geometry are identical.
+  The Docker revision changes only because Cycle 48's report was recorded.
+- All formal proof correctness, completion, ingress-capacity, chain-capacity,
+  cleanup, catch-up, drain, and broadcast lifecycle gates pass. The run exits
+  cleanly and matches 11,849,936 canonical hashes with zero conflicts, nonce
+  gaps, reorgs, follower errors, retry exhaustion, or final pool/backlog
+  residue. The sole `reproducible=false` reason remains the external unlabeled
+  Session Stats image.
+- The direct-link throughput gain repeats: offered/admitted TPS is
+  14,999.943 and proof TPS is 15,001.561, +11.179 TPS (+0.075%) over Cycle 48
+  and the new highest valid sustained 15k result. Canonical backpressure is
+  zero, sampled backlog peak/end is 35,700/19,145, and drain is 1.321 seconds.
+  Direct-link telemetry remains exact: 48,099,262 hits, zero fallbacks, and
+  first-work improves slightly to 122.947 seconds / 2,044 calls =
+  60.150 ms/call.
+- The repeat separates TPS from cadence: measured blocks fall
+  2,112 -> 2,002, or 3.0171 -> 2.8600 blocks/s, while packing rises
+  4,961.305 -> 5,237.808 transfers/block (+5.57%, same 8,192 maximum).
+  This is efficient packing, not a correctness or injector limitation, but it
+  does not establish the requested >=3-block/s operating point.
+- All basechain p99 timing remains sub-second: total/wall/accepted/start/
+  validated is 555.189/600.992/682.911/803.713/109.022 ms. Actual collation
+  maxima are 751.056/797.806 ms and the accepted-block maximum recovers below
+  one second at 972.503 ms. One collate-start interval is still 1,027.800 ms;
+  masterchain timing similarly has a 1,023.394-ms accepted maximum. This
+  cross-chain tail is much smaller than Cycle 48's 2.153-s accepted outlier but
+  means strict every-interval subsecond cadence is still unproven.
+- Retain `6838a2b2` as the repeatable ~15k TPS baseline and do not raise target
+  or widen the injector. The next isolated work must trade a small amount of
+  post-commit packing grace for a reproducible >=3-block/s cadence, while
+  retaining direct links and the existing proof/cleanup/p99 gates. It should
+  measure both absolute start/accepted maxima and sustained blocks/s rather
+  than treating a transient one-second TPS bucket as capacity.
+- Artifact directory: `benchmark-results/20260902T000652Z`.
