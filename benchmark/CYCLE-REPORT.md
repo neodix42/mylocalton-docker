@@ -2227,3 +2227,40 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   measure both absolute start/accepted maxima and sustained blocks/s rather
   than treating a transient one-second TPS bucket as capacity.
 - Artifact directory: `benchmark-results/20260902T000652Z`.
+
+## Cycle 50 — rejected 5-ms post-commit packing grace at 15k (20260902T003541Z)
+
+- This is a strict C49 source-only A/B. Runtime `.env` SHA-256, Compose/service
+  hashes, CPU pinning, all genesis/generator benchmark environments, and the
+  complete 15k workload geometry are identical. The only intended difference
+  is validator/generator source `6838a2b2` -> `7c9237cd`, which halves the
+  bounded native post-commit packing grace from 10 ms to 5 ms.
+- The run is proof-correct, complete, and cleanly drained: 9,956,258 canonical
+  hashes match with zero conflicts, nonce gaps, reorgs, follower errors,
+  retry exhaustion, timeout, or final queue residue. Correctness, completion,
+  cleanup, and broadcast-control gates pass. `reproducible=false` remains only
+  the normal unlabeled Session Stats image caveat. It is rejected solely for
+  capacity/cadence performance.
+- Ingress and chain capacity fail on `canonical_backpressure_above_one_percent`
+  and load shortfall. C49 -> C50 offered/admitted TPS falls
+  14,999.943 -> 12,294.740 (-18.03%) and proof TPS falls
+  15,001.561 -> 12,143.851 (-19.05%). Canonical backpressure rises from zero
+  to 135.289 seconds (19.327% of the measured window), sampled backlog reaches
+  the 131,072 cap and ends at 121,856, and drain extends 1.321 -> 8.332 seconds.
+- The apparent block-rate gain is destructive under-packing: blocks/s rises
+  2.860 -> 4.070, but packing collapses 5,237.808 -> 2,979.485 transfers/block
+  (-43.12%, same 8,192 maximum). Measured basechain empty collations jump
+  0 -> 972 and masterchain empty collations 483 -> 980. Native first-work also
+  regresses 60.150 -> 95.998 ms/call. Thus this is not a usable way to obtain
+  the requested cadence.
+- P99 timing does not rescue the result. Base total/wall/accepted/start p99 is
+  355.580/383.974/555.148/805.942 ms, but base accepted/start maxima reach
+  1,133.784/1,364.326 ms. Masterchain accepted/start p99 rises to
+  903.580/900.855 ms and maxima to 1,142.915/1,212.107 ms. All-run skip votes
+  are not a correctness signal here; the capacity collapse is already decisive.
+- Revert `7c9237cd` and retain the 10-ms direct-link baseline. Do not retune
+  this grace further. The next cadence A/B should instead isolate the observed
+  masterchain session timeout race by changing only
+  `SIMPLEX_FIRST_BLOCK_TIMEOUT_MS` from 400 to 500 in fresh genesis, preserving
+  the 10-ms packing grace, direct links, and C49 workload.
+- Artifact directory: `benchmark-results/20260902T003541Z`.
