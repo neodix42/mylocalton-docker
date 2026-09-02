@@ -2135,3 +2135,55 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   It must first beat Cycle 44 proof TPS while preserving <=86-ms first-work,
   zero/low backpressure, and subsecond worst-case cadence.
 - Artifact directory: `benchmark-results/20260901T224322Z`.
+
+## Cycle 48 — valid direct native-reservation-link source A/B at 15k (20260901T234107Z)
+
+- This is a strict source-only A/B against the valid Cycle 44 control. Runtime
+  `.env` SHA-256, Compose/service hashes, sorted genesis and native-generator
+  environments, CPU/memory pinning, 4,096 sources, 12 connections, six
+  workers/signers, 96-message batches, 16-message source runs, qcap=1,
+  1,152 CWND, 0.0768-s RTT, 30-ms coalescing, 8,192 candidate cap, 2,048
+  transport window, no-gossip control, and 60/60/700/300 timing are unchanged.
+  The only performance-relevant difference is the validator/generator OCI
+  source label `7d5f775a` -> `6838a2b2`, which adds a validated direct
+  reservation-to-mempool-message link with the legacy indexed lookup retained
+  as a guarded fallback.
+- All formal gates pass: proof correctness, run completion, ingress capacity,
+  chain capacity, validator cleanup, catch-up, drain, and broadcast lifecycle.
+  The run exits cleanly and proof-checks 11,849,882 canonical hashes with zero
+  hash/nonce/duplicate/external conflicts, follower errors, reorgs, retry
+  exhaustion, drain timeout, or final native queue residue. `reproducible=false`
+  remains solely the known unlabeled Session Stats image caveat.
+- C44 -> C48 offered/admitted TPS rises 14,837.160 -> 14,999.956 (+1.097%) and
+  proof TPS rises 14,748.848 -> 14,990.382 (+241.534, +1.638%). There is zero
+  canonical backpressure in both runs. Measured packing rises
+  4,505.876 -> 4,961.305 transfers/block (same 8,192 maximum), while the
+  verified rate remains 2,112/700 = 3.0171 native blocks/s. The 26,624-TPS
+  one-second bucket is a transient peak, not sustained capacity.
+- Queueing and catch-up improve materially: sampled backlog peak/end falls
+  107,814/80,091 -> 59,479/11,438 and drain falls 5.665 -> 1.261 seconds.
+  Transport remains bounded at high-water 2,560 with maximum producer/consumer
+  batches 2,048/512 and zero final reserved, pending, or live messages.
+- The causal fast-path evidence is decisive: scheduler telemetry records
+  49,936,299 direct-link hits and zero fallbacks. Native first-work falls
+  198.237 seconds / 2,304 calls = 86.040 ms/call to
+  130.602 / 2,138 = 61.086 ms/call (-29.0%); native probe wait also falls
+  17.806 -> 13.616 seconds. This removes repeated hash/priority/treap lookup
+  work without changing reservation, membership, nonce, expiry, or exclusion
+  checks.
+- P99 cadence remains sub-second, though slightly slower than C44:
+  total/wall/accepted/start/validated is
+  543.085/593.505/687.726/773.297/133.583 ms versus
+  525.791/568.039/676.195/747.184/101.538 ms. Total and wall maxima improve
+  to 672.283/717.290 ms, but rare accepted-block and collate-start maxima
+  regress from C44's 891.712/892.262 ms to 2,152.742/1,512.030 ms. There are
+  no skip votes or correctness symptoms, but this means the run satisfies the
+  sub-second p99 and >=3-block/s policy, not a strict every-interval-subsecond
+  policy.
+- Promote `6838a2b2` as the new 15k TPS baseline, but do not raise target yet.
+  First run an unchanged Cycle 49 confirmation to determine whether the rare
+  start/accepted cadence tails are repeatable. Retain the direct-link path only
+  if the repeat keeps all proof/cleanup gates green and clarifies the tail;
+  do not tune previously rejected callback-local exclusion caches or widen the
+  injector geometry as a response to this result.
+- Artifact directory: `benchmark-results/20260901T234107Z`.
