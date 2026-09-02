@@ -2459,3 +2459,33 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   on this retained source, before attempting further coupled injector or
   timing changes.
 - Artifact directory: `benchmark-results/20260902T032711Z`.
+
+## Cycle 56 — valid 15.5k target staircase (20260902T035250Z)
+
+- This is a clean C55 target-only rung. The TON/generator image revision
+  remains `4205a3f0`; environment, resource topology, 500-ms first-block
+  timeout, packing/injector controls, and broadcast lifecycle are unchanged.
+  The normalized generator environment differs only in
+  `NATIVE_LOAD_TARGET_TPS=15000 -> 15500`; the Docker revision advances solely
+  because it records Cycle 55.
+- All correctness, completion, ingress-capacity, chain-capacity, and
+  validator-cleanup gates pass. All 12,244,931 offered, admitted, and stored
+  messages proof-match, with zero canonical backpressure, retries, errors,
+  timeouts, hash/nonce conflicts, follower failures, reorgs, or final native,
+  transport, or reconciliation residue. The sole reproducibility caveat remains
+  the unrelated Session Stats image without a source-revision label.
+- Offered/admitted throughput is 15,500.027 TPS and proof-chain throughput is
+  15,497.970 TPS, respectively +3.334% and +3.371% versus C55. Sampled
+  canonical backlog peak/end falls 41,974/17,039 -> 37,297/12,523; drain stays
+  clean at 1.331 seconds (C55: 1.255 seconds).
+- Measured native blocks rise 2,043 -> 2,140, or 3.057/s over the 700-second
+  offer window. Packing shifts 5,129.594 -> 5,062.187 transfers/block while
+  retaining the 8,192 maximum; the 32,768-TPS one-second bucket is a burst,
+  not sustained capacity.
+- Every measured p99 remains sub-second: basechain total/collation-wall/
+  accepted/start is 536.427/590.612/688.318/767.722 ms, while masterchain
+  wall/accepted/start is 220.517/624.249/652.902 ms. Base accepted maximum
+  improves to 892.546 ms, but base/masterchain collate-start maxima remain
+  1,100.124/1,023.252 ms. Retain this as the first clean >=3-block/s 15.5k
+  rung, not a strict every-interval-subsecond-cadence claim.
+- Artifact directory: `benchmark-results/20260902T035250Z`.
