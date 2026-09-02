@@ -50,7 +50,7 @@ for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
   grep -qx 'NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=16' "$repo_dir/$env_file"
 done
 
-grep -Fqx 'VERSION_CAPABILITIES NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or config.version!' \
+grep -Fqx 'VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY or config.version!' \
   "$repo_dir/docker/scripts/gen-zerostate.fif"
 grep -Fq 'NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1 requires a v5-capable native-load-generator image' \
   "$repo_dir/native-load-generator/entrypoint.sh"

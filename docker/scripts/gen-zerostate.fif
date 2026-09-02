@@ -231,7 +231,7 @@ Masterchain swap
  */
 // version capabilities. The NativeTransferRun bit remains zero unless the
 // fresh-genesis resolver explicitly enables its v5 GlobalVersion 15 gate.
-VERSION_CAPABILITIES NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or config.version!
+VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY or config.version!
 // max-validators max-main-validators min-validators
 MAX_VALIDATORS MAX_MAIN_VALIDATORS MIN_VALIDATORS config.validator_num!
 // min-stake max-stake min-total-stake max-factor
