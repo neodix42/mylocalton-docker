@@ -2343,3 +2343,44 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   the observed persistence-before-vote race while preserving atomic candidate
   contents/index durability.
 - Artifact directory: `benchmark-results/20260902T012304Z`.
+
+## Cycle 53 — valid atomic candidate-persistence A/B; retain provisionally (20260902T021835Z)
+
+- This is a strict source-only C52 A/B. The runtime `.env` SHA, resolved
+  Compose/service configuration, CPU limits, workload, injector geometry,
+  500-ms first-block timeout, 15k target, 60/60/700/300 timing, and broadcast
+  controls are unchanged; the TON image revision changes only from direct-link
+  C52 source `85791a42` to `9ec58b53`. The source change writes a candidate
+  body and its restart index through one explicit durable `set_many` batch
+  before allowing CandidateResolver to mark the candidate stored. It preserves
+  the existing body-before-index fallback and prevents an orphan index on a
+  failed/cancelled write.
+- All correctness, completion, ingress-capacity, chain-capacity,
+  validator-cleanup, catch-up, drain, and broadcast lifecycle gates pass.
+  C53 offers/admit 14,999.964 TPS and proof-matches 14,998.376 TPS with zero
+  canonical backpressure, errors, retries, hash/nonce conflicts, reorgs, or
+  direct-link fallbacks (45,941,000 hits). Final native queues and transport
+  state are clean. The only reproducibility caveat remains the unrelated
+  unlabeled Session Stats image.
+- Capacity is statistically unchanged from C52: proof is -0.028%, packing is
+  5,030.65 (max 8,192, -0.41%), measured native blocks are
+  2,084/700 = 2.977/s (C52: 2.966/s), sampled peak/end backlog is
+  44,093/15,448, and drain is 1.417 seconds. It is therefore a valid 15k
+  control but not a demonstrated 3.000-block/s result.
+- Cadence p99s remain sub-second. Masterchain maximum start/accepted intervals
+  improve to 900.8/945.9 ms from C52's 1,433.0/1,256.7 ms. Basechain accepted
+  maximum improves 1,443.1 -> 1,178.6 ms, while base start/accepted still
+  have rare 1,067.0/1,178.6-ms tails. C53 records two contained masterchain
+  skip votes; its all-run 4-second base intervals occur before measurement and
+  are not a load-window regression.
+- The persistence-sensitive proxy is directionally favorable but needs a
+  repeat: masterchain validation-finished -> same-candidate notarize-vote
+  average/max improves 28.96/460.52 -> 19.35/335.30 ms; p99 is noisier
+  (75.76 -> 90.00 ms). This is consistent with eliminating the second durable
+  resolver commit, but does not prove deterministic tail removal.
+- Retain `9ec58b53` provisionally and repeat this exact C53 profile before
+  changing timing, packing grace, target, or another source seam. Promote only
+  if the repeat remains error/BP-free at ~15k, retains zero direct fallback,
+  keeps masterchain maxima below one second, and does not worsen the residual
+  basechain tail.
+- Artifact directory: `benchmark-results/20260902T021835Z`.
