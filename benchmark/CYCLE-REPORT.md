@@ -2264,3 +2264,44 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   `SIMPLEX_FIRST_BLOCK_TIMEOUT_MS` from 400 to 500 in fresh genesis, preserving
   the 10-ms packing grace, direct links, and C49 workload.
 - Artifact directory: `benchmark-results/20260902T003541Z`.
+
+## Cycle 51 — valid 500-ms Simplex first-block-timeout cadence A/B (20260902T010108Z)
+
+- This is a strict fresh-genesis configuration A/B against Cycle 49. The
+  direct-link source is content-identical (`6838a2b2` and the revert
+  `85791a42` share Git tree `e6a080…`), both trees are clean, and resolved
+  runtime environments differ only in genesis
+  `SIMPLEX_FIRST_BLOCK_TIMEOUT_MS=400 -> 500`. The 300-ms target rate and all
+  workload, injector, packing, resource, and broadcast controls are unchanged.
+- All formal correctness, completion, ingress-capacity, chain-capacity,
+  validator-cleanup, catch-up, drain, and broadcast lifecycle gates pass. The
+  run exits cleanly and proof-matches 11,849,885 hashes with zero conflicts,
+  nonce gaps, reorgs, follower errors, retry exhaustion, timeout, or final
+  native residue. `reproducible=false` remains only the external unlabeled
+  Session Stats image caveat.
+- Throughput remains effectively flat and backpressure-free: offered/admitted
+  is 14,999.999 TPS and proof is 14,995.286 TPS versus C49's 15,001.561
+  (-0.042%). Backpressure is zero; sampled peak/end backlog is 62,003/17,889
+  and drain is 1.465 seconds. Packing shifts 5,237.808 -> 5,007.981 and
+  measured block rate improves 2.860 -> 2,093/700 = 2.990 blocks/s, seven
+  blocks short of a strict 3.000 requirement.
+- This is the first measured artifact in the campaign with every relevant
+  basechain and masterchain maximum below one second. Base total/wall/accepted/
+  start maxima are 686.670/730.628/947.607/944.360 ms; masterchain
+  wall/accepted/start maxima are 295.684/921.565/966.883 ms. All p99s remain
+  sub-second. This removes C49's 1,027.800-ms base-start and 1,023.394-ms
+  masterchain-accepted tails without sacrificing normal 15k throughput.
+- The causal interpretation is bounded: the additional 100 ms lets locally
+  progressing masterchain candidate persistence/notarization avoid racing the
+  first-slot alarm. Measured skip votes remain zero, as in C49, and unmapped
+  events remain zero. C51 has 18 measured empty base collations (versus C49's
+  zero), far below the destructive 972 in the rejected 5-ms packing test.
+  All-run basechain start/collation maximum improves 3.844 -> 1.416 seconds,
+  but only the measured-window all-chain maxima are promoted by this result.
+- Promote the 500-ms timeout as the current cadence-safe 15k control. Do not
+  raise target yet: repeat it once unchanged to establish both the subsecond
+  absolute maxima and the near-3-block/s rate. If that repeat passes, retain
+  500 ms and then explore a small, non-destructive cadence policy or a higher
+  target separately; if it fails, revert the timeout config before changing
+  candidate persistence.
+- Artifact directory: `benchmark-results/20260902T010108Z`.
