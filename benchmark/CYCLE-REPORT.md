@@ -2384,3 +2384,41 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   keeps masterchain maxima below one second, and does not worsen the residual
   basechain tail.
 - Artifact directory: `benchmark-results/20260902T021835Z`.
+
+## Cycle 54 — valid atomic-persistence repeat; durable baseline, not a cadence-tail cure (20260902T024203Z)
+
+- This is a strict C53 repeat. Runtime `.env` and Compose hashes, normalized
+  container resources/environments, 500-ms first-block timeout, 15k workload,
+  and the TON image revision `9ec58b53` are identical; the only harness change
+  is C53's report-only ledger commit.
+- All correctness, completion, ingress-capacity, chain-capacity,
+  validator-cleanup, catch-up, drain, and broadcast lifecycle gates pass.
+  C54 exits cleanly with zero canonical backpressure, errors, retries,
+  conflicts, reorgs, direct-link fallbacks, or final native/reconciliation/
+  transport residue. As throughout the campaign, `reproducible=false` is only
+  the unrelated unlabeled Session Stats image.
+- The two-run persistence baseline is throughput-neutral at 15k: C54 offers
+  15,000.079 TPS and proves 14,999.196 TPS (+0.005% versus C53 and -0.022%
+  versus C52), packs 5,077.21 transfers/block (max 8,192), produces
+  2,065/700 = 2.950 native blocks/s, sees zero BP, and drains in 1.059 s.
+  Direct reservation links remain complete (49,174,067 hits, zero fallback).
+- The persistence-sensitive masterchain validation-finished -> notarize-vote
+  proxy continues to remove the old large outlier: C52/C53/C54
+  avg/p99/max ms are 30.13/82.33/460.52, 19.50/89.93/335.30, and
+  21.81/91.91/204.18. The lower maximum is encouraging; the slight C53->C54
+  average/p99 regression shows it is not sufficient evidence for a general
+  cadence-tail claim.
+- Measured p99 cadence remains sub-second, but absolute maxima are stochastic:
+  C54 base start/accepted max is 1,430.7/1,311.6 ms and master start/accepted
+  max is 1,173.0/1,330.1 ms, versus C53's 1,067.0/1,178.6 and 900.8/945.9.
+  Measured skips/unmapped events are zero. Its 8.045-s all-run base-start tail
+  and seven skips occur outside the measurement window and are not a load
+  regression, but are also not promoted as a cadence success.
+- Retain `9ec58b53`: explicit batched persistence restores the body/index
+  atomicity that an unsafe concurrent-write shortcut would lose, holds the
+  15k operating point across two fresh runs, and materially bounds the former
+  persistence outlier. Do not retry/tune it or change post-commit grace. The
+  next source A/B should instead eliminate the duplicate finalized-native
+  metadata decode after acceptance while preserving acceptance/finalization
+  ordering.
+- Artifact directory: `benchmark-results/20260902T024203Z`.
