@@ -2543,3 +2543,51 @@ complete proof-checked run, clean drain, and valid ingress and chain capacity.
   the two-fragment eager publication before advancing the performance series.
 - As elsewhere, `reproducible=false` is only the unrelated unlabeled Session
   Stats image. Artifact directory: `benchmark-results/20260902T075859Z`.
+
+## Cycle 59 — checkpoint-continuity controlled run (20260902T083016Z)
+
+- This C56-profile run tests `a619bde4` on top of `4205a3f0` (source image
+  `f4a6e052`): it retains a journaled native checkpoint through the existing
+  bounded refill wait, with the two-fragment transport-prefetch change absent.
+  The target, 700-second measure, sources, submit batching, queue/window,
+  resource topology, packing controls, and normalized environment/Compose
+  hashes match C56.
+- It is proof-correct, complete, and cleanup-clean. All 7,527,302 offered,
+  admitted, and stored messages are proof-matched; there are no conflicts,
+  reorgs, follower failures, canonical backpressure, residual pool/transport
+  state, or drain timeout. The only transient failures are 32 `not_ready`
+  admission retries, and drain completes in 9.205 seconds.
+- Offered/admitted TPS is 8,876.509 and proof-chain TPS is 8,873.156 across
+  2,464 measured native blocks at 2,517.182 transfers/block. It therefore
+  fails the independent ingress/chain-capacity gates for target non-attainment,
+  while correctness, completion, and cleanup remain valid.
+- Cycle 60's rebuilt `4205a3f0` control reaches only 9,303.296 proof TPS under
+  the same profile. Consequently this run is a valid correctness/regression
+  check for checkpoint continuity, but it cannot establish a source-attributable
+  TPS loss relative to the historical C56 host baseline.
+- Artifact directory: `benchmark-results/20260902T083016Z`.
+
+## Cycle 60 — rebuilt historical-source calibration (20260902T085253Z)
+
+- This is a fresh rebuild of the exact C56 source revision `4205a3f0`, with the
+  same normalized environment SHA `d062e2…e984`, Compose SHA `45d411…cf79`,
+  15,500 target, 700-second measure, and C56 topology and injector settings.
+  It is the control needed to separate source changes from the current host/
+  runtime operating point.
+- The run is complete, proof-correct, follower-caught-up, and cleanup-clean:
+  all 7,812,829 offered/admitted/stored messages proof-match, there are no
+  nonce/hash conflicts, reorgs, follower failures, or drain timeout. It has
+  16 transient admission retries and 1.534 seconds of measured canonical
+  backpressure; drain-to-anchor is 9.306 seconds.
+- This rebuilt control offers/admit 9,308.709 TPS and proves 9,303.296 TPS
+  (cohort 9,179.377) across 2,624 blocks at 2,478.279 transfers/block. It is
+  capacity-invalid only because it does not attain the 15.5k target; correctness,
+  completion, and cleanup gates pass.
+- This supersedes Cycle 58's absolute attribution: C58's 9,131.200 proof TPS
+  and Cycle 59's 8,873.156 TPS are within 1.9% and 4.6%, respectively, of this
+  current clean control—not the apparent 41–43% source regressions implied by
+  comparison with historical C56. The two-fragment 1,024-item publication
+  remains reverted because its larger blocked transport push and cancellation
+  behavior are structurally unsafe for cadence, but a fresh stable-host A/B is
+  required before assigning an absolute TPS delta to that code.
+- Artifact directory: `benchmark-results/20260902T085253Z`.
