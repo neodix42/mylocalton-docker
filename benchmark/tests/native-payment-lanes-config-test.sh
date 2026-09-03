@@ -91,6 +91,7 @@ grep -Fq 'genesis_image_id' "$repo_dir/benchmark/run-native-payment-lanes-stairc
 grep -Fq 'chain_capacity_valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'strict_genesis_reuse_preflight' "$repo_dir/run-native-benchmark.sh"
 grep -Fq 'strict_genesis_reuse_can_skip_genesis_build' "$repo_dir/run-native-benchmark.sh"
+grep -Fq 'container_image_metadata_fallback' "$repo_dir/run-native-benchmark.sh"
 grep -Fq 'desired_genesis_hash=' "$repo_dir/run-native-benchmark.sh"
 grep -Fq 'BENCHMARK_RECREATE_GENESIS=0' "$repo_dir/benchmark/run-fresh-native-cycle.sh"
 
@@ -108,5 +109,6 @@ bash -n "$repo_dir/benchmark/native-payment-lanes-profile.sh"
 bash -n "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
 bash -n "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 "$repo_dir/run-native-benchmark.sh" --self-test-strict-genesis-reuse
+"$repo_dir/run-native-benchmark.sh" --self-test-container-image-metadata-fallback
 sh -n "$repo_dir/native-load-generator/entrypoint.sh"
 sh -n "$repo_dir/native-load-generator/payment-lanes.sh"

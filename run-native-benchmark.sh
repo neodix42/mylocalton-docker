@@ -355,6 +355,48 @@ strict_genesis_reuse_matches_active_genesis() {
      -n $running_image_id && $running_revision == "$expected_revision" ]]
 }
 
+container_image_metadata_fallback() {
+  local image_id=$1
+  jq -ce --arg image_id "$image_id" '
+    [.[] | select(.image_id == $image_id)] as $containers |
+    if ($containers | length) != 1 then
+      error("running container metadata is unavailable for image " + $image_id)
+    else
+      $containers[0] as $container |
+      {
+        image_id:$image_id,
+        repo_tags:[],
+        repo_digests:[],
+        created:null,
+        architecture:null,
+        os:null,
+        size_bytes:null,
+        configured_image:($container.image // null),
+        metadata_source:"container-label-fallback",
+        oci_labels:($container.oci_labels // {
+          created:null,revision:null,source:null,version:null
+        })
+      }
+    end
+  '
+}
+
+container_image_metadata_fallback_self_test() {
+  local metadata
+  metadata=$(printf '%s' '[{"image":"example:tag","image_id":"sha256:gone","oci_labels":{"created":"now","revision":"revision","source":"source","version":"version"}}]' |
+    container_image_metadata_fallback sha256:gone)
+  jq -e '
+    .image_id == "sha256:gone" and
+    .configured_image == "example:tag" and
+    .repo_tags == [] and .repo_digests == [] and
+    .metadata_source == "container-label-fallback" and
+    .oci_labels.revision == "revision"
+  ' <<<"$metadata" >/dev/null
+  if printf '%s' '[]' | container_image_metadata_fallback sha256:gone >/dev/null 2>&1; then
+    return 1
+  fi
+}
+
 strict_genesis_reuse_self_test() {
   strict_genesis_reuse_preflight "true healthy" 0 1
   strict_genesis_reuse_preflight "false unhealthy" 0 0
@@ -440,6 +482,10 @@ case "${1:-}" in
     ;;
   --self-test-strict-genesis-reuse)
     strict_genesis_reuse_self_test
+    exit 0
+    ;;
+  --self-test-container-image-metadata-fallback)
+    container_image_metadata_fallback_self_test
     exit 0
     ;;
   --self-test-native-payment-lanes-manifest)
@@ -2812,6 +2858,12 @@ docker inspect genesis "$container_name" session-stats |
     nano_cpus: .HostConfig.NanoCpus,
     memory_limit_bytes: .HostConfig.Memory,
     mounts:[.Mounts[]? | {type:.Type,source:.Source,destination:.Destination,rw:.RW}],
+    oci_labels:{
+      created:(.Config.Labels["org.opencontainers.image.created"] // null),
+      revision:(.Config.Labels["org.opencontainers.image.revision"] // null),
+      source:(.Config.Labels["org.opencontainers.image.source"] // null),
+      version:(.Config.Labels["org.opencontainers.image.version"] // null)
+    },
     benchmark_environment: [.Config.Env[] | select(test(
       "^(GENESIS_VERBOSITY|GENESIS_HEARTBEAT_SECONDS|ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|NATIVE_(TRANSFER_RUNS|PAYMENT_LANES|PAYMENT_LANE|LOAD_|SPAM_)[^=]*|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
     ))]
@@ -2821,21 +2873,31 @@ image_metadata_jsonl=$result_dir/image-metadata.jsonl
 : >"$image_metadata_jsonl"
 while read -r image_id; do
   [[ -n $image_id ]] || continue
-  docker image inspect "$image_id" 2>/dev/null | jq '.[] | {
-    image_id:.Id,
-    repo_tags:(.RepoTags // []),
-    repo_digests:(.RepoDigests // []),
-    created:(.Created // null),
-    architecture:(.Architecture // null),
-    os:(.Os // null),
-    size_bytes:(.Size // null),
-    oci_labels:{
-      created:(.Config.Labels["org.opencontainers.image.created"] // null),
-      revision:(.Config.Labels["org.opencontainers.image.revision"] // null),
-      source:(.Config.Labels["org.opencontainers.image.source"] // null),
-      version:(.Config.Labels["org.opencontainers.image.version"] // null)
-    }
-  }' >>"$image_metadata_jsonl"
+  if image_inspect_json=$(docker image inspect "$image_id" 2>/dev/null); then
+    jq '.[] | {
+      image_id:.Id,
+      repo_tags:(.RepoTags // []),
+      repo_digests:(.RepoDigests // []),
+      created:(.Created // null),
+      architecture:(.Architecture // null),
+      os:(.Os // null),
+      size_bytes:(.Size // null),
+      metadata_source:"local-image-inspect",
+      oci_labels:{
+        created:(.Config.Labels["org.opencontainers.image.created"] // null),
+        revision:(.Config.Labels["org.opencontainers.image.revision"] // null),
+        source:(.Config.Labels["org.opencontainers.image.source"] // null),
+        version:(.Config.Labels["org.opencontainers.image.version"] // null)
+      }
+    }' <<<"$image_inspect_json" >>"$image_metadata_jsonl"
+  else
+    # A running container can retain a valid immutable image after a local
+    # Compose tag was republished and the old image fell out of the image
+    # index. Preserve its OCI provenance from the container rather than
+    # discarding an otherwise completed benchmark at report time.
+    echo "image $image_id is no longer locally inspectable; using container OCI labels" >&2
+    container_image_metadata_fallback "$image_id" <"$runtime_file" >>"$image_metadata_jsonl"
+  fi
 done < <(jq -r 'map(.image_id) | unique[]' "$runtime_file")
 jq -s '.' "$image_metadata_jsonl" >"$image_metadata_file"
 
