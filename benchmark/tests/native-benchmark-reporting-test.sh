@@ -6,6 +6,8 @@ jq_dir=$script_dir/../jq
 wrapper=$script_dir/../../run-native-benchmark.sh
 
 "$script_dir/native-transfer-runs-config-test.sh"
+"$script_dir/native-payment-lanes-config-test.sh"
+"$script_dir/native-payment-lanes-helper-test.sh"
 
 command -v jq >/dev/null 2>&1 || {
   echo "required command is not installed: jq" >&2

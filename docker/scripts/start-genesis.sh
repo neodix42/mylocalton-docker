@@ -3,6 +3,8 @@
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=native-transfer-runs-config.sh
 source "$script_dir/native-transfer-runs-config.sh"
+# shellcheck source=native-payment-lanes-config.sh
+source "$script_dir/native-payment-lanes-config.sh"
 
 INTERNAL_IP=$(hostname -I | tr -d " ")
 PUBLIC_PORT=${PUBLIC_PORT:-40001}
@@ -30,6 +32,109 @@ is_positive_uint() {
 
 is_bool() {
   [ "$1" = "0" ] || [ "$1" = "1" ]
+}
+
+native_payment_lane_address_hex() {
+  local address_file=$1
+  local address_hex
+
+  test -r "$address_file" || return 1
+  address_hex=$(od -An -v -N 32 -tx1 "$address_file" | tr -d '[:space:]')
+  [[ ${#address_hex} -eq 64 && $address_hex =~ ^[0-9A-Fa-f]+$ ]] || return 1
+  printf '%s\n' "$address_hex"
+}
+
+# The initial Phase-A harness intentionally uses the two fixed leaves at
+# depth 1. Assigning source index parity to the top account-id bit gives an
+# exactly balanced distribution (within one account for an odd source count)
+# while retaining a source/destination pair in the same payment lane.
+native_payment_lane_for_address() {
+  local address_hex
+  address_hex=$(native_payment_lane_address_hex "$1") || return 1
+  case "$address_hex" in
+    [01234567]*) printf '0\n' ;;
+    [89aAbBcCdDeEfF]*) printf '1\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+native_payment_lane_wallet_state() {
+  local base=$1
+  local file_count=0
+  local suffix
+
+  for suffix in pk pub addr; do
+    if [ -e "$base.$suffix" ]; then
+      file_count=$((file_count + 1))
+    fi
+  done
+  case "$file_count" in
+    0) printf 'absent\n' ;;
+    3) printf 'complete\n' ;;
+    *) printf 'partial\n' ;;
+  esac
+}
+
+create_native_payment_lane_wallet() {
+  local base=$1 expected_lane=$2 retries=$3
+  local wallet_dir temp_dir temp_base attempt lane
+
+  wallet_dir=$(dirname "$base")
+  temp_dir=$(mktemp -d "$wallet_dir/.native-payment-lane.XXXXXX") || return 1
+  temp_base="$temp_dir/wallet"
+  for ((attempt = 1; attempt <= retries; ++attempt)); do
+    if ! fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$temp_base" > "$temp_dir/create.log" 2>&1; then
+      genesis_log "Can't create native payment lane wallet; last log lines follow"
+      tail -n 20 "$temp_dir/create.log" >&2
+      rm -rf -- "$temp_dir"
+      return 1
+    fi
+    lane=$(native_payment_lane_for_address "$temp_base.addr") || {
+      genesis_log "Native payment lane wallet generator produced an invalid address"
+      rm -rf -- "$temp_dir"
+      return 1
+    }
+    if [ "$lane" = "$expected_lane" ]; then
+      mv "$temp_base.pk" "$base.pk"
+      mv "$temp_base.pub" "$base.pub"
+      mv "$temp_base.addr" "$base.addr"
+      mv "$temp_dir/create.log" "$base.create.log"
+      rmdir "$temp_dir"
+      printf 'created\n'
+      return 0
+    fi
+    rm -f -- "$temp_base.pk" "$temp_base.pub" "$temp_base.addr" "$temp_dir/create.log"
+  done
+  rm -rf -- "$temp_dir"
+  genesis_log "Unable to generate lane $expected_lane wallet after $retries attempts"
+  return 1
+}
+
+prepare_native_payment_lane_wallet() {
+  local base=$1 expected_lane=$2 retries=$3
+  local state lane
+
+  state=$(native_payment_lane_wallet_state "$base")
+  case "$state" in
+    absent)
+      create_native_payment_lane_wallet "$base" "$expected_lane" "$retries"
+      ;;
+    complete)
+      lane=$(native_payment_lane_for_address "$base.addr") || {
+        genesis_log "Existing native payment lane wallet has an invalid address: $base.addr"
+        return 1
+      }
+      if [ "$lane" != "$expected_lane" ]; then
+        genesis_log "Existing native payment lane wallet is assigned to lane $lane, expected $expected_lane: $base.addr"
+        return 1
+      fi
+      printf 'reused\n'
+      ;;
+    *)
+      genesis_log "Refusing to overwrite a partial native payment lane wallet: $base"
+      return 1
+      ;;
+  esac
 }
 
 validate_decimal_amount() {
@@ -117,6 +222,15 @@ generate_basechain_state() {
   local eta
   local i
   local base
+  local native_payment_lanes="${NATIVE_PAYMENT_LANES_ENABLED:-0}"
+  local native_payment_lane_depth="${NATIVE_PAYMENT_LANE_DEPTH:-1}"
+  local native_payment_lane_wallet_retries="${NATIVE_PAYMENT_LANE_WALLET_RETRIES:-128}"
+  local native_payment_lane_manifest
+  local native_payment_lane_manifest_tmp=
+  local expected_lane
+  local wallet_result
+  local source_address_hex
+  local destination_address_hex
 
   if [ -n "${NATIVE_SPAM_GENESIS_SOURCES+x}" ]; then
     genesis_sources="$NATIVE_SPAM_GENESIS_SOURCES"
@@ -218,6 +332,25 @@ generate_basechain_state() {
     echo "GENESIS_HEARTBEAT_SECONDS must be a positive integer, got '${GENESIS_HEARTBEAT_SECONDS:-30}'"
     exit 2
   fi
+  if ! is_bool "$native_payment_lanes"; then
+    echo "NATIVE_PAYMENT_LANES_ENABLED must be 0 or 1, got '$native_payment_lanes'"
+    exit 2
+  fi
+  if [ "$native_payment_lanes" = "1" ]; then
+    if [ "$native_payment_lane_depth" != "1" ]; then
+      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 for the supported two-lane benchmark topology, got '$native_payment_lane_depth'"
+      exit 2
+    fi
+    if [ "$genesis_destinations" != "1" ]; then
+      echo "NATIVE_PAYMENT_LANES_ENABLED=1 requires NATIVE_SPAM_GENESIS_DESTINATIONS=1"
+      exit 2
+    fi
+    if ! is_positive_uint "$native_payment_lane_wallet_retries"; then
+      echo "NATIVE_PAYMENT_LANE_WALLET_RETRIES must be a positive integer, got '$native_payment_lane_wallet_retries'"
+      exit 2
+    fi
+    native_payment_lane_manifest="$wallet_dir/native-payment-lanes.manifest"
+  fi
 
   echo NATIVE_SPAM_SOURCES=$spam_sources
   echo NATIVE_SPAM_EFFECTIVE_SOURCES=$effective_spam_sources
@@ -239,6 +372,13 @@ generate_basechain_state() {
   genesis_log "Wallet key generation is sequential; progress will be logged every $progress_every source sets"
 
   mkdir -p "$work_dir" "$wallet_dir"
+  if [ "$native_payment_lanes" = "1" ]; then
+    native_payment_lane_manifest_tmp=$(mktemp "$wallet_dir/.native-payment-lanes.manifest.XXXXXX") || {
+      echo "Can't create native payment lane manifest staging file"
+      exit 1
+    }
+    printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 %s\n' "$genesis_sources" > "$native_payment_lane_manifest_tmp"
+  fi
   {
     echo "#!/usr/bin/create-state -s"
     echo '"TonUtil.fif" include'
@@ -253,7 +393,18 @@ generate_basechain_state() {
 
   for ((i = 0; i < genesis_sources; ++i)); do
     base="$wallet_dir/source-$i"
-    if [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
+    if [ "$native_payment_lanes" = "1" ]; then
+      expected_lane=$((i % 2))
+      if ! wallet_result=$(prepare_native_payment_lane_wallet "$base" "$expected_lane" "$native_payment_lane_wallet_retries"); then
+        rm -f -- "$native_payment_lane_manifest_tmp"
+        exit 1
+      fi
+      if [ "$wallet_result" = "created" ]; then
+        generated_wallets=$((generated_wallets + 1))
+      else
+        reused_wallets=$((reused_wallets + 1))
+      fi
+    elif [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
       if ! fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1; then
         genesis_log "Can't create native spam source wallet $i; last log lines follow"
         tail -n 20 "$base.create.log" >&2
@@ -266,7 +417,29 @@ generate_basechain_state() {
     printf '"%s.pk" load-keypair drop 256 B>u@ GR$%s create-native-wallet\n' "$base" "$source_balance" >> "$basechain_script"
     if [ "$genesis_destinations" = "1" ]; then
       base="$wallet_dir/dest-$i"
-      if [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
+      if [ "$native_payment_lanes" = "1" ]; then
+        if ! wallet_result=$(prepare_native_payment_lane_wallet "$base" "$expected_lane" "$native_payment_lane_wallet_retries"); then
+          rm -f -- "$native_payment_lane_manifest_tmp"
+          exit 1
+        fi
+        if [ "$wallet_result" = "created" ]; then
+          generated_wallets=$((generated_wallets + 1))
+        else
+          reused_wallets=$((reused_wallets + 1))
+        fi
+        source_address_hex=$(native_payment_lane_address_hex "$wallet_dir/source-$i.addr") || {
+          rm -f -- "$native_payment_lane_manifest_tmp"
+          echo "Can't read source address for native payment lane manifest: source-$i" >&2
+          exit 1
+        }
+        destination_address_hex=$(native_payment_lane_address_hex "$base.addr") || {
+          rm -f -- "$native_payment_lane_manifest_tmp"
+          echo "Can't read destination address for native payment lane manifest: dest-$i" >&2
+          exit 1
+        }
+        printf '%s %s %s %s\n' "$i" "$expected_lane" "$source_address_hex" "$destination_address_hex" \
+          >> "$native_payment_lane_manifest_tmp"
+      elif [ ! -f "$base.pk" ] || [ ! -f "$base.addr" ]; then
         if ! fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$base" > "$base.create.log" 2>&1; then
           genesis_log "Can't create native spam destination wallet $i; last log lines follow"
           tail -n 20 "$base.create.log" >&2
@@ -297,6 +470,11 @@ generate_basechain_state() {
     fi
   done
 
+  if [ "$native_payment_lanes" = "1" ]; then
+    mv "$native_payment_lane_manifest_tmp" "$native_payment_lane_manifest"
+    genesis_log "Native payment lane manifest written: path=$native_payment_lane_manifest depth=1 lanes=2 sources=$genesis_sources"
+  fi
+
   genesis_log "Native wallet preparation completed: created=$generated_wallets reused=$reused_wallets elapsed=$((SECONDS - wallet_started_at))s"
 
   {
@@ -323,6 +501,11 @@ generate_basechain_state() {
     echo "NATIVE_SPAM_POST_GENESIS_TOPUPS=$post_genesis_topups"
     echo "NATIVE_SPAM_TOPUP_MODE=$topup_mode"
     echo "NATIVE_SPAM_WALLET_DIR=$wallet_dir"
+    echo "NATIVE_PAYMENT_LANES_ENABLED=$native_payment_lanes"
+    if [ "$native_payment_lanes" = "1" ]; then
+      echo "NATIVE_PAYMENT_LANE_DEPTH=$native_payment_lane_depth"
+      echo "NATIVE_PAYMENT_LANES_MANIFEST=$native_payment_lane_manifest"
+    fi
   } > "$work_dir/genesis.env"
 
   genesis_log "Basechain Fift script ready: path=$(pwd)/$basechain_script lines=$(wc -l < "$basechain_script") bytes=$(wc -c < "$basechain_script")"
@@ -332,6 +515,23 @@ generate_basechain_state() {
 
 initialized=0
 if [ -f "/var/ton-work/db/state/IDENTITY" ]; then
+  existing_native_payment_lanes=${NATIVE_PAYMENT_LANES_ENABLED:-0}
+  existing_native_payment_lane_depth=${NATIVE_PAYMENT_LANE_DEPTH:-1}
+  existing_native_payment_lane_marker=${NATIVE_SPAM_WORK_DIR:-/var/ton-work/db/native-spam}/genesis.env
+  if ! is_bool "$existing_native_payment_lanes"; then
+    echo "NATIVE_PAYMENT_LANES_ENABLED must be 0 or 1, got '$existing_native_payment_lanes'"
+    exit 2
+  fi
+  if [ "$existing_native_payment_lanes" = "1" ]; then
+    if ! grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=1' "$existing_native_payment_lane_marker" 2>/dev/null ||
+       ! grep -qx "NATIVE_PAYMENT_LANE_DEPTH=$existing_native_payment_lane_depth" "$existing_native_payment_lane_marker" 2>/dev/null; then
+      echo "native payment lanes require a fresh zero state with the matching fixed split topology; run benchmark/run-fresh-native-cycle.sh" >&2
+      exit 2
+    fi
+  elif grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=1' "$existing_native_payment_lane_marker" 2>/dev/null; then
+    echo "existing state was initialized with native payment lanes; do not reuse it with NATIVE_PAYMENT_LANES_ENABLED=0" >&2
+    exit 2
+  fi
   echo
   echo "Found non-empty state; Skip initialization";
   initialized=1
@@ -493,17 +693,6 @@ else
   echo VALIDATOR_5_INITIAL_BALANCE=$VALIDATOR_5_INITIAL_BALANCE
   sed -i "s/VALIDATOR_5_INITIAL_BALANCE/$VALIDATOR_5_INITIAL_BALANCE/g" gen-zerostate.fif
 
-  if ! resolve_native_transfer_runs_config; then
-    exit 2
-  fi
-  VERSION_CAPABILITIES=$NATIVE_TRANSFER_RUNS_EFFECTIVE_VERSION
-  NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY=$NATIVE_TRANSFER_RUNS_EFFECTIVE_CAPABILITY
-  echo NATIVE_TRANSFER_RUNS_ENABLED=${NATIVE_TRANSFER_RUNS_ENABLED:-0}
-  echo NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY=$NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY
-  echo VERSION_CAPABILITIES=$VERSION_CAPABILITIES
-  sed -i "s/VERSION_CAPABILITIES/$VERSION_CAPABILITIES/g" gen-zerostate.fif
-  sed -i "s/NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY/$NATIVE_TRANSFER_RUNS_CONFIG_CAPABILITY/g" gen-zerostate.fif
-
   VALIDATION_PERIOD=${VALIDATION_PERIOD:-1200}
   echo VALIDATION_PERIOD=$VALIDATION_PERIOD
   sed -i "s/VALIDATION_PERIOD/$VALIDATION_PERIOD/g" gen-zerostate.fif
@@ -519,6 +708,18 @@ else
   MAX_SPLIT=${MAX_SPLIT:-4}
   echo MAX_SPLIT=$MAX_SPLIT
   sed -i "s/MAX_SPLIT/$MAX_SPLIT/g" gen-zerostate.fif
+
+  if ! resolve_native_payment_lanes_config; then
+    exit 2
+  fi
+  VERSION_CAPABILITIES=$NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION
+  NATIVE_PROTOCOL_CAPABILITIES=$NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES
+  echo NATIVE_TRANSFER_RUNS_ENABLED=${NATIVE_TRANSFER_RUNS_ENABLED:-0}
+  echo NATIVE_PAYMENT_LANES_ENABLED=${NATIVE_PAYMENT_LANES_ENABLED:-0}
+  echo NATIVE_PROTOCOL_CAPABILITIES=$NATIVE_PROTOCOL_CAPABILITIES
+  echo VERSION_CAPABILITIES=$VERSION_CAPABILITIES
+  sed -i "s/VERSION_CAPABILITIES/$VERSION_CAPABILITIES/g" gen-zerostate.fif
+  sed -i "s/NATIVE_PROTOCOL_CAPABILITIES/$NATIVE_PROTOCOL_CAPABILITIES/g" gen-zerostate.fif
 
   CRITICAL_PARAM_MIN_WINS=${CRITICAL_PARAM_MIN_WINS:-4}
   echo CRITICAL_PARAM_MIN_WINS=$CRITICAL_PARAM_MIN_WINS

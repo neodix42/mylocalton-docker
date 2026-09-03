@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# Keep the expensive two-shard readiness check out of the historical scalar
+# and v5-run paths. The helper is copied into this image alongside this script.
+. /usr/local/lib/native-load-generator/payment-lanes.sh
+
 config=${NATIVE_LOAD_GLOBAL_CONFIG:-/usr/share/data/global.config.json}
 wallet_dir=${NATIVE_LOAD_WALLET_DIR:-/network/native-spam/wallets}
 sources=${NATIVE_LOAD_SOURCES:-1000}
@@ -11,6 +15,13 @@ submit_batch_size=${NATIVE_LOAD_SUBMIT_BATCH_SIZE:-1}
 submit_source_run_size=${NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE:-1}
 native_transfer_runs=${NATIVE_LOAD_NATIVE_TRANSFER_RUNS:-0}
 native_transfer_run_size=${NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE:-16}
+native_payment_lanes=${NATIVE_PAYMENT_LANES_ENABLED:-0}
+native_payment_lane_depth=${NATIVE_PAYMENT_LANE_DEPTH:-1}
+native_load_payment_lane_depth=${NATIVE_LOAD_PAYMENT_LANE_DEPTH:-0}
+native_payment_lane_ready_timeout=${NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS:-360}
+native_payment_lane_ready_poll=${NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS:-2}
+native_payment_lane_ready_stable_observations=${NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS:-2}
+native_payment_lane_manifest=${NATIVE_LOAD_PAYMENT_LANE_MANIFEST:-$wallet_dir/native-payment-lanes.manifest}
 submit_coalesce_ms=${NATIVE_LOAD_SUBMIT_COALESCE_MS:-2}
 submit_max_queries_per_client=${NATIVE_LOAD_SUBMIT_MAX_QUERIES_PER_CLIENT:-0}
 max_canonical_backlog=${NATIVE_LOAD_MAX_CANONICAL_BACKLOG:-262144}
@@ -68,6 +79,19 @@ test -r "$wallet_dir/source-${source_offset}.pk" || {
   echo "native source key is not readable: $wallet_dir/source-${source_offset}.pk" >&2
   exit 2
 }
+
+case "$native_transfer_runs" in
+  0|false|FALSE|no|NO) native_transfer_runs_enabled=0 ;;
+  1|true|TRUE|yes|YES) native_transfer_runs_enabled=1 ;;
+  *)
+    echo "NATIVE_LOAD_NATIVE_TRANSFER_RUNS must be 0 or 1, got '$native_transfer_runs'" >&2
+    exit 2
+    ;;
+esac
+
+native_payment_lanes_validate_mode \
+  "$native_payment_lanes" "$native_transfer_runs_enabled" \
+  "$native_payment_lane_depth" "$native_load_payment_lane_depth" || exit $?
 
 set -- /usr/local/bin/native-load-generator \
   --global-config "$config" \
@@ -131,6 +155,20 @@ case "$native_transfer_runs" in
     exit 2
     ;;
 esac
+
+if [ "$native_payment_lanes" = 1 ]; then
+  if ! printf '%s\n' "$generator_help" | grep -q -- '--native-payment-lane-depth'; then
+    echo "NATIVE_PAYMENT_LANES_ENABLED=1 requires a native payment lane-capable native-load-generator image" >&2
+    exit 2
+  fi
+  native_payment_lanes_validate_manifest \
+    "$native_payment_lane_manifest" "$wallet_dir" "$source_offset" "$sources" \
+    "$native_load_payment_lane_depth" || exit $?
+  native_payment_lanes_wait_for_shards \
+    "$config" "$native_payment_lane_ready_timeout" "$native_payment_lane_ready_poll" \
+    "$native_payment_lane_ready_stable_observations" || exit $?
+  set -- "$@" --native-payment-lane-depth "$native_load_payment_lane_depth"
+fi
 
 case "$adaptive_inflight" in
   1|true|TRUE|yes|YES) set -- "$@" --adaptive-inflight ;;

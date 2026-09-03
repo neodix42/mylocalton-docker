@@ -1,3 +1,4 @@
 **
 !native-load-generator
 !native-load-generator/entrypoint.sh
+!native-load-generator/payment-lanes.sh
