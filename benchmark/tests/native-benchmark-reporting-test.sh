@@ -619,6 +619,18 @@ for field in \
 done
 
 for field in \
+  native-payment-lanes-provenance.json \
+  capture_native_payment_lanes_provenance \
+  NATIVE_PAYMENT_LANES_ENABLED \
+  NATIVE_PROTOCOL_CAPABILITIES=3072 \
+  contains_private_keys:false; do
+  grep -Fq "$field" "$wrapper" || {
+    echo "benchmark wrapper does not retain native payment-lane provenance: $field" >&2
+    exit 1
+  }
+done
+
+for field in \
   shard_state_requests \
   shard_manager_waits \
   shard_fetches \

@@ -554,6 +554,11 @@ ext_messages_broadcast_apply_control_file=$result_dir/.validator-ext-messages-br
 ext_messages_broadcast_restore_record_file=$result_dir/.validator-ext-messages-broadcast-restore.json
 runtime_file=$result_dir/container-runtime.json
 image_metadata_file=$result_dir/image-metadata.json
+native_payment_lanes_provenance_file=$result_dir/native-payment-lanes-provenance.json
+native_payment_lanes_manifest_file=$result_dir/native-payment-lanes.manifest
+native_payment_lanes_genesis_env_file=$result_dir/native-payment-lanes-genesis.env
+native_payment_lanes_activation_file=$result_dir/native-payment-lanes-genesis-activation.log
+native_payment_lanes_provenance_error_file=$result_dir/native-payment-lanes-provenance.stderr.log
 metadata_file=$result_dir/run-metadata.json
 summary_file=$result_dir/benchmark-summary.json
 : >"$container_stats_file"
@@ -636,6 +641,175 @@ capture_ext_messages_broadcast_state() {
       disk_config:{artifact:$disk_config_artifact,stderr_artifact:$disk_config_stderr_artifact,
         sha256:$disk_config_sha256,effective_disabled:$disk_config_effective},
       consistent:($get_config_effective == $disk_config_effective)}' >"$record_file"
+}
+
+# A lane result is useful only when the result bundle itself proves which
+# genesis topology and public source/destination mapping it exercised.  The
+# manifest contains public account ids only; private keys never leave the
+# wallet volume. Capture this immediately after genesis becomes healthy and
+# fail closed for an enabled lane profile if its durable activation evidence is
+# absent; retained Docker startup logs are supplemental.
+capture_native_payment_lanes_provenance() {
+  local runtime_environment enabled captured_at manifest_path
+  local schema manifest_depth lane_count manifest_sources extra
+  local manifest_records lane_zero_records lane_one_records manifest_invalid lane_difference
+  local genesis_environment durable_checks activation_checks
+  local manifest_sha256 genesis_env_sha256 activation_sha256
+
+  captured_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if ! runtime_environment=$(docker inspect genesis | jq -ce '
+    [.[0].Config.Env[]? |
+      select(test("^(NATIVE_(TRANSFER_RUNS|PAYMENT_LANES|PAYMENT_LANE|SPAM_GENESIS|LOAD_PAYMENT_LANE)[^=]*|ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT)=")) |
+      capture("^(?<key>[^=]+)=(?<value>.*)$")
+    ] | from_entries
+  ' 2>>"$native_payment_lanes_provenance_error_file"); then
+    echo "failed to inspect native payment-lane runtime configuration" >&2
+    return 1
+  fi
+  enabled=$(jq -r '.NATIVE_PAYMENT_LANES_ENABLED // "0"' <<<"$runtime_environment")
+  if [[ $enabled != 1 ]]; then
+    jq -n \
+      --arg schema native-payment-lanes-provenance-v1 \
+      --arg captured_at "$captured_at" \
+      --argjson runtime_environment "$runtime_environment" \
+      '{$schema,$captured_at,enabled:false,container_environment:$runtime_environment,
+        semantics:"no fixed native payment-lane profile was enabled for this benchmark"}' \
+      >"$native_payment_lanes_provenance_file"
+    return
+  fi
+
+  manifest_path=/var/ton-work/db/native-spam/wallets/native-payment-lanes.manifest
+  if ! docker cp "genesis:$manifest_path" "$native_payment_lanes_manifest_file" \
+      >/dev/null 2>>"$native_payment_lanes_provenance_error_file" ||
+     ! docker cp genesis:/var/ton-work/db/native-spam/genesis.env "$native_payment_lanes_genesis_env_file" \
+      >/dev/null 2>>"$native_payment_lanes_provenance_error_file"; then
+    echo "failed to capture native payment-lane public genesis artifacts" >&2
+    return 1
+  fi
+
+  # Docker's log driver may rotate before a later staircase rung. The durable
+  # genesis.env below is the required evidence; selected startup log lines are
+  # useful supplemental diagnostics when they remain available.
+  docker logs genesis 2>&1 |
+    awk '
+      /^(ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|NATIVE_TRANSFER_RUNS_ENABLED|NATIVE_PAYMENT_LANES_ENABLED|NATIVE_PROTOCOL_CAPABILITIES|VERSION_CAPABILITIES)=/ ||
+      /Native payment lane manifest written/ || /Native basechain preparation started/ ||
+      /Native payment-lane wallet key generation uses/ { print }
+    ' >"$native_payment_lanes_activation_file" || :
+
+  IFS=' ' read -r schema manifest_depth lane_count manifest_sources extra < "$native_payment_lanes_manifest_file" || true
+  if [[ $schema != NATIVE_PAYMENT_LANES_MANIFEST_V1 || $manifest_depth != 1 || $lane_count != 2 ||
+        ! $manifest_sources =~ ^[0-9]+$ || -n ${extra:-} ]]; then
+    echo "captured native payment-lane manifest has an invalid header" >&2
+    return 1
+  fi
+  read -r manifest_records lane_zero_records lane_one_records manifest_invalid < <(
+    awk -v expected="$manifest_sources" '
+    NR > 1 && /^[[:space:]]*#/ { next }
+    NR > 1 && NF > 0 {
+      records++
+      if (NF != 4 || $1 !~ /^[0-9]+$/ || $2 !~ /^[01]$/ ||
+          length($3) != 64 || $3 !~ /^[[:xdigit:]]+$/ ||
+          length($4) != 64 || $4 !~ /^[[:xdigit:]]+$/ || seen[$1]++) {
+        invalid = 1
+      }
+      if (($1 + 0) % 2 != $2 ||
+          ($2 == 0 && ($3 !~ /^[0-7]/ || $4 !~ /^[0-7]/)) ||
+          ($2 == 1 && ($3 !~ /^[89a-fA-F]/ || $4 !~ /^[89a-fA-F]/))) {
+        invalid = 1
+      }
+      if ($2 == 0) lane_zero++
+      if ($2 == 1) lane_one++
+    }
+    END {
+      for (row_index = 0; row_index < expected; ++row_index) {
+        if (!(row_index in seen)) invalid = 1
+      }
+      printf "%d %d %d %d\\n", records, lane_zero, lane_one, invalid
+    }
+    ' "$native_payment_lanes_manifest_file"
+  )
+  lane_difference=$((lane_zero_records - lane_one_records))
+  if (( lane_difference < 0 )); then
+    lane_difference=$((-lane_difference))
+  fi
+  if [[ $manifest_records != "$manifest_sources" || $manifest_invalid != 0 ||
+        $((lane_zero_records + lane_one_records)) != "$manifest_records" || $lane_difference -gt 1 ]]; then
+    echo "captured native payment-lane manifest is incomplete or unbalanced" >&2
+    return 1
+  fi
+
+  if ! genesis_environment=$(jq -Rn '
+    [inputs |
+      select(test("^[A-Z0-9_]+=")) |
+      capture("^(?<key>[^=]+)=(?<value>.*)$")
+    ] | from_entries
+  ' < "$native_payment_lanes_genesis_env_file"); then
+    echo "failed to parse native payment-lane genesis environment" >&2
+    return 1
+  fi
+  durable_checks=$(jq -n --argjson genesis_environment "$genesis_environment" '
+    $genesis_environment as $env |
+    {
+      fixed_split: ($env.NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT == "1" and
+                    $env.NATIVE_PAYMENT_LANE_MIN_SPLIT == "1" and
+                    $env.NATIVE_PAYMENT_LANE_MAX_SPLIT == "1"),
+      signed_runs: ($env.NATIVE_TRANSFER_RUNS_ENABLED == "1"),
+      payment_lanes: ($env.NATIVE_PAYMENT_LANES_ENABLED == "1" and
+                      $env.NATIVE_PAYMENT_LANE_DEPTH == "1"),
+      effective_capabilities: ($env.NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES == "3072"),
+      effective_global_version: ($env.NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION == "16")
+    }
+  ')
+  if ! jq -e '.fixed_split and .signed_runs and .payment_lanes and .effective_capabilities and .effective_global_version' \
+      <<<"$durable_checks" >/dev/null; then
+    echo "native payment-lane durable genesis marker does not prove the required v16 fixed-lane configuration" >&2
+    return 1
+  fi
+  activation_checks=$(jq -n \
+    --rawfile activation "$native_payment_lanes_activation_file" '
+      ($activation | split("\\n")) as $lines |
+      {
+        available:(($lines | map(select(length > 0)) | length) > 0),
+        fixed_split: (($lines | index("ACTUAL_MIN_SPLIT=1")) != null and
+                      ($lines | index("MIN_SPLIT=1")) != null and
+                      ($lines | index("MAX_SPLIT=1")) != null),
+        signed_runs: (($lines | index("NATIVE_TRANSFER_RUNS_ENABLED=1")) != null),
+        payment_lanes: (($lines | index("NATIVE_PAYMENT_LANES_ENABLED=1")) != null),
+        effective_capabilities: (($lines | index("NATIVE_PROTOCOL_CAPABILITIES=3072")) != null),
+        effective_global_version: (($lines | index("VERSION_CAPABILITIES=16")) != null)
+      }
+    ')
+  manifest_sha256=$(sha256sum "$native_payment_lanes_manifest_file" | awk '{print $1}')
+  genesis_env_sha256=$(sha256sum "$native_payment_lanes_genesis_env_file" | awk '{print $1}')
+  activation_sha256=$(sha256sum "$native_payment_lanes_activation_file" | awk '{print $1}')
+  jq -n \
+    --arg schema native-payment-lanes-provenance-v1 \
+    --arg captured_at "$captured_at" \
+    --arg manifest_artifact "$(basename "$native_payment_lanes_manifest_file")" \
+    --arg manifest_sha256 "$manifest_sha256" \
+    --arg genesis_env_artifact "$(basename "$native_payment_lanes_genesis_env_file")" \
+    --arg genesis_env_sha256 "$genesis_env_sha256" \
+    --arg activation_artifact "$(basename "$native_payment_lanes_activation_file")" \
+    --arg activation_sha256 "$activation_sha256" \
+    --argjson runtime_environment "$runtime_environment" \
+    --argjson genesis_environment "$genesis_environment" \
+    --argjson manifest_records "$manifest_records" \
+    --argjson lane_zero_records "$lane_zero_records" \
+    --argjson lane_one_records "$lane_one_records" \
+    --argjson durable_checks "$durable_checks" \
+    --argjson activation_checks "$activation_checks" \
+    '{$schema,$captured_at,enabled:true,
+      container_environment:$runtime_environment,genesis_environment:$genesis_environment,
+      manifest:{artifact:$manifest_artifact,sha256:$manifest_sha256,depth:1,lanes:2,
+                records:$manifest_records,lane_zero_records:$lane_zero_records,
+                lane_one_records:$lane_one_records,contains_private_keys:false},
+      durable_activation_checks:$durable_checks,
+      activation_log:{artifact:$activation_artifact,sha256:$activation_sha256,
+                      supplemental:true,checks:$activation_checks},
+      genesis_env:{artifact:$genesis_env_artifact,sha256:$genesis_env_sha256},
+      semantics:"public manifest plus durable genesis activation evidence for the fixed two-lane Phase-A benchmark; container input and retained startup logs are supplemental"}' \
+    >"$native_payment_lanes_provenance_file"
 }
 
 ext_messages_broadcast_state_matches() {
@@ -1471,6 +1645,10 @@ genesis_health=$(docker inspect -f \
   genesis 2>/dev/null || true)
 if [[ $genesis_health != "true healthy" ]]; then
   echo "genesis must be running and healthy before benchmark validator controls are applied" >&2
+  exit 2
+fi
+if ! capture_native_payment_lanes_provenance; then
+  echo "failed to capture required native payment-lane benchmark provenance" >&2
   exit 2
 fi
 if ! apply_ext_messages_broadcast_setting; then
@@ -2514,7 +2692,7 @@ docker inspect genesis "$container_name" session-stats |
     memory_limit_bytes: .HostConfig.Memory,
     mounts:[.Mounts[]? | {type:.Type,source:.Source,destination:.Destination,rw:.RW}],
     benchmark_environment: [.Config.Env[] | select(test(
-      "^(GENESIS_VERBOSITY|TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|NATIVE_LOAD_[^=]+|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
+      "^(GENESIS_VERBOSITY|GENESIS_HEARTBEAT_SECONDS|ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|NATIVE_(TRANSFER_RUNS|PAYMENT_LANES|PAYMENT_LANE|LOAD_|SPAM_)[^=]*|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
     ))]
   }]' >"$runtime_file"
 
@@ -2616,6 +2794,7 @@ jq -n \
   --slurpfile containers "$runtime_file" \
   --slurpfile images "$image_metadata_file" \
   --slurpfile ext_messages_broadcast "$ext_messages_broadcast_file" \
+  --slurpfile native_payment_lanes "$native_payment_lanes_provenance_file" \
   --argjson reproducibility_reasons "$reproducibility_reasons" \
   '{$schema,$run_id,$started_at,$finished_at,$elapsed_seconds,$env_file,$env_sha256,
     $git_revision,$git_dirty,
@@ -2630,6 +2809,7 @@ jq -n \
     $generator_container_exit_code,$benchmark_exit_code,
     interrupted:($interrupted == 1),containers:$containers[0],images:$images[0],
     ext_messages_broadcast:$ext_messages_broadcast[0],
+    native_payment_lanes:$native_payment_lanes[0],
     reproducibility:{valid:($reproducibility_reasons | length == 0),
                      reasons:$reproducibility_reasons,
                      semantics:"separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"}}' >"$metadata_file"
@@ -2644,11 +2824,13 @@ jq -n \
   --slurpfile validator_scheduling "$validator_scheduling_summary_file" \
   --slurpfile validator_actor_stats "$validator_actor_stats_summary_file" \
   --slurpfile ext_messages_broadcast "$ext_messages_broadcast_file" \
+  --slurpfile native_payment_lanes "$native_payment_lanes_provenance_file" \
   '{run:$run[0],generator:$generator[0],session_stats:$session_stats[0],
     validator_pipeline:$validator_pipeline[0],validator_pool:$validator_pool[0],
     validator_scheduling:$validator_scheduling[0],
     validator_actor_stats:$validator_actor_stats[0],
     ext_messages_broadcast:$ext_messages_broadcast[0],
+    native_payment_lanes:$native_payment_lanes[0],
     resources:$resources[0],
     acceptance:($generator[0].capacity_acceptance + {
       validator_cleanup_valid:$validator_pool[0].cleanup_acceptance.valid,

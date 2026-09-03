@@ -136,6 +136,13 @@ validation is a single pass over the requested range. The helper retains a
 60-minute genesis health start period; this bootstrap time is outside the
 proof-checked generator measurement window.
 
+For a lane-enabled run, the result bundle also retains
+`native-payment-lanes-provenance.json`, the public manifest and its hash, the
+genesis environment, and selected activation lines. The wrapper fails before
+load if the durable genesis marker does not prove the
+v16/capability-3072/fixed-depth-1 setup; retained startup lines are
+supplemental. No private wallet keys are copied into the bundle.
+
 The profile is intentionally depth-1 only. It measures independent local
 lanes, not cross-lane receipts: cross-lane debit/proof/credit/refund semantics
 remain a later protocol phase. Do not reuse a payment-lane database with the

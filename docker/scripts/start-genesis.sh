@@ -456,9 +456,18 @@ generate_basechain_state() {
     echo "NATIVE_SPAM_POST_GENESIS_TOPUPS=$post_genesis_topups"
     echo "NATIVE_SPAM_TOPUP_MODE=$topup_mode"
     echo "NATIVE_SPAM_WALLET_DIR=$wallet_dir"
+    echo "NATIVE_TRANSFER_RUNS_ENABLED=${NATIVE_TRANSFER_RUNS_ENABLED:-0}"
     echo "NATIVE_PAYMENT_LANES_ENABLED=$native_payment_lanes"
     if [ "$native_payment_lanes" = "1" ]; then
       echo "NATIVE_PAYMENT_LANE_DEPTH=$native_payment_lane_depth"
+      # Retain the resolved zero-state activation facts in the durable marker.
+      # Docker's ambient VERSION_CAPABILITIES is only the profile input; these
+      # values are what was actually written into ConfigParam 8.
+      echo "NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION=$NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION"
+      echo "NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES=$NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES"
+      echo "NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT=${ACTUAL_MIN_SPLIT:-}"
+      echo "NATIVE_PAYMENT_LANE_MIN_SPLIT=${MIN_SPLIT:-}"
+      echo "NATIVE_PAYMENT_LANE_MAX_SPLIT=${MAX_SPLIT:-}"
       echo "NATIVE_PAYMENT_LANES_MANIFEST=$native_payment_lane_manifest"
     fi
   } > "$work_dir/genesis.env"

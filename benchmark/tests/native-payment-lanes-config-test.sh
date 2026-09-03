@@ -67,6 +67,15 @@ grep -Fqx 'VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVers
   "$repo_dir/docker/scripts/gen-zerostate.fif"
 grep -Fq 'native payment lanes require ACTUAL_MIN_SPLIT, MIN_SPLIT, and MAX_SPLIT' \
   "$repo_dir/docker/scripts/native-payment-lanes-config.sh"
+for field in \
+  NATIVE_TRANSFER_RUNS_ENABLED \
+  NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION \
+  NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES \
+  NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT \
+  NATIVE_PAYMENT_LANE_MIN_SPLIT \
+  NATIVE_PAYMENT_LANE_MAX_SPLIT; do
+  grep -Fq "$field" "$repo_dir/docker/scripts/start-genesis.sh"
+done
 grep -Fq 'native_payment_lanes_wait_for_shards' "$repo_dir/native-load-generator/entrypoint.sh"
 grep -Fq -- '--native-payment-lane-depth' "$repo_dir/native-load-generator/entrypoint.sh"
 grep -Fq 'native-payment-lanes-config.sh' "$repo_dir/Dockerfile"
