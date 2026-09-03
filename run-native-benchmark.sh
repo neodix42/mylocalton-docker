@@ -355,6 +355,44 @@ strict_genesis_reuse_self_test() {
   fi
 }
 
+native_payment_lanes_manifest_summary() {
+  local manifest_file=$1 expected=$2
+  awk -v expected="$expected" '
+    NR > 1 && /^[[:space:]]*#/ { next }
+    NR > 1 && NF > 0 {
+      records++
+      if (NF != 4 || $1 !~ /^[0-9]+$/ || $2 !~ /^[01]$/ ||
+          length($3) != 64 || $3 !~ /^[[:xdigit:]]+$/ ||
+          length($4) != 64 || $4 !~ /^[[:xdigit:]]+$/ || seen[$1]++) {
+        invalid = 1
+      }
+      if (($1 + 0) % 2 != $2 ||
+          ($2 == 0 && ($3 !~ /^[0-7]/ || $4 !~ /^[0-7]/)) ||
+          ($2 == 1 && ($3 !~ /^[89a-fA-F]/ || $4 !~ /^[89a-fA-F]/))) {
+        invalid = 1
+      }
+      if ($2 == 0) lane_zero++
+      if ($2 == 1) lane_one++
+    }
+    END {
+      for (row_index = 0; row_index < expected; ++row_index) {
+        if (!(row_index in seen)) invalid = 1
+      }
+      printf "%d %d %d %d\n", records, lane_zero, lane_one, invalid
+    }
+  ' "$manifest_file"
+}
+
+native_payment_lanes_manifest_summary_self_test() {
+  local zero=0000000000000000000000000000000000000000000000000000000000000000
+  local eight=8888888888888888888888888888888888888888888888888888888888888888
+  local summary
+  summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2\n0 0 %s %s\n1 1 %s %s\n' \
+    "$zero" "$zero" "$eight" "$eight" |
+    native_payment_lanes_manifest_summary /dev/stdin 2)
+  [[ $summary == "2 1 1 0" ]]
+}
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 benchmark_jq_dir=$script_dir/benchmark/jq
 
@@ -371,6 +409,10 @@ case "${1:-}" in
     ;;
   --self-test-strict-genesis-reuse)
     strict_genesis_reuse_self_test
+    exit 0
+    ;;
+  --self-test-native-payment-lanes-manifest)
+    native_payment_lanes_manifest_summary_self_test
     exit 0
     ;;
   --self-test-ext-messages-broadcast)
@@ -736,30 +778,7 @@ capture_native_payment_lanes_provenance() {
     return 1
   fi
   read -r manifest_records lane_zero_records lane_one_records manifest_invalid < <(
-    awk -v expected="$manifest_sources" '
-    NR > 1 && /^[[:space:]]*#/ { next }
-    NR > 1 && NF > 0 {
-      records++
-      if (NF != 4 || $1 !~ /^[0-9]+$/ || $2 !~ /^[01]$/ ||
-          length($3) != 64 || $3 !~ /^[[:xdigit:]]+$/ ||
-          length($4) != 64 || $4 !~ /^[[:xdigit:]]+$/ || seen[$1]++) {
-        invalid = 1
-      }
-      if (($1 + 0) % 2 != $2 ||
-          ($2 == 0 && ($3 !~ /^[0-7]/ || $4 !~ /^[0-7]/)) ||
-          ($2 == 1 && ($3 !~ /^[89a-fA-F]/ || $4 !~ /^[89a-fA-F]/))) {
-        invalid = 1
-      }
-      if ($2 == 0) lane_zero++
-      if ($2 == 1) lane_one++
-    }
-    END {
-      for (row_index = 0; row_index < expected; ++row_index) {
-        if (!(row_index in seen)) invalid = 1
-      }
-      printf "%d %d %d %d\\n", records, lane_zero, lane_one, invalid
-    }
-    ' "$native_payment_lanes_manifest_file"
+    native_payment_lanes_manifest_summary "$native_payment_lanes_manifest_file" "$manifest_sources"
   )
   lane_difference=$((lane_zero_records - lane_one_records))
   if (( lane_difference < 0 )); then

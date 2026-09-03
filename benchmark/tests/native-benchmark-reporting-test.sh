@@ -21,6 +21,7 @@ command -v jq >/dev/null 2>&1 || {
 "$wrapper" --self-test-actor-stats-container-state
 "$wrapper" --self-test-actor-stats-sleep
 "$wrapper" --self-test-ext-messages-broadcast
+"$wrapper" --self-test-native-payment-lanes-manifest
 
 jq -n -e -L "$jq_dir" '
   include "native-benchmark-lib";
