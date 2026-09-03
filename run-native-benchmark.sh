@@ -327,6 +327,34 @@ actor_stats_sleep_seconds_self_test() {
   [[ $(actor_stats_sleep_seconds 2500 1000) == 0.010 ]]
 }
 
+# Strict reuse is a non-destructive contract, not merely a stricter form of
+# configuration comparison.  In particular, it must not turn a missing or
+# unhealthy container (or an inherited force-recreate request) into a fresh
+# genesis creation.
+strict_genesis_reuse_preflight() {
+  local health=$1 recreate=$2 strict=$3
+  [[ $strict == 1 ]] || return 0
+  if [[ $recreate == 1 ]]; then
+    echo "strict genesis reuse cannot be combined with BENCHMARK_RECREATE_GENESIS=1" >&2
+    return 2
+  fi
+  if [[ $health != "true healthy" ]]; then
+    echo "strict genesis reuse requires an already-running healthy genesis container" >&2
+    return 2
+  fi
+}
+
+strict_genesis_reuse_self_test() {
+  strict_genesis_reuse_preflight "true healthy" 0 1
+  strict_genesis_reuse_preflight "false unhealthy" 0 0
+  if strict_genesis_reuse_preflight "true healthy" 1 1 >/dev/null 2>&1; then
+    return 1
+  fi
+  if strict_genesis_reuse_preflight "false unhealthy" 0 1 >/dev/null 2>&1; then
+    return 1
+  fi
+}
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 benchmark_jq_dir=$script_dir/benchmark/jq
 
@@ -339,6 +367,10 @@ case "${1:-}" in
     ;;
   --self-test-actor-stats-sleep)
     actor_stats_sleep_seconds_self_test
+    exit 0
+    ;;
+  --self-test-strict-genesis-reuse)
+    strict_genesis_reuse_self_test
     exit 0
     ;;
   --self-test-ext-messages-broadcast)
@@ -1606,6 +1638,7 @@ genesis_health=$(docker inspect -f \
   genesis 2>/dev/null || true)
 recreate_genesis=${BENCHMARK_RECREATE_GENESIS:-0}
 strict_genesis_reuse=${BENCHMARK_STRICT_GENESIS_REUSE:-0}
+strict_genesis_reuse_preflight "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"
 genesis_matches=false
 if [[ $genesis_health == "true healthy" && $recreate_genesis != 1 ]]; then
   desired_genesis_hash=$("${compose[@]}" config --hash genesis | awk '$1 == "genesis" {print $2}')

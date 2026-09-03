@@ -349,13 +349,13 @@ should scale the CPU sets and quotas explicitly after checking NUMA and sibling
 topology.
 
 Require one valid, fully drained result with no candidate deadline failures at
-each step before increasing offered load. Keep the checked-in 4k baseline for
-the first command above, then run the same profile with shell overrides:
+each step before increasing offered load. After the fresh checked-in 4k
+baseline, use the strict payment-lane ladder. It verifies that the active
+genesis matches an accepted 4k bundle by both public manifest and durable
+genesis-marker hashes, then changes only the target TPS:
 
 ```bash
-sudo env NATIVE_LOAD_TARGET_TPS=6000 ./run-native-benchmark.sh .env.physical
-sudo env NATIVE_LOAD_TARGET_TPS=10000 ./run-native-benchmark.sh .env.physical
-sudo env NATIVE_LOAD_TARGET_TPS=15000 ./run-native-benchmark.sh .env.physical
+sudo ./benchmark/run-native-payment-lanes-staircase.sh .env.physical
 ```
 
 Stop the staircase at the first invalid run or when canonical backpressure,

@@ -85,7 +85,10 @@ grep -Fq 'native-payment-lane-wallets.sh' "$repo_dir/Dockerfile"
 grep -Fq 'payment-lanes.sh' "$repo_dir/native-load-generator/Dockerfile"
 grep -Fq 'native-payment-lanes-profile.sh' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
 grep -Fq 'BENCHMARK_STRICT_GENESIS_REUSE=1' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+grep -Fq 'BENCHMARK_RECREATE_GENESIS=0' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+grep -Fq 'require_matching_accepted_baseline' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'chain_capacity_valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+grep -Fq 'strict_genesis_reuse_preflight' "$repo_dir/run-native-benchmark.sh"
 
 profile_environment=$(native_payment_lanes_profile_env env)
 grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=1' <<< "$profile_environment"
@@ -100,5 +103,6 @@ bash -n "$repo_dir/docker/scripts/native-payment-lane-wallets.sh"
 bash -n "$repo_dir/benchmark/native-payment-lanes-profile.sh"
 bash -n "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
 bash -n "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+"$repo_dir/run-native-benchmark.sh" --self-test-strict-genesis-reuse
 sh -n "$repo_dir/native-load-generator/entrypoint.sh"
 sh -n "$repo_dir/native-load-generator/payment-lanes.sh"
