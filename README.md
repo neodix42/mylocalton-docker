@@ -128,9 +128,13 @@ sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical
 ```
 
 The physical profile's randomized key generation normally creates 49,152
-wallets; lane placement rejection-samples each account-id prefix, so the
-helper gives genesis a 60-minute health start period. This bootstrap time is
-outside the proof-checked generator measurement window.
+wallets; lane placement rejection-samples each account-id prefix. Its guarded
+helper uses 12 bounded provisioning workers (the safe default is
+`NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=1`), then serializes the public
+manifest and base-state input only after every pair succeeds. Manifest
+validation is a single pass over the requested range. The helper retains a
+60-minute genesis health start period; this bootstrap time is outside the
+proof-checked generator measurement window.
 
 The profile is intentionally depth-1 only. It measures independent local
 lanes, not cross-lane receipts: cross-lane debit/proof/credit/refund semantics

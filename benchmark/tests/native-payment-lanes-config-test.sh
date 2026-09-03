@@ -59,6 +59,7 @@ for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
   grep -qx 'NATIVE_PAYMENT_LANES_CAPABILITY=2048' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANE_DEPTH=1' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANE_WALLET_RETRIES=128' "$repo_dir/$env_file"
+  grep -qx 'NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=1' "$repo_dir/$env_file"
   grep -qx 'NATIVE_LOAD_PAYMENT_LANE_DEPTH=0' "$repo_dir/$env_file"
 done
 
@@ -69,9 +70,11 @@ grep -Fq 'native payment lanes require ACTUAL_MIN_SPLIT, MIN_SPLIT, and MAX_SPLI
 grep -Fq 'native_payment_lanes_wait_for_shards' "$repo_dir/native-load-generator/entrypoint.sh"
 grep -Fq -- '--native-payment-lane-depth' "$repo_dir/native-load-generator/entrypoint.sh"
 grep -Fq 'native-payment-lanes-config.sh' "$repo_dir/Dockerfile"
+grep -Fq 'native-payment-lane-wallets.sh' "$repo_dir/Dockerfile"
 grep -Fq 'payment-lanes.sh' "$repo_dir/native-load-generator/Dockerfile"
 
 bash -n "$repo_dir/docker/scripts/start-genesis.sh"
 bash -n "$repo_dir/docker/scripts/native-payment-lanes-config.sh"
+bash -n "$repo_dir/docker/scripts/native-payment-lane-wallets.sh"
 sh -n "$repo_dir/native-load-generator/entrypoint.sh"
 sh -n "$repo_dir/native-load-generator/payment-lanes.sh"

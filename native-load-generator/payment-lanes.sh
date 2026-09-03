@@ -48,14 +48,18 @@ native_payment_lanes_validate_mode() {
 
 native_payment_lanes_address_hex() {
   local address_file=${1:?address file is required}
-  local address_hex
+  local address_hex address_is_hex
 
   test -r "$address_file" || {
     echo "native payment lane address is not readable: $address_file" >&2
     return 2
   }
   address_hex=$(od -An -v -N 32 -tx1 "$address_file" | tr -d '[:space:]')
-  if [ "${#address_hex}" -ne 64 ] || printf '%s' "$address_hex" | grep -Eq '[^0-9A-Fa-f]'; then
+  case "$address_hex" in
+    *[!0-9A-Fa-f]*|'') address_is_hex=0 ;;
+    *) address_is_hex=1 ;;
+  esac
+  if [ "${#address_hex}" -ne 64 ] || [ "$address_is_hex" -ne 1 ]; then
     echo "native payment lane address must contain a 256-bit account id: $address_file" >&2
     return 2
   fi
@@ -78,24 +82,11 @@ native_payment_lanes_address_lane() {
   esac
 }
 
-native_payment_lanes_manifest_row() {
-  local manifest=$1 row_index=$2
-  awk -v row_index="$row_index" '
-    /^[[:space:]]*#/ || NF == 0 { next }
-    $1 == row_index {
-      if (NF != 4) exit 2
-      print
-      matches++
-    }
-    END { exit(matches == 1 ? 0 : 1) }
-  ' "$manifest"
-}
-
 native_payment_lanes_validate_manifest() {
   local manifest=$1 wallet_dir=$2 source_offset=$3 sources=$4 depth=$5
-  local schema manifest_depth lane_count manifest_sources extra end index row
+  local schema manifest_depth lane_count manifest_sources extra end
   local manifest_index lane source_hex destination_hex actual_source_hex actual_destination_hex
-  local source_lane destination_lane expected_lane
+  local source_lane destination_lane expected_lane rows_file rows_status row_count=0
 
   if [ "$depth" != 1 ]; then
     echo "the native payment lane benchmark manifest supports only depth 1, got '$depth'" >&2
@@ -125,47 +116,109 @@ native_payment_lanes_validate_manifest() {
     return 2
   fi
 
-  index=$source_offset
-  while [ "$index" -lt "$end" ]; do
-    row=$(native_payment_lanes_manifest_row "$manifest" "$index") || {
-      echo "native payment lane manifest must contain exactly one row for source $index" >&2
-      return 2
+  # Extract the requested range in one pass.  The former implementation
+  # spawned an awk scan for every source, turning a 24k-source benchmark into
+  # roughly 600 million manifest-row inspections before traffic could start.
+  rows_file=$(mktemp "${TMPDIR:-/tmp}/native-payment-lane-manifest.XXXXXX") || {
+    echo "can't create native payment lane manifest validation staging file" >&2
+    return 1
+  }
+  if awk -v start="$source_offset" -v end="$end" '
+    NR == 1 { next }
+    /^[[:space:]]*#/ || NF == 0 { next }
+    $1 ~ /^[0-9]+$/ && ($1 + 0) >= start && ($1 + 0) < end {
+      if (NF != 4 || seen[$1]++) {
+        invalid = 1
+      } else {
+        print
+      }
     }
-    IFS=' ' read -r manifest_index lane source_hex destination_hex extra <<EOF
-$row
-EOF
-    if [ "$manifest_index" != "$index" ] || { [ "$lane" != 0 ] && [ "$lane" != 1 ]; } ||
+    END {
+      if (invalid) exit 2
+      for (row_index = start; row_index < end; ++row_index) {
+        if (!(row_index in seen)) exit 1
+      }
+    }
+  ' "$manifest" > "$rows_file"; then
+    :
+  else
+    rows_status=$?
+    rm -f -- "$rows_file"
+    if [ "$rows_status" -eq 2 ]; then
+      echo "native payment lane manifest has a duplicate or malformed requested row: $manifest" >&2
+    else
+      echo "native payment lane manifest must contain exactly one row for every requested source" >&2
+    fi
+    return 2
+  fi
+
+  while IFS=' ' read -r manifest_index lane source_hex destination_hex extra; do
+    row_count=$((row_count + 1))
+    if [ "$manifest_index" -lt "$source_offset" ] || [ "$manifest_index" -ge "$end" ] ||
+       { [ "$lane" != 0 ] && [ "$lane" != 1 ]; } ||
        [ -z "${source_hex:-}" ] || [ -z "${destination_hex:-}" ] || [ -n "${extra:-}" ]; then
-      echo "native payment lane manifest row is invalid for source $index" >&2
+      rm -f -- "$rows_file"
+      echo "native payment lane manifest row is invalid for source $manifest_index" >&2
       return 2
     fi
-    expected_lane=$((index % 2))
+    expected_lane=$((manifest_index % 2))
     if [ "$lane" -ne "$expected_lane" ]; then
-      echo "native payment lane manifest is not balanced: source $index is lane $lane, expected $expected_lane" >&2
+      rm -f -- "$rows_file"
+      echo "native payment lane manifest is not balanced: source $manifest_index is lane $lane, expected $expected_lane" >&2
       return 2
     fi
-    actual_source_hex=$(native_payment_lanes_address_hex "$wallet_dir/source-$index.addr") || return
-    actual_destination_hex=$(native_payment_lanes_address_hex "$wallet_dir/dest-$index.addr") || return
+    actual_source_hex=$(native_payment_lanes_address_hex "$wallet_dir/source-$manifest_index.addr") || {
+      rm -f -- "$rows_file"
+      return 2
+    }
+    actual_destination_hex=$(native_payment_lanes_address_hex "$wallet_dir/dest-$manifest_index.addr") || {
+      rm -f -- "$rows_file"
+      return 2
+    }
     if [ "$source_hex" != "$actual_source_hex" ] || [ "$destination_hex" != "$actual_destination_hex" ]; then
-      echo "native payment lane manifest does not match wallet addresses for source $index" >&2
+      rm -f -- "$rows_file"
+      echo "native payment lane manifest does not match wallet addresses for source $manifest_index" >&2
       return 2
     fi
-    source_lane=$(native_payment_lanes_address_lane "$wallet_dir/source-$index.addr") || return
-    destination_lane=$(native_payment_lanes_address_lane "$wallet_dir/dest-$index.addr") || return
+    case "$actual_source_hex" in
+      [01234567]*) source_lane=0 ;;
+      [89aAbBcCdDeEfF]*) source_lane=1 ;;
+      *)
+        rm -f -- "$rows_file"
+        echo "cannot determine a native payment lane from source address: $wallet_dir/source-$manifest_index.addr" >&2
+        return 2
+        ;;
+    esac
+    case "$actual_destination_hex" in
+      [01234567]*) destination_lane=0 ;;
+      [89aAbBcCdDeEfF]*) destination_lane=1 ;;
+      *)
+        rm -f -- "$rows_file"
+        echo "cannot determine a native payment lane from destination address: $wallet_dir/dest-$manifest_index.addr" >&2
+        return 2
+        ;;
+    esac
     if [ "$source_lane" != "$lane" ] || [ "$destination_lane" != "$lane" ]; then
-      echo "native payment lane source/destination pair is not same-lane for source $index" >&2
+      rm -f -- "$rows_file"
+      echo "native payment lane source/destination pair is not same-lane for source $manifest_index" >&2
       return 2
     fi
-    test -r "$wallet_dir/source-$index.pk" || {
-      echo "native payment lane source key is not readable: $wallet_dir/source-$index.pk" >&2
+    test -r "$wallet_dir/source-$manifest_index.pk" || {
+      rm -f -- "$rows_file"
+      echo "native payment lane source key is not readable: $wallet_dir/source-$manifest_index.pk" >&2
       return 2
     }
-    test -r "$wallet_dir/dest-$index.pub" || {
-      echo "native payment lane destination public key is not readable: $wallet_dir/dest-$index.pub" >&2
+    test -r "$wallet_dir/dest-$manifest_index.pub" || {
+      rm -f -- "$rows_file"
+      echo "native payment lane destination public key is not readable: $wallet_dir/dest-$manifest_index.pub" >&2
       return 2
     }
-    index=$((index + 1))
-  done
+  done < "$rows_file"
+  rm -f -- "$rows_file"
+  if [ "$row_count" -ne "$sources" ]; then
+    echo "native payment lane manifest did not yield every requested source" >&2
+    return 2
+  fi
 }
 
 native_payment_lanes_shard_prefixes() {

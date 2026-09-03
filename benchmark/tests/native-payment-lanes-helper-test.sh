@@ -12,6 +12,22 @@ trap 'rm -rf -- "$test_dir"' EXIT HUP INT TERM
 wallet_dir=$test_dir/wallets
 mkdir -p "$wallet_dir" "$test_dir/bin"
 
+# Count validator awk invocations.  The full physical manifest is large, so
+# the validator must extract a requested range with one pass rather than scan
+# the complete file once for every source.
+real_awk=$(command -v awk)
+awk_counter=$test_dir/awk-counter
+printf '0\n' > "$awk_counter"
+cat > "$test_dir/bin/awk" <<'EOF'
+#!/bin/sh
+count=$(cat "$NATIVE_PAYMENT_LANE_AWK_COUNTER")
+printf '%s\n' "$((count + 1))" > "$NATIVE_PAYMENT_LANE_AWK_COUNTER"
+exec "$NATIVE_PAYMENT_LANE_REAL_AWK" "$@"
+EOF
+chmod +x "$test_dir/bin/awk"
+PATH="$test_dir/bin:$PATH"
+export PATH NATIVE_PAYMENT_LANE_AWK_COUNTER="$awk_counter" NATIVE_PAYMENT_LANE_REAL_AWK="$real_awk"
+
 write_address() {
   # First byte determines the depth-1 lane; retain a valid 32-byte account id
   # followed by the ignored four-byte workchain field.
@@ -44,7 +60,36 @@ native_payment_lanes_validate_mode 0 0 1 0
 ! native_payment_lanes_validate_mode 0 0 1 1 >/dev/null 2>&1
 native_payment_lanes_validate_mode 1 1 1 1
 ! native_payment_lanes_validate_mode 1 0 1 1 >/dev/null 2>&1
+printf '0\n' > "$awk_counter"
 native_payment_lanes_validate_manifest "$manifest" "$wallet_dir" 0 2 1
+[ "$(cat "$awk_counter")" -eq 1 ]
+
+# Validation accepts a manifest in any row order, but scans it only once and
+# still rejects a missing, duplicate, or malformed requested source row.
+printf '%s\n' \
+  'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2' \
+  "1 1 $source_1 $destination_1" \
+  "0 0 $source_0 $destination_0" > "$manifest"
+native_payment_lanes_validate_manifest "$manifest" "$wallet_dir" 0 2 1
+printf '%s\n' \
+  'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2' \
+  "0 0 $source_0 $destination_0" \
+  "0 0 $source_0 $destination_0" \
+  "1 1 $source_1 $destination_1" > "$manifest"
+! native_payment_lanes_validate_manifest "$manifest" "$wallet_dir" 0 2 1 >/dev/null 2>&1
+printf '%s\n' \
+  'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2' \
+  "0 0 $source_0 $destination_0" > "$manifest"
+! native_payment_lanes_validate_manifest "$manifest" "$wallet_dir" 0 2 1 >/dev/null 2>&1
+printf '%s\n' \
+  'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2' \
+  "0 0 $source_0 $destination_0 unexpected" \
+  "1 1 $source_1 $destination_1" > "$manifest"
+! native_payment_lanes_validate_manifest "$manifest" "$wallet_dir" 0 2 1 >/dev/null 2>&1
+printf '%s\n' \
+  'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2' \
+  "0 0 $source_0 $destination_0" \
+  "1 1 $source_1 $destination_1" > "$manifest"
 
 # A modified public address invalidates the manifest before any traffic is
 # offered, even when it happens to retain the same lane prefix.
