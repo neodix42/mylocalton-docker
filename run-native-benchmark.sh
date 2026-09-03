@@ -1640,6 +1640,15 @@ recreate_genesis=${BENCHMARK_RECREATE_GENESIS:-0}
 strict_genesis_reuse=${BENCHMARK_STRICT_GENESIS_REUSE:-0}
 strict_genesis_reuse_preflight "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"
 genesis_matches=false
+# Keep every comparison operand defined even if a Compose/Docker probe returns
+# no value. This is both clearer for the mismatch path and avoids an unbound
+# variable under `set -u` while handing a just-created healthy genesis from the
+# fresh-cycle wrapper to this runner.
+desired_genesis_hash=
+running_genesis_hash=
+desired_genesis_image=
+desired_genesis_image_id=
+running_genesis_image_id=
 if [[ $genesis_health == "true healthy" && $recreate_genesis != 1 ]]; then
   desired_genesis_hash=$("${compose[@]}" config --hash genesis | awk '$1 == "genesis" {print $2}')
   running_genesis_hash=$(docker inspect -f \

@@ -145,4 +145,5 @@ cd "$docker_repo"
 # The destructive operation above used a pinned Compose file/project. Do not
 # let inherited Compose selectors redirect the wrapper's subsequent build/run.
 unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
-exec env BENCHMARK_IMAGES_PREBUILT=1 ./run-native-benchmark.sh "$env_file"
+exec env BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_RECREATE_GENESIS=0 \
+  ./run-native-benchmark.sh "$env_file"
