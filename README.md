@@ -127,6 +127,15 @@ the benchmark project's allowlisted state and regenerates the zero state):
 sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical
 ```
 
+After one valid fresh 4k baseline, use the non-destructive ladder to test
+6k, 10k, then 15k without regenerating the 49,152 wallets. It reapplies the
+exact P6 profile, requires a matching healthy genesis, changes only
+`NATIVE_LOAD_TARGET_TPS`, and stops at the first invalid capacity rung:
+
+```bash
+sudo ./benchmark/run-native-payment-lanes-staircase.sh .env.physical
+```
+
 The physical profile's randomized key generation normally creates 49,152
 wallets; lane placement rejection-samples each account-id prefix. Its guarded
 helper uses 12 bounded provisioning workers (the safe default is

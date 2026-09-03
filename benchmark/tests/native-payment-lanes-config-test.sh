@@ -8,6 +8,8 @@ repo_dir=$(cd "$script_dir/../.." && pwd)
 source "$repo_dir/docker/scripts/native-transfer-runs-config.sh"
 # shellcheck source=../../docker/scripts/native-payment-lanes-config.sh
 source "$repo_dir/docker/scripts/native-payment-lanes-config.sh"
+# shellcheck source=../native-payment-lanes-profile.sh
+source "$repo_dir/benchmark/native-payment-lanes-profile.sh"
 
 assert_effective_config() {
   local expected_version=$1 expected_capabilities=$2
@@ -81,9 +83,22 @@ grep -Fq -- '--native-payment-lane-depth' "$repo_dir/native-load-generator/entry
 grep -Fq 'native-payment-lanes-config.sh' "$repo_dir/Dockerfile"
 grep -Fq 'native-payment-lane-wallets.sh' "$repo_dir/Dockerfile"
 grep -Fq 'payment-lanes.sh' "$repo_dir/native-load-generator/Dockerfile"
+grep -Fq 'native-payment-lanes-profile.sh' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
+grep -Fq 'BENCHMARK_STRICT_GENESIS_REUSE=1' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+grep -Fq 'chain_capacity_valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+
+profile_environment=$(native_payment_lanes_profile_env env)
+grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=1' <<< "$profile_environment"
+grep -qx 'NATIVE_PAYMENT_LANE_DEPTH=1' <<< "$profile_environment"
+grep -qx 'NATIVE_TRANSFER_RUNS_ENABLED=1' <<< "$profile_environment"
+grep -qx 'ACTUAL_MIN_SPLIT=1' <<< "$profile_environment"
+grep -qx 'MAX_SPLIT=1' <<< "$profile_environment"
 
 bash -n "$repo_dir/docker/scripts/start-genesis.sh"
 bash -n "$repo_dir/docker/scripts/native-payment-lanes-config.sh"
 bash -n "$repo_dir/docker/scripts/native-payment-lane-wallets.sh"
+bash -n "$repo_dir/benchmark/native-payment-lanes-profile.sh"
+bash -n "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
+bash -n "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 sh -n "$repo_dir/native-load-generator/entrypoint.sh"
 sh -n "$repo_dir/native-load-generator/payment-lanes.sh"
