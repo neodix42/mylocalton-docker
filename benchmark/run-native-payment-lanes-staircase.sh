@@ -10,13 +10,18 @@ shift || true
 source "$script_dir/native-payment-lanes-profile.sh"
 
 require_matching_accepted_baseline() {
-  local genesis_health manifest_sha genesis_env_sha summary matching_summary=
+  local genesis_health genesis_image_id manifest_sha genesis_env_sha summary matching_summary=
 
   genesis_health=$(docker inspect -f \
     '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
     genesis 2>/dev/null || true)
   if [[ $genesis_health != "true healthy" ]]; then
     echo "native payment-lane staircase requires the healthy genesis created by the fresh 4k cycle" >&2
+    return 2
+  fi
+  genesis_image_id=$(docker inspect -f '{{.Image}}' genesis 2>/dev/null || true)
+  if [[ -z $genesis_image_id ]]; then
+    echo "failed to identify the active native payment-lane genesis image" >&2
     return 2
   fi
   if ! manifest_sha=$(docker exec genesis sha256sum \
@@ -36,10 +41,12 @@ require_matching_accepted_baseline() {
   fi
 
   while IFS=' ' read -r _ summary; do
-    if jq -e --arg manifest_sha "$manifest_sha" --arg genesis_env_sha "$genesis_env_sha" '
+    if jq -e --arg manifest_sha "$manifest_sha" --arg genesis_env_sha "$genesis_env_sha" \
+        --arg genesis_image_id "$genesis_image_id" '
       .run.benchmark_exit_code == 0 and
       (.run.interrupted // false) == false and
       .generator.final.target_tps == 4000 and
+      ((.run.containers // [] | map(select(.name == "genesis") | .image_id)) == [$genesis_image_id]) and
       .native_payment_lanes.enabled == true and
       .native_payment_lanes.manifest.sha256 == $manifest_sha and
       .native_payment_lanes.genesis_env.sha256 == $genesis_env_sha and

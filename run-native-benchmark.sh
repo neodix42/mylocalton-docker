@@ -344,9 +344,40 @@ strict_genesis_reuse_preflight() {
   fi
 }
 
+strict_genesis_reuse_can_skip_genesis_build() {
+  local health=$1 recreate=$2 strict=$3
+  [[ $strict == 1 && $recreate != 1 && $health == "true healthy" ]]
+}
+
+strict_genesis_reuse_matches_active_genesis() {
+  local desired_hash=$1 running_hash=$2 running_image_id=$3 running_revision=$4 expected_revision=$5
+  [[ -n $desired_hash && $running_hash == "$desired_hash" &&
+     -n $running_image_id && $running_revision == "$expected_revision" ]]
+}
+
 strict_genesis_reuse_self_test() {
   strict_genesis_reuse_preflight "true healthy" 0 1
   strict_genesis_reuse_preflight "false unhealthy" 0 0
+  strict_genesis_reuse_can_skip_genesis_build "true healthy" 0 1
+  if strict_genesis_reuse_can_skip_genesis_build "true healthy" 0 0; then
+    return 1
+  fi
+  if strict_genesis_reuse_can_skip_genesis_build "false unhealthy" 0 1; then
+    return 1
+  fi
+  if strict_genesis_reuse_can_skip_genesis_build "true healthy" 1 1; then
+    return 1
+  fi
+  strict_genesis_reuse_matches_active_genesis expected expected sha256:active revision revision
+  if strict_genesis_reuse_matches_active_genesis expected changed sha256:active revision revision; then
+    return 1
+  fi
+  if strict_genesis_reuse_matches_active_genesis expected expected '' revision revision; then
+    return 1
+  fi
+  if strict_genesis_reuse_matches_active_genesis expected expected sha256:active other revision; then
+    return 1
+  fi
   if strict_genesis_reuse_preflight "true healthy" 1 1 >/dev/null 2>&1; then
     return 1
   fi
@@ -1629,6 +1660,13 @@ if [[ $images_prebuilt != 0 && $images_prebuilt != 1 ]]; then
   echo "BENCHMARK_IMAGES_PREBUILT must be 0 or 1" >&2
   exit 2
 fi
+genesis_health=$(docker inspect -f \
+  '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+  genesis 2>/dev/null || true)
+recreate_genesis=${BENCHMARK_RECREATE_GENESIS:-0}
+strict_genesis_reuse=${BENCHMARK_STRICT_GENESIS_REUSE:-0}
+strict_genesis_reuse_preflight "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"
+
 compose_build_args=(--build)
 if [[ $images_prebuilt == 1 ]]; then
   # The guarded fresh-cycle runner builds both derived images before deleting
@@ -1637,7 +1675,13 @@ if [[ $images_prebuilt == 1 ]]; then
   # when it creates the containers below.
   compose_build_args=()
   echo "Using derived images prebuilt by the guarded fresh-cycle runner"
-  for prebuilt_service in genesis "$container_name"; do
+  prebuilt_services=(genesis "$container_name")
+  if strict_genesis_reuse_can_skip_genesis_build "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"; then
+    # Strict reuse authenticates the live genesis below. Do not let a mutable
+    # local tag invalidate the known-good container before that check.
+    prebuilt_services=("$container_name")
+  fi
+  for prebuilt_service in "${prebuilt_services[@]}"; do
     prebuilt_image=$("${compose[@]}" --profile native-load-generator config --images "$prebuilt_service" | tail -n 1)
     prebuilt_revision=$(docker image inspect -f \
       '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
@@ -1647,17 +1691,17 @@ if [[ $images_prebuilt == 1 ]]; then
       exit 2
     fi
   done
+elif strict_genesis_reuse_can_skip_genesis_build "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"; then
+  # A strict reuse run must preserve the exact live genesis that the
+  # staircase proved with its accepted baseline. Building a derived image
+  # first can republish the mutable Compose tag with a different image ID,
+  # despite identical source/configuration, and would make that proof fail.
+  echo "Strict genesis reuse: preserving the active genesis image; skipping its build"
 else
   echo "Building the genesis image from local $ton_base_image before deciding reuse"
   "${compose[@]}" build genesis
 fi
 
-genesis_health=$(docker inspect -f \
-  '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
-  genesis 2>/dev/null || true)
-recreate_genesis=${BENCHMARK_RECREATE_GENESIS:-0}
-strict_genesis_reuse=${BENCHMARK_STRICT_GENESIS_REUSE:-0}
-strict_genesis_reuse_preflight "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"
 genesis_matches=false
 # Keep every comparison operand defined even if a Compose/Docker probe returns
 # no value. This is both clearer for the mismatch path and avoids an unbound
@@ -1668,23 +1712,39 @@ running_genesis_hash=
 desired_genesis_image=
 desired_genesis_image_id=
 running_genesis_image_id=
+running_genesis_revision=
 if [[ $genesis_health == "true healthy" && $recreate_genesis != 1 ]]; then
   desired_genesis_hash=$("${compose[@]}" config --hash genesis | awk '$1 == "genesis" {print $2}')
   running_genesis_hash=$(docker inspect -f \
     '{{index .Config.Labels "com.docker.compose.config-hash"}}' genesis 2>/dev/null || true)
-  desired_genesis_image=$("${compose[@]}" config --images genesis | tail -n 1)
-  desired_genesis_image_id=$(docker image inspect -f '{{.Id}}' "$desired_genesis_image" 2>/dev/null || true)
   running_genesis_image_id=$(docker inspect -f '{{.Image}}' genesis 2>/dev/null || true)
-  if [[ -n $desired_genesis_hash && $running_genesis_hash == "$desired_genesis_hash" &&
-        -n $desired_genesis_image_id && $running_genesis_image_id == "$desired_genesis_image_id" ]]; then
-    genesis_matches=true
-  elif [[ $strict_genesis_reuse == 1 ]]; then
-    echo "healthy genesis does not match $env_file or the current local image" >&2
-    echo "strict reuse is enabled; unset BENCHMARK_STRICT_GENESIS_REUSE to reconcile the container" >&2
-    exit 2
+  if [[ $strict_genesis_reuse == 1 ]]; then
+    # Inspect the container label rather than the mutable Compose tag. A
+    # previous non-destructive build can retag the latter and garbage-collect
+    # the live image from the local image index while the running container is
+    # still valid. The staircase separately pins this image ID to its 4k
+    # baseline; here we also require the active TON source revision.
+    running_genesis_revision=$(docker inspect -f \
+      '{{index .Config.Labels "org.opencontainers.image.revision"}}' genesis 2>/dev/null || true)
+    if strict_genesis_reuse_matches_active_genesis \
+        "$desired_genesis_hash" "$running_genesis_hash" "$running_genesis_image_id" \
+        "$running_genesis_revision" "$ton_base_revision"; then
+      genesis_matches=true
+    else
+      echo "healthy genesis does not match $env_file or TON revision $ton_base_revision" >&2
+      echo "strict reuse is enabled; unset BENCHMARK_STRICT_GENESIS_REUSE to reconcile the container" >&2
+      exit 2
+    fi
   else
-    echo "Healthy genesis does not match $env_file or the current local image." >&2
-    echo "Recreating the container with matching runtime configuration; named/bind volumes are preserved." >&2
+    desired_genesis_image=$("${compose[@]}" config --images genesis | tail -n 1)
+    desired_genesis_image_id=$(docker image inspect -f '{{.Id}}' "$desired_genesis_image" 2>/dev/null || true)
+    if [[ -n $desired_genesis_hash && $running_genesis_hash == "$desired_genesis_hash" &&
+          -n $desired_genesis_image_id && $running_genesis_image_id == "$desired_genesis_image_id" ]]; then
+      genesis_matches=true
+    else
+      echo "Healthy genesis does not match $env_file or the current local image." >&2
+      echo "Recreating the container with matching runtime configuration; named/bind volumes are preserved." >&2
+    fi
   fi
 fi
 

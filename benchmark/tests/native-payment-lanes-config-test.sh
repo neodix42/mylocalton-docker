@@ -87,8 +87,10 @@ grep -Fq 'native-payment-lanes-profile.sh' "$repo_dir/benchmark/run-native-payme
 grep -Fq 'BENCHMARK_STRICT_GENESIS_REUSE=1' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'BENCHMARK_RECREATE_GENESIS=0' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'require_matching_accepted_baseline' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+grep -Fq 'genesis_image_id' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'chain_capacity_valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'strict_genesis_reuse_preflight' "$repo_dir/run-native-benchmark.sh"
+grep -Fq 'strict_genesis_reuse_can_skip_genesis_build' "$repo_dir/run-native-benchmark.sh"
 grep -Fq 'desired_genesis_hash=' "$repo_dir/run-native-benchmark.sh"
 grep -Fq 'BENCHMARK_RECREATE_GENESIS=0' "$repo_dir/benchmark/run-fresh-native-cycle.sh"
 
