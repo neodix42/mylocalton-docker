@@ -273,6 +273,12 @@ independent 10 ms refill boundary, retained checkpoints keep their fixed 25 ms
 latency deadline, and candidate intake/finalization deadlines remain
 authoritative. Enable it only for a controlled A/B because denser blocks trade
 up to 10 ms of last-work publication latency for lower fixed per-block cost.
+The September 2026 exact-image canaries showed a repeatable short-window gain,
+but the paired 300-second run was non-promotable: canonical throughput was flat
+(35,221.8 versus 35,231.8 tx/s), proof-cohort throughput was slightly lower,
+and maximum collation latency exceeded the predeclared two-second bound. The
+physical profile therefore keeps this experiment at `0`; it must earn a new
+sustained A/B result before being enabled by default.
 
 Checkpoint-coalescing treatments are reported under
 `validator-pipeline-summary.json` at
