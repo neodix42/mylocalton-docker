@@ -62,11 +62,29 @@ printf '%s\n' \
   "0 0 $source_0 $destination_0" \
   "1 1 $source_1 $destination_1" > "$manifest"
 
+# Disabled mode keeps the historical inert genesis-depth default, but a load
+# depth is never allowed to activate lanes behind the protocol gate.
+native_payment_lanes_validate_mode 0 0 0 0
 native_payment_lanes_validate_mode 0 0 1 0
 ! native_payment_lanes_validate_mode 0 0 1 1 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 0 0 2 2 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 0 0 3 3 >/dev/null 2>&1
+
 native_payment_lanes_validate_mode 1 1 1 1
+native_payment_lanes_validate_mode 1 1 2 2
 ! native_payment_lanes_validate_mode 1 0 1 1 >/dev/null 2>&1
-! native_payment_lanes_validate_mode 1 1 2 2 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 1 0 2 2 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 1 1 0 0 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 1 1 3 3 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 1 1 1 2 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 1 1 2 1 >/dev/null 2>&1
+! native_payment_lanes_validate_mode 1 1 01 1 >/dev/null 2>&1
+! native_payment_lanes_validate_mode enabled 1 1 1 >/dev/null 2>&1
+
+grep -Fq 'native_payment_lane_active_depth=$native_load_payment_lane_depth' \
+  "$repo_dir/native-load-generator/entrypoint.sh"
+grep -Fq -- '--native-payment-lane-depth "$native_payment_lane_active_depth"' \
+  "$repo_dir/native-load-generator/entrypoint.sh"
 printf '0\n' > "$awk_counter"
 native_payment_lanes_validate_manifest "$manifest" "$wallet_dir" 0 2 1
 [ "$(cat "$awk_counter")" -eq 1 ]

@@ -1157,7 +1157,7 @@ capture_native_payment_lanes_provenance() {
   # useful supplemental diagnostics when they remain available.
   docker logs genesis 2>&1 |
     awk '
-      /^(ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|NATIVE_TRANSFER_RUNS_ENABLED|NATIVE_PAYMENT_LANES_ENABLED|NATIVE_PROTOCOL_CAPABILITIES|VERSION_CAPABILITIES)=/ ||
+      /^(ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|NATIVE_TRANSFER_RUNS_ENABLED|NATIVE_PAYMENT_LANES_ENABLED|NATIVE_PAYMENT_LANE_DEPTH|NATIVE_PAYMENT_LANE_COUNT|NATIVE_PROTOCOL_CAPABILITIES|VERSION_CAPABILITIES)=/ ||
       /Native payment lane manifest written/ || /Native basechain preparation started/ ||
       /Native payment-lane wallet key generation uses/ { print }
     ' >"$native_payment_lanes_activation_file" || :

@@ -92,6 +92,7 @@ esac
 native_payment_lanes_validate_mode \
   "$native_payment_lanes" "$native_transfer_runs_enabled" \
   "$native_payment_lane_depth" "$native_load_payment_lane_depth" || exit $?
+native_payment_lane_active_depth=$native_load_payment_lane_depth
 
 set -- /usr/local/bin/native-load-generator \
   --global-config "$config" \
@@ -163,12 +164,12 @@ if [ "$native_payment_lanes" = 1 ]; then
   fi
   native_payment_lanes_validate_manifest \
     "$native_payment_lane_manifest" "$wallet_dir" "$source_offset" "$sources" \
-    "$native_load_payment_lane_depth" || exit $?
+    "$native_payment_lane_active_depth" || exit $?
   native_payment_lanes_wait_for_shards \
     "$config" "$native_payment_lane_ready_timeout" "$native_payment_lane_ready_poll" \
     "$native_payment_lane_ready_stable_observations" \
-    "$native_load_payment_lane_depth" || exit $?
-  set -- "$@" --native-payment-lane-depth "$native_load_payment_lane_depth"
+    "$native_payment_lane_active_depth" || exit $?
+  set -- "$@" --native-payment-lane-depth "$native_payment_lane_active_depth"
 fi
 
 case "$adaptive_inflight" in

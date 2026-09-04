@@ -32,10 +32,6 @@ native_payment_lanes_lane_count() {
 native_payment_lanes_validate_mode() {
   local enabled=$1 native_runs_enabled=$2 lane_depth=$3 load_lane_depth=$4
 
-  native_payment_lanes_is_uint "$load_lane_depth" || {
-    echo "NATIVE_LOAD_PAYMENT_LANE_DEPTH must be a non-negative integer, got '$load_lane_depth'" >&2
-    return 2
-  }
   case "$enabled" in
     0)
       if [ "$load_lane_depth" != 0 ]; then
@@ -48,8 +44,16 @@ native_payment_lanes_validate_mode() {
         echo "NATIVE_PAYMENT_LANES_ENABLED=1 requires NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1" >&2
         return 2
       fi
-      if [ "$lane_depth" != 1 ] || [ "$load_lane_depth" != 1 ]; then
-        echo "the supported native payment lane benchmark requires NATIVE_PAYMENT_LANE_DEPTH=1 and NATIVE_LOAD_PAYMENT_LANE_DEPTH=1" >&2
+      if ! native_payment_lanes_depth_is_valid "$lane_depth"; then
+        echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2, got '$lane_depth'" >&2
+        return 2
+      fi
+      if ! native_payment_lanes_depth_is_valid "$load_lane_depth"; then
+        echo "NATIVE_LOAD_PAYMENT_LANE_DEPTH must be 1 or 2, got '$load_lane_depth'" >&2
+        return 2
+      fi
+      if [ "$lane_depth" != "$load_lane_depth" ]; then
+        echo "NATIVE_PAYMENT_LANE_DEPTH=$lane_depth does not match NATIVE_LOAD_PAYMENT_LANE_DEPTH=$load_lane_depth" >&2
         return 2
       fi
       ;;

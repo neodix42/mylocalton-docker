@@ -243,8 +243,8 @@ generate_basechain_state() {
     exit 2
   fi
   if [ "$native_payment_lanes" = "1" ]; then
-    if [ "$native_payment_lane_depth" != "1" ]; then
-      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 for the supported two-lane benchmark topology, got '$native_payment_lane_depth'"
+    if ! native_payment_lane_depth_is_valid "$native_payment_lane_depth"; then
+      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2 for the supported fixed-lane benchmark topologies, got '$native_payment_lane_depth'"
       exit 2
     fi
     if [ "$genesis_destinations" != "1" ]; then
@@ -260,6 +260,10 @@ generate_basechain_state() {
       exit 2
     fi
     native_payment_lane_count=$((1 << native_payment_lane_depth))
+    if [ "$genesis_sources" -lt "$native_payment_lane_count" ]; then
+      echo "native payment lanes at depth $native_payment_lane_depth require at least $native_payment_lane_count genesis sources, got '$genesis_sources'"
+      exit 2
+    fi
     native_payment_lane_manifest="$wallet_dir/native-payment-lanes.manifest"
   fi
 
@@ -494,9 +498,21 @@ if [ -f "/var/ton-work/db/state/IDENTITY" ]; then
     exit 2
   fi
   if [ "$existing_native_payment_lanes" = "1" ]; then
-    if ! grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=1' "$existing_native_payment_lane_marker" 2>/dev/null ||
-       ! grep -qx "NATIVE_PAYMENT_LANE_DEPTH=$existing_native_payment_lane_depth" "$existing_native_payment_lane_marker" 2>/dev/null; then
-      echo "native payment lanes require a fresh zero state with the matching fixed split topology; run benchmark/run-fresh-native-cycle.sh" >&2
+    if ! native_payment_lane_depth_is_valid "$existing_native_payment_lane_depth"; then
+      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2 for an existing fixed-lane state, got '$existing_native_payment_lane_depth'" >&2
+      exit 2
+    fi
+    if ! native_payment_lanes_existing_genesis_marker_is_valid \
+         "$existing_native_payment_lane_marker" "$existing_native_payment_lane_depth" ||
+       [ "${NATIVE_TRANSFER_RUNS_ENABLED:-0}" != 1 ] ||
+       [ "${NATIVE_TRANSFER_RUNS_GLOBAL_VERSION:-15}" != 15 ] ||
+       [ "${NATIVE_TRANSFER_RUNS_CAPABILITY:-1024}" != 1024 ] ||
+       [ "${NATIVE_PAYMENT_LANES_GLOBAL_VERSION:-16}" != 16 ] ||
+       [ "${NATIVE_PAYMENT_LANES_CAPABILITY:-2048}" != 2048 ] ||
+       [ "${ACTUAL_MIN_SPLIT:-}" != "$existing_native_payment_lane_depth" ] ||
+       [ "${MIN_SPLIT:-}" != "$existing_native_payment_lane_depth" ] ||
+       [ "${MAX_SPLIT:-}" != "$existing_native_payment_lane_depth" ]; then
+      echo "native payment lanes require a fresh zero state with the matching fixed split topology; run benchmark/run-native-payment-lanes-cycle.sh" >&2
       exit 2
     fi
   elif grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=1' "$existing_native_payment_lane_marker" 2>/dev/null; then
@@ -687,6 +703,10 @@ else
   NATIVE_PROTOCOL_CAPABILITIES=$NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES
   echo NATIVE_TRANSFER_RUNS_ENABLED=${NATIVE_TRANSFER_RUNS_ENABLED:-0}
   echo NATIVE_PAYMENT_LANES_ENABLED=${NATIVE_PAYMENT_LANES_ENABLED:-0}
+  if [ "${NATIVE_PAYMENT_LANES_ENABLED:-0}" = 1 ]; then
+    echo NATIVE_PAYMENT_LANE_DEPTH=${NATIVE_PAYMENT_LANE_DEPTH:-1}
+    echo NATIVE_PAYMENT_LANE_COUNT=${NATIVE_PAYMENT_LANE_COUNT:-}
+  fi
   echo NATIVE_PROTOCOL_CAPABILITIES=$NATIVE_PROTOCOL_CAPABILITIES
   echo VERSION_CAPABILITIES=$VERSION_CAPABILITIES
   sed -i "s/VERSION_CAPABILITIES/$VERSION_CAPABILITIES/g" gen-zerostate.fif

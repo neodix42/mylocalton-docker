@@ -108,36 +108,48 @@ The generator reads `/usr/share/data/global.config.json` from the shared config 
 
 `NATIVE_TRANSFER_RUNS_ENABLED=0` and `NATIVE_LOAD_NATIVE_TRANSFER_RUNS=0` preserve the v14 scalar-transfer protocol. Source-signed v5 runs must be enabled only on a fresh genesis: setting `NATIVE_TRANSFER_RUNS_ENABLED=1` writes GlobalVersion `15` and adds exactly `capNativeTransferRuns=1024` to the separate capability field; set `NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1` only with matching v5-capable validator and generator images. `NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE` is passed only in that mode and is limited by the generator to 1..16. Never enable it on an existing v14 database or mix v14/v5 binaries.
 
-#### Phase-A native payment lanes (two fixed shards)
+#### Phase-A native payment lanes (two or four fixed shards)
 
 The opt-in Phase-A profile keeps every source/destination pair inside one
-deterministic depth-1 lane. It enables v5 source-signed runs plus GlobalVersion
-`16`, `capNativeTransferRuns=1024`, and `capNativePaymentLanes=2048`; the
-resulting capability word is `3072`. It fixes `ACTUAL_MIN_SPLIT`, `MIN_SPLIT`,
-and `MAX_SPLIT` to `1`, assigns source index parity across the two account-id
-prefixes, rejection-samples matching destination addresses, and writes a
-public-address manifest alongside the read-only load wallets. The generator
-checks that manifest and waits for two consecutive masterchain-anchored views
-of exactly the `0x4000…` and `0xC000…` basechain leaves before it offers load.
+deterministic fixed-depth lane. It enables v5 source-signed runs plus
+GlobalVersion `16`, `capNativeTransferRuns=1024`, and
+`capNativePaymentLanes=2048`; the
+resulting capability word is `3072`. Depth 1 remains the default; depth 2 is
+selected explicitly with `--depth 2`. The profile fixes `ACTUAL_MIN_SPLIT`,
+`MIN_SPLIT`, and `MAX_SPLIT` to the selected depth, assigns source index modulo
+`2^depth` across the account-id prefixes, rejection-samples matching addresses,
+and writes a public-address manifest alongside the read-only load wallets. The
+generator checks that manifest and waits for two consecutive masterchain-anchored views
+of the exact leaf set before it offers load: `0x4000…`/`0xC000…` at depth 1,
+or `0x2000…`/`0x6000…`/`0xA000…`/`0xE000…` at depth 2.
 
 Run it only through the guarded fresh-cycle helper (it deliberately deletes
 the benchmark project's allowlisted state and regenerates the zero state):
 
 ```bash
 sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical
+
+# Four fixed leaves; this always creates a fresh depth-2 zero state.
+sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical --depth 2
 ```
 
-After one valid fresh 4k baseline, use the non-destructive ladder to test
-6k, 10k, then 15k without regenerating the 49,152 wallets. It reapplies the
-exact P6 profile, requires a matching healthy genesis, changes only
-`NATIVE_LOAD_TARGET_TPS`, and stops at the first invalid capacity rung:
+After one valid fresh 4k baseline, use the non-destructive ladder without
+regenerating the wallets. Depth 1 retains its historical 6k/10k/15k defaults;
+depth 2 defaults to 30k/32k/34k. It reapplies the exact fixed-depth profile,
+requires a matching healthy genesis, changes only `NATIVE_LOAD_TARGET_TPS`,
+and stops at the first invalid capacity rung:
 
 ```bash
 sudo ./benchmark/run-native-payment-lanes-staircase.sh .env.physical
+
+# Reuse only an accepted depth-2 baseline and matching active genesis.
+sudo ./benchmark/run-native-payment-lanes-staircase.sh .env.physical --depth 2
 ```
 
 The physical profile's randomized key generation normally creates 49,152
-wallets; lane placement rejection-samples each account-id prefix. Its guarded
+wallets (24,576 source/destination pairs); lane placement rejection-samples
+each account-id prefix. A comparable four-lane capacity study can explicitly
+raise this to 49,152 sources so each leaf retains 12,288 sources. The guarded
 helper uses 12 bounded provisioning workers (the safe default is
 `NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=1`), then serializes the public
 manifest and base-state input only after every pair succeeds. Manifest
@@ -145,18 +157,25 @@ validation is a single pass over the requested range. The helper retains a
 60-minute genesis health start period; this bootstrap time is outside the
 proof-checked generator measurement window.
 
+```bash
+sudo env NATIVE_LOAD_SOURCES=49152 \
+  ./benchmark/run-native-payment-lanes-cycle.sh .env.physical --depth 2
+```
+
 For a lane-enabled run, the result bundle also retains
 `native-payment-lanes-provenance.json`, the public manifest and its hash, the
 genesis environment, and selected activation lines. The wrapper fails before
 load if the durable genesis marker does not prove the
-v16/capability-3072/fixed-depth-1 setup; retained startup lines are
-supplemental. No private wallet keys are copied into the bundle.
+v16/capability-3072 setup, the selected fixed depth, its `2^depth` lane count,
+and matching split values; retained startup lines are supplemental. No private
+wallet keys are copied into the bundle.
 
-The profile is intentionally depth-1 only. It measures independent local
+The profile supports only fixed depths 1 and 2. It measures independent local
 lanes, not cross-lane receipts: cross-lane debit/proof/credit/refund semantics
-remain a later protocol phase. Do not reuse a payment-lane database with the
-default scalar profile, or a default database with this profile; genesis fails
-closed if its recorded mode does not match.
+remain a later protocol phase. A depth change requires a fresh zero state. Do
+not reuse a payment-lane database with the default scalar profile, or a default
+database with this profile; genesis fails closed if its recorded mode does not
+match.
 
 The generator issues one fair, bounded contiguous nonce burst per source turn and
 waits `NATIVE_LOAD_SUBMIT_COALESCE_MS` (2 ms by default) for signer completions

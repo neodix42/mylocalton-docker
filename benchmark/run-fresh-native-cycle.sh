@@ -4,7 +4,28 @@ set -Eeuo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 docker_repo=$(cd "$script_dir/.." && pwd)
 ton_repo=${TON_SOURCE_REPO:-/home/neodix/gitProjects/corton-nommander-ton-sidechain}
-env_file=${1:-.env.physical}
+
+if (( $# > 2 )); then
+  echo "usage: run-fresh-native-cycle.sh [ENV_FILE] [RESULT_DIR]" >&2
+  exit 2
+fi
+if (( $# == 0 )); then
+  env_file=.env.physical
+else
+  env_file=$1
+  if [[ -z $env_file ]]; then
+    echo "environment file must not be empty" >&2
+    exit 2
+  fi
+fi
+result_dir=
+if (( $# == 2 )); then
+  result_dir=$2
+  if [[ -z $result_dir ]]; then
+    echo "result directory must not be empty when supplied" >&2
+    exit 2
+  fi
+fi
 
 if [[ $env_file != /* ]]; then
   env_file=$docker_repo/$env_file
@@ -19,6 +40,19 @@ done
 
 test -r "$env_file" || { echo "environment file is not readable: $env_file" >&2; exit 2; }
 test -d "$ton_repo/.git" || { echo "TON source repository is missing: $ton_repo" >&2; exit 2; }
+if [[ -n $result_dir ]]; then
+  if [[ -e $result_dir && ! -d $result_dir ]]; then
+    echo "result path exists and is not a directory: $result_dir" >&2
+    exit 2
+  fi
+  mkdir -p "$result_dir"
+  result_dir=$(cd "$result_dir" && pwd)
+  if [[ -n $(find "$result_dir" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
+    echo "result directory must be empty before a destructive fresh cycle: $result_dir" >&2
+    exit 2
+  fi
+  test -w "$result_dir" || { echo "result directory is not writable: $result_dir" >&2; exit 2; }
+fi
 
 compose_file=$docker_repo/docker-compose.yaml
 project_name=mylocalton-desktop
@@ -145,5 +179,9 @@ cd "$docker_repo"
 # The destructive operation above used a pinned Compose file/project. Do not
 # let inherited Compose selectors redirect the wrapper's subsequent build/run.
 unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
+benchmark_args=("$env_file")
+if [[ -n $result_dir ]]; then
+  benchmark_args+=("$result_dir")
+fi
 exec env BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_RECREATE_GENESIS=0 \
-  ./run-native-benchmark.sh "$env_file"
+  ./run-native-benchmark.sh "${benchmark_args[@]}"

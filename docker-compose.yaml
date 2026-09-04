@@ -53,7 +53,7 @@ services:
       - NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=${NATIVE_TRANSFER_RUNS_GLOBAL_VERSION:-15}
       - NATIVE_TRANSFER_RUNS_CAPABILITY=${NATIVE_TRANSFER_RUNS_CAPABILITY:-1024}
       # Opt-in Phase-A native payment lanes. This is valid only on a fresh
-      # chain with the fixed two-lane split topology validated at genesis.
+      # chain with a fixed depth-1 or depth-2 split topology validated at genesis.
       - NATIVE_PAYMENT_LANES_ENABLED=${NATIVE_PAYMENT_LANES_ENABLED:-0}
       - NATIVE_PAYMENT_LANES_GLOBAL_VERSION=${NATIVE_PAYMENT_LANES_GLOBAL_VERSION:-16}
       - NATIVE_PAYMENT_LANES_CAPABILITY=${NATIVE_PAYMENT_LANES_CAPABILITY:-2048}
@@ -210,7 +210,7 @@ services:
       # this off unless explicitly requested, so v14 workloads are unchanged.
       - NATIVE_LOAD_NATIVE_TRANSFER_RUNS=${NATIVE_LOAD_NATIVE_TRANSFER_RUNS:-0}
       - NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=${NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE:-16}
-      # The lane profile validates its manifest and waits for the two
+      # The lane profile validates its manifest and waits for the exact 2^depth
       # masterchain-anchored basechain leaves before generating traffic.
       - NATIVE_PAYMENT_LANES_ENABLED=${NATIVE_PAYMENT_LANES_ENABLED:-0}
       - NATIVE_PAYMENT_LANE_DEPTH=${NATIVE_PAYMENT_LANE_DEPTH:-1}
