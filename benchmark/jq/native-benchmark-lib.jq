@@ -9,6 +9,9 @@ def field_or_null($object; $field):
   else $object[$field]
   end;
 
+def nonnegative_integer:
+  type == "number" and . >= 0 and floor == .;
+
 # Session Stats writes some native fast-path counters as boolean text. These
 # are counters: true is one occurrence and false is zero.
 def stat_counter_value:
@@ -1163,11 +1166,316 @@ def canonical_lane_balance_acceptance($final):
     end
   end;
 
+# Validate the generator's finalized signed-run geometry independently from its
+# own acceptance booleans.  Ordinary traffic must keep a fixed effective
+# quantum; only a freshly created drain-repair suffix or the uint64 terminal
+# cursor may be shorter.  The latter is protocol-valid but is never part of the
+# fixed-quantum physical benchmark profile.
+def native_signed_run_quantum_acceptance($final; $expected_enabled; $expected_target):
+  [
+    "native_signed_run_normal_messages",
+    "native_signed_run_normal_logical_transfers",
+    "native_signed_run_normal_quantum_violations",
+    "native_signed_run_repair_messages",
+    "native_signed_run_repair_logical_transfers",
+    "native_signed_run_repair_tail_messages",
+    "native_signed_run_repair_tail_logical_transfers",
+    "native_signed_run_terminal_tail_messages",
+    "native_signed_run_terminal_tail_logical_transfers",
+    "native_signed_run_effective_quantum_min",
+    "native_signed_run_effective_quantum_max",
+    "native_signed_run_cwnd_floor_clamps"
+  ] as $p4_fields |
+  [
+    "active_capacity", "source_capacity", "canonical_capacity",
+    "pacing_credit", "client_capacity", "query_credit"
+  ] as $hold_fields |
+  [
+    "native_signed_run_target_size",
+    "native_signed_run_messages",
+    "native_signed_run_logical_transfers",
+    "native_signed_run_max_size"
+  ] as $base_fields |
+  if $final == null then
+    {
+      required:(if ($expected_enabled | type) == "boolean" then $expected_enabled else null end),
+      enforced:(($expected_enabled | type) == "boolean"),
+      expected:{enabled:$expected_enabled,target_size:$expected_target},
+      telemetry_available:false,
+      telemetry_complete:false,
+      mode_matches:null,
+      telemetry_contract_valid:null,
+      benchmark_profile_valid:null,
+      valid:null,
+      invalid_reasons:["missing_final_generator_record"],
+      telemetry:null
+    }
+  else
+    field_or_null($final; "native_signed_run_issue_holds") as $raw_holds |
+    {
+      enabled:field_or_null($final; "native_signed_runs_enabled"),
+      target_size:field_or_null($final; "native_signed_run_target_size"),
+      total:{
+        messages:field_or_null($final; "native_signed_run_messages"),
+        logical_transfers:field_or_null($final; "native_signed_run_logical_transfers"),
+        max_size:field_or_null($final; "native_signed_run_max_size")
+      },
+      normal:{
+        messages:field_or_null($final; "native_signed_run_normal_messages"),
+        logical_transfers:field_or_null($final; "native_signed_run_normal_logical_transfers"),
+        quantum_violations:field_or_null($final; "native_signed_run_normal_quantum_violations")
+      },
+      repair:{
+        messages:field_or_null($final; "native_signed_run_repair_messages"),
+        logical_transfers:field_or_null($final; "native_signed_run_repair_logical_transfers"),
+        tail_messages:field_or_null($final; "native_signed_run_repair_tail_messages"),
+        tail_logical_transfers:field_or_null($final; "native_signed_run_repair_tail_logical_transfers")
+      },
+      terminal_tail:{
+        messages:field_or_null($final; "native_signed_run_terminal_tail_messages"),
+        logical_transfers:field_or_null($final; "native_signed_run_terminal_tail_logical_transfers")
+      },
+      effective_quantum:{
+        min:field_or_null($final; "native_signed_run_effective_quantum_min"),
+        max:field_or_null($final; "native_signed_run_effective_quantum_max")
+      },
+      issue_holds:{
+        active_capacity:field_or_null($raw_holds; "active_capacity"),
+        source_capacity:field_or_null($raw_holds; "source_capacity"),
+        canonical_capacity:field_or_null($raw_holds; "canonical_capacity"),
+        pacing_credit:field_or_null($raw_holds; "pacing_credit"),
+        client_capacity:field_or_null($raw_holds; "client_capacity"),
+        query_credit:field_or_null($raw_holds; "query_credit")
+      },
+      cwnd_floor_clamps:field_or_null($final; "native_signed_run_cwnd_floor_clamps"),
+      semantics:{
+        normal_quantum:field_or_null($final; "native_signed_run_normal_quantum_semantics"),
+        repair_tail:field_or_null($final; "native_signed_run_repair_tail_semantics"),
+        terminal_tail:field_or_null($final; "native_signed_run_terminal_tail_semantics"),
+        cwnd_floor_clamps:field_or_null($final; "native_signed_run_cwnd_floor_clamps_semantics"),
+        issue_holds:field_or_null($final; "native_signed_run_issue_holds_semantics")
+      }
+    } as $telemetry |
+    (([$p4_fields[] as $field | ($final | has($field))] | any) or
+     ($final | has("native_signed_run_issue_holds"))) as $p4_available |
+    ([$p4_fields[] as $field | ($final | has($field))] | all) as $p4_fields_complete |
+    ([$base_fields[] as $field | ($final | has($field))] | all) as $base_fields_complete |
+    (($raw_holds | type) == "object" and
+     ([$hold_fields[] as $field |
+       (field_or_null($raw_holds; $field) | nonnegative_integer)] | all)) as $holds_valid |
+    ([
+      $telemetry.normal.messages,
+      $telemetry.normal.logical_transfers,
+      $telemetry.normal.quantum_violations,
+      $telemetry.repair.messages,
+      $telemetry.repair.logical_transfers,
+      $telemetry.repair.tail_messages,
+      $telemetry.repair.tail_logical_transfers,
+      $telemetry.terminal_tail.messages,
+      $telemetry.terminal_tail.logical_transfers,
+      $telemetry.effective_quantum.min,
+      $telemetry.effective_quantum.max,
+      $telemetry.cwnd_floor_clamps
+    ] | all(.[]; nonnegative_integer)) as $p4_numbers_valid |
+    ([
+      $telemetry.target_size,
+      $telemetry.total.messages,
+      $telemetry.total.logical_transfers,
+      $telemetry.total.max_size
+    ] | all(.[]; nonnegative_integer)) as $base_numbers_valid |
+    (($expected_enabled | type) == "boolean" and
+     ($expected_enabled == false or
+      ($expected_target | nonnegative_integer) and
+      $expected_target >= 1 and $expected_target <= 16)) as $expected_valid |
+    (if $expected_enabled == true then $telemetry.enabled == true
+     elif $expected_enabled == false then
+       $telemetry.enabled == false or ($telemetry.enabled == null and ($p4_available | not))
+     else false
+     end) as $mode_matches |
+    ($p4_fields_complete and $holds_valid) as $p4_complete |
+    ($base_fields_complete and $p4_complete) as $signed_telemetry_complete |
+    ($base_numbers_valid and $p4_numbers_valid and $holds_valid) as $numbers_valid |
+    (if $numbers_valid then
+       $telemetry.target_size >= 1 and $telemetry.target_size <= 16 and
+       $telemetry.target_size == $expected_target and
+       $telemetry.effective_quantum.min > 0 and
+       $telemetry.effective_quantum.min <= $telemetry.effective_quantum.max and
+       $telemetry.effective_quantum.max <= $telemetry.target_size
+     else false
+     end) as $quantum_valid |
+    (if $numbers_valid then
+       $telemetry.normal.quantum_violations == 0 and
+       $telemetry.total.messages ==
+         ($telemetry.normal.messages + $telemetry.repair.messages) and
+       $telemetry.total.logical_transfers ==
+         ($telemetry.normal.logical_transfers + $telemetry.repair.logical_transfers)
+     else false
+     end) as $partitions_valid |
+    (if $numbers_valid then
+       $telemetry.terminal_tail.messages <= $telemetry.normal.messages and
+       $telemetry.terminal_tail.logical_transfers <= $telemetry.normal.logical_transfers and
+       $telemetry.repair.tail_messages <= $telemetry.repair.messages and
+       $telemetry.repair.tail_logical_transfers <= $telemetry.repair.logical_transfers
+     else false
+     end) as $tail_subsets_valid |
+    (if $numbers_valid and $quantum_valid then
+       (($telemetry.terminal_tail.messages == 0 and
+         $telemetry.terminal_tail.logical_transfers == 0) or
+        ($telemetry.terminal_tail.messages > 0 and
+         $telemetry.terminal_tail.logical_transfers >= $telemetry.terminal_tail.messages and
+         $telemetry.terminal_tail.logical_transfers <
+           ($telemetry.terminal_tail.messages * $telemetry.effective_quantum.max))) and
+       (($telemetry.repair.tail_messages == 0 and
+         $telemetry.repair.tail_logical_transfers == 0) or
+        ($telemetry.repair.tail_messages > 0 and
+         $telemetry.repair.tail_logical_transfers >= $telemetry.repair.tail_messages and
+         $telemetry.repair.tail_logical_transfers <
+           ($telemetry.repair.tail_messages * $telemetry.effective_quantum.max)))
+     else false
+     end) as $tail_bounds_valid |
+    (if $numbers_valid and $quantum_valid and $tail_subsets_valid then
+       ($telemetry.normal.logical_transfers -
+          $telemetry.terminal_tail.logical_transfers) >=
+         (($telemetry.normal.messages - $telemetry.terminal_tail.messages) *
+          $telemetry.effective_quantum.min) and
+       ($telemetry.normal.logical_transfers -
+          $telemetry.terminal_tail.logical_transfers) <=
+         (($telemetry.normal.messages - $telemetry.terminal_tail.messages) *
+          $telemetry.effective_quantum.max) and
+       ($telemetry.repair.logical_transfers -
+          $telemetry.repair.tail_logical_transfers) >=
+         (($telemetry.repair.messages - $telemetry.repair.tail_messages) *
+          $telemetry.effective_quantum.min) and
+       ($telemetry.repair.logical_transfers -
+          $telemetry.repair.tail_logical_transfers) <=
+         (($telemetry.repair.messages - $telemetry.repair.tail_messages) *
+          $telemetry.effective_quantum.max)
+     else false
+     end) as $full_run_bounds_valid |
+    (if $numbers_valid and $quantum_valid then
+       if $telemetry.total.messages == 0 then
+         $telemetry.total.logical_transfers == 0 and $telemetry.total.max_size == 0
+       else
+         $telemetry.total.max_size >= 1 and
+         $telemetry.total.max_size <= $telemetry.effective_quantum.max
+       end
+     else false
+     end) as $max_size_valid |
+    ($expected_valid and $expected_enabled == true and $mode_matches and
+     $signed_telemetry_complete and $numbers_valid and $quantum_valid and $partitions_valid and
+     $tail_subsets_valid and $tail_bounds_valid and $full_run_bounds_valid and
+     $max_size_valid) as $signed_contract_valid |
+    (if $p4_available then
+       ($telemetry.enabled == false and $base_fields_complete and $p4_complete and
+        $base_numbers_valid and $p4_numbers_valid and $holds_valid and
+        ([
+          $telemetry.total.messages,
+          $telemetry.total.logical_transfers,
+          $telemetry.total.max_size,
+          $telemetry.normal.messages,
+          $telemetry.normal.logical_transfers,
+          $telemetry.normal.quantum_violations,
+          $telemetry.repair.messages,
+          $telemetry.repair.logical_transfers,
+          $telemetry.repair.tail_messages,
+          $telemetry.repair.tail_logical_transfers,
+          $telemetry.terminal_tail.messages,
+          $telemetry.terminal_tail.logical_transfers,
+          $telemetry.effective_quantum.min,
+          $telemetry.effective_quantum.max,
+          $telemetry.cwnd_floor_clamps,
+          $telemetry.issue_holds.active_capacity,
+          $telemetry.issue_holds.source_capacity,
+          $telemetry.issue_holds.canonical_capacity,
+          $telemetry.issue_holds.pacing_credit,
+          $telemetry.issue_holds.client_capacity,
+          $telemetry.issue_holds.query_credit
+        ] | all(.[]; . == 0)))
+     else null
+     end) as $scalar_contract_valid |
+    ($signed_contract_valid and $expected_target == 16 and
+     $telemetry.target_size == 16 and
+     $telemetry.effective_quantum.min == 16 and
+     $telemetry.effective_quantum.max == 16 and
+     $telemetry.terminal_tail.messages == 0 and
+     $telemetry.terminal_tail.logical_transfers == 0 and
+     $telemetry.normal.messages > 0 and
+     $telemetry.total.max_size == 16) as $profile_valid |
+    (if $expected_enabled == true then $profile_valid
+     elif $expected_enabled == false then
+       $expected_valid and $mode_matches and ($scalar_contract_valid != false)
+     else false
+     end) as $valid |
+    {
+      required:(if ($expected_enabled | type) == "boolean" then $expected_enabled else null end),
+      enforced:(($expected_enabled | type) == "boolean"),
+      expected:{enabled:$expected_enabled,target_size:$expected_target},
+      telemetry_available:$p4_available,
+      telemetry_complete:(if $expected_enabled == true then $signed_telemetry_complete
+                          elif $p4_available then ($base_fields_complete and $p4_complete)
+                          else null end),
+      mode_matches:$mode_matches,
+      telemetry_contract_valid:(if $expected_enabled == true then $signed_contract_valid
+                                else $scalar_contract_valid end),
+      benchmark_profile_valid:(if $expected_enabled == true then $profile_valid else null end),
+      valid:$valid,
+      invalid_reasons:(if $valid then [] else [
+        if $expected_valid | not then "native_signed_run_expected_configuration_invalid" else empty end,
+        if $mode_matches | not then "native_signed_run_mode_mismatch" else empty end,
+        if $expected_enabled == true and ($signed_telemetry_complete | not)
+        then "native_signed_run_quantum_telemetry_incomplete" else empty end,
+        if $expected_enabled == true and $signed_telemetry_complete and ($numbers_valid | not)
+        then "native_signed_run_quantum_telemetry_invalid" else empty end,
+        if $expected_enabled == true and $numbers_valid and ($quantum_valid | not)
+        then "native_signed_run_effective_quantum_invalid" else empty end,
+        if $expected_enabled == true and $numbers_valid and ($partitions_valid | not)
+        then "native_signed_run_totals_mismatch" else empty end,
+        if $expected_enabled == true and $numbers_valid and ($tail_subsets_valid | not)
+        then "native_signed_run_tail_totals_invalid" else empty end,
+        if $expected_enabled == true and $numbers_valid and $quantum_valid and
+           ($tail_bounds_valid | not)
+        then "native_signed_run_tail_bounds_invalid" else empty end,
+        if $expected_enabled == true and $numbers_valid and $quantum_valid and
+           $tail_subsets_valid and ($full_run_bounds_valid | not)
+        then "native_signed_run_full_quantum_bounds_invalid" else empty end,
+        if $expected_enabled == true and $numbers_valid and $quantum_valid and
+           ($max_size_valid | not)
+        then "native_signed_run_max_size_invalid" else empty end,
+        if $expected_enabled == true and $signed_contract_valid and
+           ($expected_target != 16 or $telemetry.target_size != 16)
+        then "native_signed_run_physical_target_not_16" else empty end,
+        if $expected_enabled == true and $signed_contract_valid and
+           ($telemetry.effective_quantum.min != 16 or
+            $telemetry.effective_quantum.max != 16)
+        then "native_signed_run_physical_quantum_not_16" else empty end,
+        if $expected_enabled == true and $signed_contract_valid and
+           ($telemetry.terminal_tail.messages != 0 or
+            $telemetry.terminal_tail.logical_transfers != 0)
+        then "native_signed_run_terminal_tail_present" else empty end,
+        if $expected_enabled == true and $signed_contract_valid and
+           $telemetry.normal.messages == 0
+        then "native_signed_run_normal_messages_missing" else empty end,
+        if $expected_enabled == true and $signed_contract_valid and
+           $telemetry.total.max_size != 16
+        then "native_signed_run_physical_max_size_not_16" else empty end,
+        if $expected_enabled == false and $p4_available and
+           (($base_fields_complete and $p4_complete) | not)
+        then "native_signed_run_scalar_telemetry_incomplete" else empty end,
+        if $expected_enabled == false and $p4_available and
+           $base_fields_complete and $p4_complete and
+           ($scalar_contract_valid | not)
+        then "native_signed_run_scalar_telemetry_nonzero_or_invalid" else empty end
+      ] end),
+      telemetry:$telemetry
+    }
+  end;
+
 # Lift the generator's independent acceptance dimensions into the report
 # without weakening its proof/capacity contract. For depth 2, canonical lane
 # balance is an additional independent decision and a prerequisite for an
-# effective chain-capacity pass. Older depth-0/1 output remains compatible.
-def capacity_acceptance($final):
+# effective chain-capacity pass. Signed-run geometry independently gates both
+# ingress and chain capacity, while proof correctness remains untouched.
+def capacity_acceptance($final; $expected_signed_runs; $expected_run_target):
   if $final == null then
     {
       chain_correctness_valid:null,
@@ -1178,17 +1486,43 @@ def capacity_acceptance($final):
       ingress_capacity_invalid_reasons:["missing_final_generator_record"],
       chain_capacity_valid:null,
       chain_capacity_invalid_reasons:["missing_final_generator_record"]
-    } + canonical_lane_balance_acceptance($final)
+    } + canonical_lane_balance_acceptance($final) +
+      (native_signed_run_quantum_acceptance(
+        $final; $expected_signed_runs; $expected_run_target
+      ) as $run_quantum | {
+        native_signed_run_quantum_required:$run_quantum.required,
+        native_signed_run_quantum_valid:$run_quantum.valid,
+        native_signed_run_quantum_telemetry_contract_valid:$run_quantum.telemetry_contract_valid,
+        native_signed_run_quantum_benchmark_profile_valid:$run_quantum.benchmark_profile_valid,
+        native_signed_run_quantum_invalid_reasons:$run_quantum.invalid_reasons
+      })
   else
     canonical_lane_balance_acceptance($final) as $lane_balance |
+    native_signed_run_quantum_acceptance(
+      $final; $expected_signed_runs; $expected_run_target
+    ) as $run_quantum |
+    ($final.ingress_capacity_invalid_reasons // [] |
+     if type == "array" then . else [] end) as $reported_ingress_reasons |
     ($final.chain_capacity_invalid_reasons // [] |
      if type == "array" then . else [] end) as $reported_chain_reasons |
-    (if $lane_balance.canonical_lane_balance_required == true and
-        $lane_balance.canonical_lane_balance_valid != true then
-       reduce $lane_balance.canonical_lane_balance_invalid_reasons[] as $reason
+    (if $run_quantum.enforced == true and $run_quantum.valid != true then
+       reduce $run_quantum.invalid_reasons[] as $reason
+         ($reported_ingress_reasons;
+          if index($reason) == null then . + [$reason] else . end)
+     else $reported_ingress_reasons
+     end) as $ingress_reasons |
+    (if $run_quantum.enforced == true and $run_quantum.valid != true then
+       reduce $run_quantum.invalid_reasons[] as $reason
          ($reported_chain_reasons;
           if index($reason) == null then . + [$reason] else . end)
      else $reported_chain_reasons
+     end) as $run_chain_reasons |
+    (if $lane_balance.canonical_lane_balance_required == true and
+        $lane_balance.canonical_lane_balance_valid != true then
+       reduce $lane_balance.canonical_lane_balance_invalid_reasons[] as $reason
+         ($run_chain_reasons;
+          if index($reason) == null then . + [$reason] else . end)
+     else $run_chain_reasons
      end) as $chain_reasons |
     {
       chain_correctness_valid:field_or_null($final; "chain_correctness_valid"),
@@ -1200,17 +1534,37 @@ def capacity_acceptance($final):
         end
       ),
       run_incomplete_reasons:($final.run_incomplete_reasons // []),
-      ingress_capacity_valid:field_or_null($final; "ingress_capacity_valid"),
-      ingress_capacity_invalid_reasons:($final.ingress_capacity_invalid_reasons // []),
+      ingress_capacity_valid:(
+        if $run_quantum.enforced == true and $run_quantum.valid != true then false
+        else field_or_null($final; "ingress_capacity_valid")
+        end
+      ),
+      ingress_capacity_invalid_reasons:$ingress_reasons,
       chain_capacity_valid:(
-        if $lane_balance.canonical_lane_balance_required == true and
-           $lane_balance.canonical_lane_balance_valid != true then false
+        if ($run_quantum.enforced == true and $run_quantum.valid != true) or
+           ($lane_balance.canonical_lane_balance_required == true and
+            $lane_balance.canonical_lane_balance_valid != true) then false
         else field_or_null($final; "chain_capacity_valid")
         end
       ),
-      chain_capacity_invalid_reasons:$chain_reasons
+      chain_capacity_invalid_reasons:$chain_reasons,
+      native_signed_run_quantum_required:$run_quantum.required,
+      native_signed_run_quantum_valid:$run_quantum.valid,
+      native_signed_run_quantum_telemetry_contract_valid:$run_quantum.telemetry_contract_valid,
+      native_signed_run_quantum_benchmark_profile_valid:$run_quantum.benchmark_profile_valid,
+      native_signed_run_quantum_invalid_reasons:$run_quantum.invalid_reasons
     } + $lane_balance
   end;
+
+# Historical callers did not provide a resolved expected mode. Preserve their
+# scalar behavior while still enforcing finalized telemetry when the record
+# itself explicitly reports signed-run mode.
+def capacity_acceptance($final):
+  capacity_acceptance(
+    $final;
+    field_or_null($final; "native_signed_runs_enabled");
+    field_or_null($final; "native_signed_run_target_size")
+  );
 
 # Validator cleanup is a separate acceptance boundary from the generator's
 # proof follower.  Missing getstats snapshots must fail closed: otherwise an

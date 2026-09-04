@@ -139,11 +139,14 @@ if ! jq -e --arg harness_revision "$harness_revision" \
   .generator.final.canonical_follower_basechain_leaf_shards == $expected_lane_count and
   ($expected_depth == 1 or .generator.final.canonical_lane_balance.valid == true) and
   .generator.valid_canonical_run == true and
+  .generator.native_signed_run_quantum.telemetry_contract_valid == true and
+  .generator.native_signed_run_quantum.benchmark_profile_valid == true and
+  .generator.native_signed_run_quantum.valid == true and
   .generator.ingress_capacity_valid == true and
   .generator.chain_capacity_valid == true and
   .validator_pool.cleanup_acceptance.valid == true
 ' "$result_dir/benchmark-summary.json" >/dev/null; then
-  echo "fresh depth-$lane_depth baseline did not satisfy every correctness, topology, balance, capacity, and cleanup gate: $result_dir/benchmark-summary.json" >&2
+  echo "fresh depth-$lane_depth baseline did not satisfy every correctness, topology, signed-run quantum, capacity, and cleanup gate: $result_dir/benchmark-summary.json" >&2
   exit 3
 fi
 

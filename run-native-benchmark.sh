@@ -924,6 +924,26 @@ compose=(docker compose -f "$script_dir/docker-compose.yaml" --project-directory
 compose_environment=$("${compose[@]}" config --environment)
 ton_image=$(awk -F= '$1 == "TON_IMAGE" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 ton_branch=$(awk -F= '$1 == "TON_BRANCH" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+native_signed_runs_expected_raw=$(awk -F= '
+  $1 == "NATIVE_LOAD_NATIVE_TRANSFER_RUNS" {sub(/^[^=]*=/, ""); print; exit}
+' <<<"$compose_environment")
+native_signed_run_target_expected=$(awk -F= '
+  $1 == "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE" {sub(/^[^=]*=/, ""); print; exit}
+' <<<"$compose_environment")
+native_signed_runs_expected_raw=${native_signed_runs_expected_raw:-0}
+native_signed_run_target_expected=${native_signed_run_target_expected:-16}
+case "$native_signed_runs_expected_raw" in
+  0|false|FALSE|no|NO) native_signed_runs_expected=false ;;
+  1|true|TRUE|yes|YES) native_signed_runs_expected=true ;;
+  *)
+    echo "resolved NATIVE_LOAD_NATIVE_TRANSFER_RUNS must be 0 or 1, got '$native_signed_runs_expected_raw'" >&2
+    exit 2
+    ;;
+esac
+if ! [[ $native_signed_run_target_expected =~ ^([1-9]|1[0-6])$ ]]; then
+  echo "resolved NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE must be an integer from 1 through 16, got '$native_signed_run_target_expected'" >&2
+  exit 2
+fi
 ton_image=${ton_image:-ghcr.io/corton-nommander/ton}
 ton_branch=${ton_branch:-latest}
 ton_base_image=$ton_image:$ton_branch
@@ -2816,11 +2836,18 @@ jq -n \
     }
   ' >"$session_stats_summary_file"
 
-jq -L "$benchmark_jq_dir" -Rs '
+jq -L "$benchmark_jq_dir" -Rs \
+  --argjson expected_signed_runs "$native_signed_runs_expected" \
+  --argjson expected_run_target "$native_signed_run_target_expected" '
   include "native-benchmark-lib";
   [split("\n")[] | fromjson? | select(.schema == "native-load-v2")] as $records |
   ($records | map(select(.final == true)) | last) as $final |
-  capacity_acceptance($final) as $acceptance |
+  native_signed_run_quantum_acceptance(
+    $final; $expected_signed_runs; $expected_run_target
+  ) as $run_quantum |
+  capacity_acceptance(
+    $final; $expected_signed_runs; $expected_run_target
+  ) as $acceptance |
   canonical_lane_balance_telemetry($final) as $lane_telemetry |
   {
     records: ($records | length),
@@ -2858,7 +2885,7 @@ jq -L "$benchmark_jq_dir" -Rs '
     measured_canonical_backpressure_seconds: ($final.measure_canonical_backpressure_s // null),
     measured_canonical_backpressure_fraction: ($final.measure_canonical_backpressure_fraction // null),
     ingress_capacity_valid:(
-      if $final == null then null else ($final.ingress_capacity_valid // false) end
+      if $final == null then null else ($acceptance.ingress_capacity_valid // false) end
     ),
     chain_capacity_valid:(
       if $final == null then null else ($acceptance.chain_capacity_valid // false) end
@@ -2871,6 +2898,15 @@ jq -L "$benchmark_jq_dir" -Rs '
     canonical_lane_balance_required:$acceptance.canonical_lane_balance_required,
     canonical_lane_balance_valid:$acceptance.canonical_lane_balance_valid,
     canonical_lane_balance_invalid_reasons:$acceptance.canonical_lane_balance_invalid_reasons,
+    native_signed_run_quantum:$run_quantum,
+    native_signed_run_quantum_required:$acceptance.native_signed_run_quantum_required,
+    native_signed_run_quantum_valid:$acceptance.native_signed_run_quantum_valid,
+    native_signed_run_quantum_telemetry_contract_valid:
+      $acceptance.native_signed_run_quantum_telemetry_contract_valid,
+    native_signed_run_quantum_benchmark_profile_valid:
+      $acceptance.native_signed_run_quantum_benchmark_profile_valid,
+    native_signed_run_quantum_invalid_reasons:
+      $acceptance.native_signed_run_quantum_invalid_reasons,
     canonical_observer_invalid_or_lagging_at_end: (
       (($final.canonical_follower_errors // 0) > 0) or
       (($final.canonical_follower_retry_exhausted // 0) > 0) or
@@ -2987,7 +3023,8 @@ jq -L "$benchmark_jq_dir" -Rs '
       (($final.nonce_gaps // -1) == 0) and
       (($final.canonical_backlog_after_drain // -1) == 0) and
       (($final.canonical_total_backlog_after_drain // -1) == 0) and
-      ($final.canonical_measured_offers_after_drain == $final.steady_offered)
+      ($final.canonical_measured_offers_after_drain == $final.steady_offered) and
+      ($run_quantum.valid == true)
     ),
     capacity_acceptance:$acceptance,
     generator_reported_invalid_reasons:(if $final == null then null else {
@@ -3010,6 +3047,10 @@ if [[ $generator_container_exit_code -eq 0 ]] &&
    ! jq -e '.final != null' "$generator_summary_file" >/dev/null; then
   echo "generator exited successfully without a final native-load-v2 record" >&2
   benchmark_exit_code=125
+elif [[ $generator_container_exit_code -eq 0 ]] &&
+     ! jq -e '.native_signed_run_quantum.valid == true' "$generator_summary_file" >/dev/null; then
+  echo "generator exited successfully but signed-run quantum telemetry/profile validation failed" >&2
+  benchmark_exit_code=3
 elif [[ $generator_container_exit_code -eq 0 ]] &&
      ! jq -e '.valid_canonical_run == true' "$generator_summary_file" >/dev/null; then
   echo "generator exited successfully but canonical benchmark validation failed" >&2
@@ -3365,7 +3406,7 @@ jq -n \
       validator_cleanup_invalid_reasons:$validator_pool[0].cleanup_acceptance.invalid_reasons,
       reproducible:$run[0].reproducibility.valid,
       reproducibility_reasons:$run[0].reproducibility.reasons,
-      semantics:"proof correctness, run completion, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      semantics:"proof correctness, run completion, signed-run physical quantum, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
     })}' \
   >"$summary_file"
 

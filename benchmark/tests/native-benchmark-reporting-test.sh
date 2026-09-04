@@ -94,6 +94,55 @@ jq -n -e -L "$jq_dir" '
     map("\(.key)=\(.value)") |
     join(" ");
 
+  def signed_run_quantum_fixture:
+    {
+      native_signed_runs_enabled:true,
+      native_signed_run_target_size:16,
+      native_signed_run_messages:102,
+      native_signed_run_logical_transfers:1609,
+      native_signed_run_max_size:16,
+      native_signed_run_normal_messages:100,
+      native_signed_run_normal_logical_transfers:1600,
+      native_signed_run_normal_quantum_violations:0,
+      native_signed_run_repair_messages:2,
+      native_signed_run_repair_logical_transfers:9,
+      native_signed_run_repair_tail_messages:2,
+      native_signed_run_repair_tail_logical_transfers:9,
+      native_signed_run_terminal_tail_messages:0,
+      native_signed_run_terminal_tail_logical_transfers:0,
+      native_signed_run_effective_quantum_min:16,
+      native_signed_run_effective_quantum_max:16,
+      native_signed_run_cwnd_floor_clamps:6,
+      native_signed_run_issue_holds:{
+        active_capacity:0,
+        source_capacity:1,
+        canonical_capacity:2,
+        pacing_credit:3,
+        client_capacity:4,
+        query_credit:5
+      }
+    };
+
+  def scalar_quantum_fixture:
+    signed_run_quantum_fixture |
+    .native_signed_runs_enabled = false |
+    .native_signed_run_messages = 0 |
+    .native_signed_run_logical_transfers = 0 |
+    .native_signed_run_max_size = 0 |
+    .native_signed_run_normal_messages = 0 |
+    .native_signed_run_normal_logical_transfers = 0 |
+    .native_signed_run_normal_quantum_violations = 0 |
+    .native_signed_run_repair_messages = 0 |
+    .native_signed_run_repair_logical_transfers = 0 |
+    .native_signed_run_repair_tail_messages = 0 |
+    .native_signed_run_repair_tail_logical_transfers = 0 |
+    .native_signed_run_terminal_tail_messages = 0 |
+    .native_signed_run_terminal_tail_logical_transfers = 0 |
+    .native_signed_run_effective_quantum_min = 0 |
+    .native_signed_run_effective_quantum_max = 0 |
+    .native_signed_run_cwnd_floor_clamps = 0 |
+    .native_signed_run_issue_holds |= with_entries(.value = 0);
+
   (field_or_null({present:false}; "present") == false) and
   (field_or_null({}; "missing") == null) and
   (["12.5", true, false, "invalid"] | map(stat_counter_value) ==
@@ -261,6 +310,184 @@ jq -n -e -L "$jq_dir" '
   ($missing_prebatch.prebatch.capture_complete == false) and
   ($missing_prebatch.prebatch.native_prebatch_protocol_capacity_requeue_works == null) and
   ($missing_prebatch.prebatch.native_prebatch_scalar_decode_retry_works == null) and
+
+  # Final signed-run telemetry is validated independently from producer-side
+  # own acceptance booleans. A finite repair suffix is legal, while the fixed
+  # physical profile still requires ordinary 16-output parents.
+  (signed_run_quantum_fixture |
+   native_signed_run_quantum_acceptance(.; true; 16)) as $run_quantum |
+  ($run_quantum.required == true) and
+  ($run_quantum.telemetry_available == true) and
+  ($run_quantum.telemetry_complete == true) and
+  ($run_quantum.telemetry_contract_valid == true) and
+  ($run_quantum.benchmark_profile_valid == true) and
+  ($run_quantum.valid == true) and
+  ($run_quantum.invalid_reasons == []) and
+  ($run_quantum.telemetry.repair.tail_messages == 2) and
+  ($run_quantum.telemetry.repair.tail_logical_transfers == 9) and
+  ($run_quantum.telemetry.cwnd_floor_clamps == 6) and
+  ($run_quantum.telemetry.issue_holds == {
+    active_capacity:0, source_capacity:1, canonical_capacity:2,
+    pacing_credit:3, client_capacity:4, query_credit:5
+  }) and
+
+  # Every finalized numeric field and every hold dimension is mandatory in
+  # enabled mode. Missing, negative, fractional, or nonnumeric values fail.
+  ([
+    "native_signed_run_target_size",
+    "native_signed_run_messages",
+    "native_signed_run_logical_transfers",
+    "native_signed_run_max_size",
+    "native_signed_run_normal_messages",
+    "native_signed_run_normal_logical_transfers",
+    "native_signed_run_normal_quantum_violations",
+    "native_signed_run_repair_messages",
+    "native_signed_run_repair_logical_transfers",
+    "native_signed_run_repair_tail_messages",
+    "native_signed_run_repair_tail_logical_transfers",
+    "native_signed_run_terminal_tail_messages",
+    "native_signed_run_terminal_tail_logical_transfers",
+    "native_signed_run_effective_quantum_min",
+    "native_signed_run_effective_quantum_max",
+    "native_signed_run_cwnd_floor_clamps",
+    "native_signed_run_issue_holds"
+  ] | all(.[]; . as $field |
+    (signed_run_quantum_fixture | del(.[$field]) |
+     native_signed_run_quantum_acceptance(.; true; 16).valid) == false)) and
+  ([
+    "active_capacity", "source_capacity", "canonical_capacity",
+    "pacing_credit", "client_capacity", "query_credit"
+  ] | all(.[]; . as $field |
+    (signed_run_quantum_fixture |
+     del(.native_signed_run_issue_holds[$field]) |
+     native_signed_run_quantum_acceptance(.; true; 16).valid) == false)) and
+  (["invalid", -1, 0.5] | all(.[]; . as $bad |
+    (signed_run_quantum_fixture |
+     .native_signed_run_normal_messages = $bad |
+     native_signed_run_quantum_acceptance(.; true; 16).valid) == false)) and
+  (["invalid", -1, 0.5] | all(.[]; . as $bad |
+    (signed_run_quantum_fixture |
+     .native_signed_run_issue_holds.query_credit = $bad |
+     native_signed_run_quantum_acceptance(.; true; 16).valid) == false)) and
+
+  ([
+    (signed_run_quantum_fixture |
+     .native_signed_run_effective_quantum_min = 0),
+    (signed_run_quantum_fixture |
+     .native_signed_run_effective_quantum_min = 17),
+    (signed_run_quantum_fixture |
+     .native_signed_run_effective_quantum_max = 17),
+    (signed_run_quantum_fixture |
+     .native_signed_run_target_size = 17),
+    (signed_run_quantum_fixture |
+     .native_signed_run_target_size = 8)
+  ] | all(.[];
+    native_signed_run_quantum_acceptance(.; true; 16).valid == false)) and
+  ((signed_run_quantum_fixture |
+    .native_signed_run_normal_quantum_violations = 1 |
+    native_signed_run_quantum_acceptance(.; true; 16).valid) == false) and
+  ((signed_run_quantum_fixture |
+    .native_signed_run_messages = 103 |
+    native_signed_run_quantum_acceptance(.; true; 16).valid) == false) and
+  ((signed_run_quantum_fixture |
+    .native_signed_run_logical_transfers = 1610 |
+    native_signed_run_quantum_acceptance(.; true; 16).valid) == false) and
+
+  # Tail counts must be subsets, and every aggregate short tail consists of
+  # one through q-1 logical outputs per physical parent.
+  ([
+    (signed_run_quantum_fixture |
+     .native_signed_run_repair_tail_messages = 3),
+    (signed_run_quantum_fixture |
+     .native_signed_run_repair_tail_logical_transfers = 0),
+    (signed_run_quantum_fixture |
+     .native_signed_run_repair_tail_logical_transfers = 32),
+    (signed_run_quantum_fixture |
+     .native_signed_run_terminal_tail_messages = 0 |
+     .native_signed_run_terminal_tail_logical_transfers = 1),
+    (signed_run_quantum_fixture |
+     .native_signed_run_normal_logical_transfers = 1599 |
+     .native_signed_run_logical_transfers = 1608)
+  ] | all(.[];
+    native_signed_run_quantum_acceptance(.; true; 16).valid == false)) and
+
+  # Uneven static worker ceilings and the uint64 terminal exception are valid
+  # telemetry contracts, but neither can substantiate this exact 16-wide run.
+  (signed_run_quantum_fixture |
+   .native_signed_run_effective_quantum_min = 15 |
+   native_signed_run_quantum_acceptance(.; true; 16)) as $uneven_quantum |
+  ($uneven_quantum.telemetry_contract_valid == true) and
+  ($uneven_quantum.benchmark_profile_valid == false) and
+  ($uneven_quantum.valid == false) and
+  (signed_run_quantum_fixture |
+   .native_signed_run_normal_logical_transfers = 1599 |
+   .native_signed_run_logical_transfers = 1608 |
+   .native_signed_run_terminal_tail_messages = 1 |
+   .native_signed_run_terminal_tail_logical_transfers = 15 |
+   native_signed_run_quantum_acceptance(.; true; 16)) as $terminal_tail |
+  ($terminal_tail.telemetry_contract_valid == true) and
+  ($terminal_tail.benchmark_profile_valid == false) and
+  ($terminal_tail.invalid_reasons | index("native_signed_run_terminal_tail_present") != null) and
+
+  # Pre-P4 signed-run records fail closed. Historical scalar records remain
+  # accepted, while a new scalar record must carry a complete all-zero P4 set.
+  (native_signed_run_quantum_acceptance({
+    native_signed_runs_enabled:true,
+    native_signed_run_target_size:16,
+    native_signed_run_messages:1,
+    native_signed_run_logical_transfers:16,
+    native_signed_run_max_size:16
+  }; true; 16).valid == false) and
+  (native_signed_run_quantum_acceptance({
+    native_signed_runs_enabled:false
+  }; false; 16)) as $legacy_scalar_quantum |
+  ($legacy_scalar_quantum.valid == true) and
+  ($legacy_scalar_quantum.telemetry_available == false) and
+  ($legacy_scalar_quantum.telemetry_contract_valid == null) and
+  (scalar_quantum_fixture |
+   native_signed_run_quantum_acceptance(.; false; 16)) as $new_scalar_quantum |
+  ($new_scalar_quantum.valid == true) and
+  ($new_scalar_quantum.telemetry_contract_valid == true) and
+  ([
+    "native_signed_run_messages",
+    "native_signed_run_logical_transfers",
+    "native_signed_run_max_size"
+  ] | all(.[]; . as $field |
+    (scalar_quantum_fixture | del(.[$field]) |
+     native_signed_run_quantum_acceptance(.; false; 16).valid) == false)) and
+  ([
+    "native_signed_run_messages",
+    "native_signed_run_logical_transfers",
+    "native_signed_run_max_size"
+  ] | all(.[]; . as $field |
+    (scalar_quantum_fixture | .[$field] = 1 |
+     native_signed_run_quantum_acceptance(.; false; 16).valid) == false)) and
+  ((scalar_quantum_fixture |
+    del(.native_signed_run_issue_holds.query_credit) |
+    native_signed_run_quantum_acceptance(.; false; 16).valid) == false) and
+  ((scalar_quantum_fixture |
+    .native_signed_run_cwnd_floor_clamps = 1 |
+    native_signed_run_quantum_acceptance(.; false; 16).valid) == false) and
+
+  # A harness-side profile rejection independently fails ingress and chain
+  # capacity without changing proof correctness, and its reason is deduplicated.
+  (signed_run_quantum_fixture |
+   .chain_correctness_valid = true |
+   .correctness_invalid_reasons = [] |
+   .run_incomplete_reasons = [] |
+   .ingress_capacity_valid = true |
+   .ingress_capacity_invalid_reasons = ["native_signed_run_physical_quantum_not_16"] |
+   .chain_capacity_valid = true |
+   .chain_capacity_invalid_reasons = ["native_signed_run_physical_quantum_not_16"] |
+   .native_signed_run_effective_quantum_min = 15 |
+   capacity_acceptance(.; true; 16)) as $quantum_capacity_rejection |
+  ($quantum_capacity_rejection.chain_correctness_valid == true) and
+  ($quantum_capacity_rejection.ingress_capacity_valid == false) and
+  ($quantum_capacity_rejection.chain_capacity_valid == false) and
+  (($quantum_capacity_rejection.ingress_capacity_invalid_reasons |
+    map(select(. == "native_signed_run_physical_quantum_not_16")) | length) == 1) and
+  (($quantum_capacity_rejection.chain_capacity_invalid_reasons |
+    map(select(. == "native_signed_run_physical_quantum_not_16")) | length) == 1) and
 
   ({
     required:true, valid:true, topology_complete:true, totals_reconcile:true,
@@ -965,6 +1192,14 @@ for field in \
   canonical_lane_balance_required \
   canonical_lane_balance_valid \
   canonical_lane_balance_invalid_reasons \
+  native_signed_run_quantum \
+  native_signed_run_quantum_required \
+  native_signed_run_quantum_valid \
+  native_signed_run_quantum_telemetry_contract_valid \
+  native_signed_run_quantum_benchmark_profile_valid \
+  native_signed_run_quantum_invalid_reasons \
+  native_signed_runs_expected \
+  native_signed_run_target_expected \
   retry_horizon_exhausted \
   canonical_state_lag_retry_exhausted \
   adaptive_cwnd \
@@ -1100,6 +1335,29 @@ for field in \
   canonical_lane_balance_inactive_record \
   canonical_lane_balance_record_sum_mismatch \
   canonical_lane_balance_record_share_outside_tolerance \
+  native_signed_run_quantum_acceptance \
+  native_signed_run_normal_messages \
+  native_signed_run_normal_logical_transfers \
+  native_signed_run_normal_quantum_violations \
+  native_signed_run_repair_messages \
+  native_signed_run_repair_logical_transfers \
+  native_signed_run_repair_tail_messages \
+  native_signed_run_repair_tail_logical_transfers \
+  native_signed_run_terminal_tail_messages \
+  native_signed_run_terminal_tail_logical_transfers \
+  native_signed_run_effective_quantum_min \
+  native_signed_run_effective_quantum_max \
+  native_signed_run_cwnd_floor_clamps \
+  native_signed_run_issue_holds \
+  active_capacity \
+  source_capacity \
+  canonical_capacity \
+  pacing_credit \
+  client_capacity \
+  query_credit \
+  native_signed_run_physical_target_not_16 \
+  native_signed_run_physical_quantum_not_16 \
+  native_signed_run_terminal_tail_present \
   shard_state_requests \
   shard_manager_waits \
   shard_fetches \
