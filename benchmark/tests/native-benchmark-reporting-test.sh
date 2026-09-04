@@ -622,8 +622,24 @@ done
 for field in \
   native-payment-lanes-provenance.json \
   capture_native_payment_lanes_provenance \
+  native_payment_lanes_canonical_awk_uint \
+  native_payment_lanes_manifest_header_valid \
+  native_payment_lanes_runtime_enabled_check \
+  native_payment_lanes_configuration_checks \
   NATIVE_PAYMENT_LANES_ENABLED \
+  NATIVE_PAYMENT_LANE_COUNT \
   NATIVE_PROTOCOL_CAPABILITIES=3072 \
+  lane_record_counts \
+  lane_records \
+  lane_balance \
+  lane_count_explicit \
+  lane_count_legacy_inferred \
+  runtime_enabled_check \
+  runtime_activation_checks \
+  topology_consistency_checks \
+  durable_manifest_lane_count \
+  manifest_topology \
+  'balanced:$lane_balance.balanced' \
   contains_private_keys:false; do
   grep -Fq "$field" "$wrapper" || {
     echo "benchmark wrapper does not retain native payment-lane provenance: $field" >&2

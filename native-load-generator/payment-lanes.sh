@@ -1,8 +1,8 @@
 #!/bin/sh
 
-# Helpers shared by the native-load entrypoint's opt-in, fixed two-lane
-# benchmark path.  They deliberately operate on public .addr files only; the
-# generator's private source keys are never logged or copied.
+# Helpers shared by the native-load entrypoint's opt-in, fixed-depth payment
+# lane benchmark path.  They deliberately operate on public .addr files only;
+# the generator's private source keys are never logged or copied.
 
 native_payment_lanes_is_uint() {
   case "${1:-}" in
@@ -13,6 +13,20 @@ native_payment_lanes_is_uint() {
 
 native_payment_lanes_is_positive_uint() {
   native_payment_lanes_is_uint "$1" && [ "$1" -gt 0 ]
+}
+
+native_payment_lanes_depth_is_valid() {
+  case "${1:-}" in
+    1|2) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+native_payment_lanes_lane_count() {
+  local depth=${1:-1}
+
+  native_payment_lanes_depth_is_valid "$depth" || return 2
+  printf '%s\n' "$((1 << depth))"
 }
 
 native_payment_lanes_validate_mode() {
@@ -66,32 +80,52 @@ native_payment_lanes_address_hex() {
   printf '%s\n' "$address_hex"
 }
 
-# The benchmark topology fixes depth=1, so the account hash's top bit is the
-# lane. This avoids treating textual user-friendly address encodings as an
-# authority for shard placement.
-native_payment_lanes_address_lane() {
-  local address_hex
-  address_hex=$(native_payment_lanes_address_hex "$1") || return
-  case "$address_hex" in
-    [01234567]*) printf '0\n' ;;
-    [89aAbBcCdDeEfF]*) printf '1\n' ;;
+# The fixed-depth benchmark topologies use the account hash's leading bits as
+# the lane. This avoids treating textual user-friendly address encodings as an
+# authority for shard placement. Depth defaults to 1 for existing callers.
+native_payment_lanes_hex_lane() {
+  local address_hex=$1 depth=${2:-1}
+
+  native_payment_lanes_depth_is_valid "$depth" || return 2
+  case "$depth:$address_hex" in
+    1:[01234567]*) printf '0\n' ;;
+    1:[89aAbBcCdDeEfF]*) printf '1\n' ;;
+    2:[0123]*) printf '0\n' ;;
+    2:[4567]*) printf '1\n' ;;
+    2:[89aAbB]*) printf '2\n' ;;
+    2:[cCdDeEfF]*) printf '3\n' ;;
     *)
-      echo "cannot determine a native payment lane from address: $1" >&2
-      return 2
+      return 1
       ;;
   esac
 }
 
+native_payment_lanes_address_lane() {
+  local address_file=$1 depth=${2:-1}
+  local address_hex lane
+
+  native_payment_lanes_depth_is_valid "$depth" || {
+    echo "native payment lane depth must be 1 or 2, got '$depth'" >&2
+    return 2
+  }
+  address_hex=$(native_payment_lanes_address_hex "$address_file") || return
+  lane=$(native_payment_lanes_hex_lane "$address_hex" "$depth") || {
+    echo "cannot determine a native payment lane from address: $address_file" >&2
+    return 2
+  }
+  printf '%s\n' "$lane"
+}
+
 native_payment_lanes_validate_manifest() {
   local manifest=$1 wallet_dir=$2 source_offset=$3 sources=$4 depth=$5
-  local schema manifest_depth lane_count manifest_sources extra end
+  local schema manifest_depth lane_count manifest_sources extra end expected_lane_count
   local manifest_index lane source_hex destination_hex actual_source_hex actual_destination_hex
   local source_lane destination_lane expected_lane rows_file rows_status row_count=0
 
-  if [ "$depth" != 1 ]; then
-    echo "the native payment lane benchmark manifest supports only depth 1, got '$depth'" >&2
+  expected_lane_count=$(native_payment_lanes_lane_count "$depth") || {
+    echo "the native payment lane benchmark manifest supports depths 1 and 2, got '$depth'" >&2
     return 2
-  fi
+  }
   native_payment_lanes_is_uint "$source_offset" || {
     echo "NATIVE_LOAD_SOURCE_OFFSET must be a non-negative integer, got '$source_offset'" >&2
     return 2
@@ -105,8 +139,9 @@ native_payment_lanes_validate_manifest() {
     return 2
   }
   IFS=' ' read -r schema manifest_depth lane_count manifest_sources extra < "$manifest" || true
-  if [ "$schema" != NATIVE_PAYMENT_LANES_MANIFEST_V1 ] || [ "$manifest_depth" != 1 ] ||
-     [ "$lane_count" != 2 ] || ! native_payment_lanes_is_uint "$manifest_sources" || [ -n "${extra:-}" ]; then
+  if [ "$schema" != NATIVE_PAYMENT_LANES_MANIFEST_V1 ] || [ "$manifest_depth" != "$depth" ] ||
+     [ "$lane_count" != "$expected_lane_count" ] ||
+     ! native_payment_lanes_is_uint "$manifest_sources" || [ -n "${extra:-}" ]; then
     echo "native payment lane manifest has an invalid header: $manifest" >&2
     return 2
   fi
@@ -155,13 +190,18 @@ native_payment_lanes_validate_manifest() {
   while IFS=' ' read -r manifest_index lane source_hex destination_hex extra; do
     row_count=$((row_count + 1))
     if [ "$manifest_index" -lt "$source_offset" ] || [ "$manifest_index" -ge "$end" ] ||
-       { [ "$lane" != 0 ] && [ "$lane" != 1 ]; } ||
+       ! native_payment_lanes_is_uint "${lane:-}" ||
        [ -z "${source_hex:-}" ] || [ -z "${destination_hex:-}" ] || [ -n "${extra:-}" ]; then
       rm -f -- "$rows_file"
       echo "native payment lane manifest row is invalid for source $manifest_index" >&2
       return 2
     fi
-    expected_lane=$((manifest_index % 2))
+    if [ "$lane" -ge "$expected_lane_count" ]; then
+      rm -f -- "$rows_file"
+      echo "native payment lane manifest row is invalid for source $manifest_index" >&2
+      return 2
+    fi
+    expected_lane=$((manifest_index % expected_lane_count))
     if [ "$lane" -ne "$expected_lane" ]; then
       rm -f -- "$rows_file"
       echo "native payment lane manifest is not balanced: source $manifest_index is lane $lane, expected $expected_lane" >&2
@@ -180,24 +220,16 @@ native_payment_lanes_validate_manifest() {
       echo "native payment lane manifest does not match wallet addresses for source $manifest_index" >&2
       return 2
     fi
-    case "$actual_source_hex" in
-      [01234567]*) source_lane=0 ;;
-      [89aAbBcCdDeEfF]*) source_lane=1 ;;
-      *)
-        rm -f -- "$rows_file"
-        echo "cannot determine a native payment lane from source address: $wallet_dir/source-$manifest_index.addr" >&2
-        return 2
-        ;;
-    esac
-    case "$actual_destination_hex" in
-      [01234567]*) destination_lane=0 ;;
-      [89aAbBcCdDeEfF]*) destination_lane=1 ;;
-      *)
-        rm -f -- "$rows_file"
-        echo "cannot determine a native payment lane from destination address: $wallet_dir/dest-$manifest_index.addr" >&2
-        return 2
-        ;;
-    esac
+    source_lane=$(native_payment_lanes_hex_lane "$actual_source_hex" "$depth") || {
+      rm -f -- "$rows_file"
+      echo "cannot determine a native payment lane from source address: $wallet_dir/source-$manifest_index.addr" >&2
+      return 2
+    }
+    destination_lane=$(native_payment_lanes_hex_lane "$actual_destination_hex" "$depth") || {
+      rm -f -- "$rows_file"
+      echo "cannot determine a native payment lane from destination address: $wallet_dir/dest-$manifest_index.addr" >&2
+      return 2
+    }
     if [ "$source_lane" != "$lane" ] || [ "$destination_lane" != "$lane" ]; then
       rm -f -- "$rows_file"
       echo "native payment lane source/destination pair is not same-lane for source $manifest_index" >&2
@@ -230,19 +262,51 @@ native_payment_lanes_shard_prefixes() {
     sort -u
 }
 
+native_payment_lanes_expected_shard_prefixes() {
+  local depth=${1:-1}
+
+  case "$depth" in
+    1)
+      printf '%s\n' \
+        4000000000000000 \
+        C000000000000000
+      ;;
+    2)
+      printf '%s\n' \
+        2000000000000000 \
+        6000000000000000 \
+        A000000000000000 \
+        E000000000000000
+      ;;
+    *) return 2 ;;
+  esac
+}
+
 native_payment_lanes_shards_are_ready() {
+  local output=$1 depth=${2:-1}
   local prefixes expected
-  prefixes=$(native_payment_lanes_shard_prefixes "$1")
-  expected='4000000000000000
-C000000000000000'
+
+  native_payment_lanes_depth_is_valid "$depth" || return 2
+  prefixes=$(native_payment_lanes_shard_prefixes "$output")
+  expected=$(native_payment_lanes_expected_shard_prefixes "$depth") || return
   [ "$prefixes" = "$expected" ]
 }
 
 native_payment_lanes_wait_for_shards() {
   local config=$1 timeout_seconds=$2 poll_seconds=$3 stable_observations=$4
+  local depth=${5:-1}
   local query_timeout=${NATIVE_LOAD_PAYMENT_LANE_LITESERVER_TIMEOUT_SECONDS:-5}
   local lite_client=${NATIVE_LOAD_LITE_CLIENT_BIN:-lite-client}
-  local started_at now attempt=0 stable=0 output prefixes
+  local started_at now attempt=0 stable=0 output prefixes lane_count waiting_event
+
+  lane_count=$(native_payment_lanes_lane_count "$depth") || {
+    echo "native payment lane readiness supports depths 1 and 2, got '$depth'" >&2
+    return 2
+  }
+  waiting_event=waiting_for_lanes
+  if [ "$depth" = 1 ]; then
+    waiting_event=waiting_for_two_lanes
+  fi
 
   native_payment_lanes_is_positive_uint "$timeout_seconds" || {
     echo "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS must be a positive integer, got '$timeout_seconds'" >&2
@@ -275,26 +339,26 @@ native_payment_lanes_wait_for_shards() {
     if output=$(timeout --signal=TERM --kill-after=1s "${query_timeout}s" \
         "$lite_client" -C "$config" -t "$query_timeout" -c allshards 2>&1); then
       prefixes=$(native_payment_lanes_shard_prefixes "$output" | tr '\n' ',')
-      if native_payment_lanes_shards_are_ready "$output"; then
+      if native_payment_lanes_shards_are_ready "$output" "$depth"; then
         stable=$((stable + 1))
-        printf '{"schema":"native-payment-lane-readiness-v1","event":"ready_observation","attempt":%s,"stable_observations":%s,"required_stable_observations":%s,"basechain_prefixes":"%s"}\n' \
-          "$attempt" "$stable" "$stable_observations" "${prefixes%,}"
+        printf '{"schema":"native-payment-lane-readiness-v1","event":"ready_observation","lane_depth":%s,"lane_count":%s,"attempt":%s,"stable_observations":%s,"required_stable_observations":%s,"basechain_prefixes":"%s"}\n' \
+          "$depth" "$lane_count" "$attempt" "$stable" "$stable_observations" "${prefixes%,}"
         if [ "$stable" -ge "$stable_observations" ]; then
           return 0
         fi
       else
         stable=0
-        printf '{"schema":"native-payment-lane-readiness-v1","event":"waiting_for_two_lanes","attempt":%s,"basechain_prefixes":"%s"}\n' \
-          "$attempt" "${prefixes%,}" >&2
+        printf '{"schema":"native-payment-lane-readiness-v1","event":"%s","lane_depth":%s,"lane_count":%s,"attempt":%s,"basechain_prefixes":"%s"}\n' \
+          "$waiting_event" "$depth" "$lane_count" "$attempt" "${prefixes%,}" >&2
       fi
     else
       stable=0
-      printf '{"schema":"native-payment-lane-readiness-v1","event":"liteserver_query_failed","attempt":%s}\n' \
-        "$attempt" >&2
+      printf '{"schema":"native-payment-lane-readiness-v1","event":"liteserver_query_failed","lane_depth":%s,"lane_count":%s,"attempt":%s}\n' \
+        "$depth" "$lane_count" "$attempt" >&2
     fi
     now=$(date +%s)
     if [ $((now - started_at)) -ge "$timeout_seconds" ]; then
-      echo "timed out waiting for two masterchain-anchored native payment lanes after ${timeout_seconds}s" >&2
+      echo "timed out waiting for $lane_count masterchain-anchored native payment lanes at depth $depth after ${timeout_seconds}s" >&2
       return 1
     fi
     sleep "$poll_seconds"

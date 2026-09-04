@@ -123,6 +123,7 @@ generate_basechain_state() {
   local base
   local native_payment_lanes="${NATIVE_PAYMENT_LANES_ENABLED:-0}"
   local native_payment_lane_depth="${NATIVE_PAYMENT_LANE_DEPTH:-1}"
+  local native_payment_lane_count=0
   local native_payment_lane_wallet_retries="${NATIVE_PAYMENT_LANE_WALLET_RETRIES:-128}"
   local native_payment_lane_wallet_parallelism="${NATIVE_PAYMENT_LANE_WALLET_PARALLELISM:-1}"
   local native_payment_lane_manifest
@@ -258,6 +259,7 @@ generate_basechain_state() {
       echo "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM must be an integer from 1 through 32, got '$native_payment_lane_wallet_parallelism'"
       exit 2
     fi
+    native_payment_lane_count=$((1 << native_payment_lane_depth))
     native_payment_lane_manifest="$wallet_dir/native-payment-lanes.manifest"
   fi
 
@@ -293,11 +295,13 @@ generate_basechain_state() {
       echo "Can't create native payment lane manifest staging file"
       exit 1
     }
-    printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 %s\n' "$genesis_sources" > "$native_payment_lane_manifest_tmp"
+    printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 %s %s %s\n' \
+      "$native_payment_lane_depth" "$native_payment_lane_count" "$genesis_sources" \
+      > "$native_payment_lane_manifest_tmp"
     if [ "$native_payment_lane_wallet_parallelism" -gt 1 ]; then
       if ! prepare_native_payment_lane_wallet_sets_parallel \
         "$wallet_dir" "$genesis_sources" "$native_payment_lane_wallet_retries" \
-        "$native_payment_lane_wallet_parallelism"; then
+        "$native_payment_lane_wallet_parallelism" "$native_payment_lane_depth"; then
         rm -f -- "$native_payment_lane_manifest_tmp"
         exit 1
       fi
@@ -319,7 +323,7 @@ generate_basechain_state() {
   for ((i = 0; i < genesis_sources; ++i)); do
     base="$wallet_dir/source-$i"
     if [ "$native_payment_lanes" = "1" ]; then
-      expected_lane=$((i % 2))
+      expected_lane=$((i % native_payment_lane_count))
       if [ -n "$native_payment_lane_parallel_results_dir" ]; then
         if ! IFS=' ' read -r result_index result_lane source_result destination_result \
           source_address_hex destination_address_hex result_extra \
@@ -331,7 +335,8 @@ generate_basechain_state() {
           echo "Can't read native payment lane wallet worker result for source set $i" >&2
           exit 1
         fi
-      elif ! source_result=$(prepare_native_payment_lane_wallet "$base" "$expected_lane" "$native_payment_lane_wallet_retries"); then
+      elif ! source_result=$(prepare_native_payment_lane_wallet \
+        "$base" "$expected_lane" "$native_payment_lane_wallet_retries" "$native_payment_lane_depth"); then
         rm -f -- "$native_payment_lane_manifest_tmp"
         exit 1
       fi
@@ -362,7 +367,8 @@ generate_basechain_state() {
       base="$wallet_dir/dest-$i"
       if [ "$native_payment_lanes" = "1" ]; then
         if [ -z "$native_payment_lane_parallel_results_dir" ]; then
-          if ! destination_result=$(prepare_native_payment_lane_wallet "$base" "$expected_lane" "$native_payment_lane_wallet_retries"); then
+          if ! destination_result=$(prepare_native_payment_lane_wallet \
+            "$base" "$expected_lane" "$native_payment_lane_wallet_retries" "$native_payment_lane_depth"); then
             rm -f -- "$native_payment_lane_manifest_tmp"
             exit 1
           fi
@@ -427,7 +433,7 @@ generate_basechain_state() {
       rm -rf -- "$native_payment_lane_parallel_results_dir"
     fi
     mv "$native_payment_lane_manifest_tmp" "$native_payment_lane_manifest"
-    genesis_log "Native payment lane manifest written: path=$native_payment_lane_manifest depth=1 lanes=2 sources=$genesis_sources"
+    genesis_log "Native payment lane manifest written: path=$native_payment_lane_manifest depth=$native_payment_lane_depth lanes=$native_payment_lane_count sources=$genesis_sources"
   fi
 
   genesis_log "Native wallet preparation completed: created=$generated_wallets reused=$reused_wallets elapsed=$((SECONDS - wallet_started_at))s"
@@ -460,6 +466,7 @@ generate_basechain_state() {
     echo "NATIVE_PAYMENT_LANES_ENABLED=$native_payment_lanes"
     if [ "$native_payment_lanes" = "1" ]; then
       echo "NATIVE_PAYMENT_LANE_DEPTH=$native_payment_lane_depth"
+      echo "NATIVE_PAYMENT_LANE_COUNT=$native_payment_lane_count"
       # Retain the resolved zero-state activation facts in the durable marker.
       # Docker's ambient VERSION_CAPABILITIES is only the profile input; these
       # values are what was actually written into ConfigParam 8.

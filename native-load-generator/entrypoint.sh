@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Keep the expensive two-shard readiness check out of the historical scalar
+# Keep the expensive fixed-shard readiness check out of the historical scalar
 # and v5-run paths. The helper is copied into this image alongside this script.
 . /usr/local/lib/native-load-generator/payment-lanes.sh
 
@@ -166,7 +166,8 @@ if [ "$native_payment_lanes" = 1 ]; then
     "$native_load_payment_lane_depth" || exit $?
   native_payment_lanes_wait_for_shards \
     "$config" "$native_payment_lane_ready_timeout" "$native_payment_lane_ready_poll" \
-    "$native_payment_lane_ready_stable_observations" || exit $?
+    "$native_payment_lane_ready_stable_observations" \
+    "$native_load_payment_lane_depth" || exit $?
   set -- "$@" --native-payment-lane-depth "$native_load_payment_lane_depth"
 fi
 

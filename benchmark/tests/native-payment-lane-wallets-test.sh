@@ -13,8 +13,9 @@ genesis_log() {
 
 test_dir=$(mktemp -d)
 trap 'rm -rf -- "$test_dir"' EXIT HUP INT TERM
-wallet_dir=$test_dir/wallets
-mkdir -p "$wallet_dir" "$test_dir/bin" "$test_dir/attempts"
+legacy_wallet_dir=$test_dir/legacy-wallets
+wallet_dir=$test_dir/depth-2-wallets
+mkdir -p "$legacy_wallet_dir" "$wallet_dir" "$test_dir/bin" "$test_dir/attempts"
 
 # The production Fift program is nondeterministic. This mock makes the first
 # attempt land in the wrong lane and the second land in the requested lane,
@@ -30,7 +31,9 @@ export NATIVE_PAYMENT_LANE_TEST_CONCURRENCY_LOCK="$test_dir/concurrency.lock"
 fift() {
   local base=${!#}
   local expected_lane=${NATIVE_PAYMENT_LANE_EXPECTED_LANE:?}
-  local attempt_key attempt_file attempt=0 lane active max_active
+  local expected_depth=${NATIVE_PAYMENT_LANE_EXPECTED_DEPTH:?}
+  local attempt_key attempt_file attempt=0 lane lane_count first_byte first_byte_octal
+  local active max_active
 
   attempt_key=$(printf '%s' "$base" | sha256sum | awk '{print $1}')
   attempt_file="$NATIVE_PAYMENT_LANE_TEST_ATTEMPT_DIR/$attempt_key"
@@ -39,8 +42,9 @@ fift() {
   fi
   attempt=$((attempt + 1))
   printf '%s\n' "$attempt" > "$attempt_file"
+  lane_count=$((1 << expected_depth))
   if [ "$attempt" -eq 1 ]; then
-    lane=$((1 - expected_lane))
+    lane=$(((expected_lane + 1) % lane_count))
   else
     lane=$expected_lane
   fi
@@ -64,12 +68,21 @@ fift() {
 
   printf 'private-%s\n' "$base" > "$base.pk"
   printf 'public-%s\n' "$base" > "$base.pub"
-  case "$lane" in
-    0) printf '\001' > "$base.addr" ;;
-    1) printf '\201' > "$base.addr" ;;
-  esac
+  first_byte=$(((lane << (8 - expected_depth)) + 1))
+  printf -v first_byte_octal '%03o' "$first_byte"
+  printf "\\$first_byte_octal" > "$base.addr"
   dd if=/dev/zero bs=31 count=1 status=none >> "$base.addr"
 }
+
+native_payment_lane_depth_is_valid 1
+native_payment_lane_depth_is_valid 2
+! native_payment_lane_depth_is_valid 0
+! native_payment_lane_depth_is_valid 3
+[[ $(native_payment_lane_count) == 2 ]]
+[[ $(native_payment_lane_count 1) == 2 ]]
+[[ $(native_payment_lane_count 2) == 4 ]]
+! native_payment_lane_count 0 >/dev/null 2>&1
+! native_payment_lane_count 3 >/dev/null 2>&1
 
 native_payment_lane_wallet_parallelism_is_valid 1
 native_payment_lane_wallet_parallelism_is_valid 32
@@ -77,28 +90,55 @@ native_payment_lane_wallet_parallelism_is_valid 32
 ! native_payment_lane_wallet_parallelism_is_valid 33
 ! native_payment_lane_wallet_parallelism_is_valid invalid
 
-prepare_native_payment_lane_wallet_sets_parallel "$wallet_dir" 8 2 4
+# The historical four-argument API remains a depth-1 operation.
+prepare_native_payment_lane_wallet_sets_parallel "$legacy_wallet_dir" 4 2 2
 result_dir=$NATIVE_PAYMENT_LANE_WALLET_RESULTS_DIR
 test -d "$result_dir"
-
-for index in $(seq 0 7); do
+for index in $(seq 0 3); do
   expected_lane=$((index % 2))
+  IFS=' ' read -r result_index result_lane source_result destination_result source_hex destination_hex extra \
+    < "$result_dir/$index"
+  [[ $result_index == "$index" && $result_lane == "$expected_lane" ]]
+  [[ $source_result == created && $destination_result == created && -z ${extra:-} ]]
+  [[ $(native_payment_lane_for_address "$legacy_wallet_dir/source-$index.addr") == "$expected_lane" ]]
+  [[ $(native_payment_lane_for_address "$legacy_wallet_dir/dest-$index.addr") == "$expected_lane" ]]
+done
+rm -rf -- "$result_dir"
+
+# An appended depth selects four lanes. Source-index modulo four balances the
+# set exactly, and the mock's first rejected address exercises every quadrant.
+prepare_native_payment_lane_wallet_sets_parallel "$wallet_dir" 8 2 4 2
+result_dir=$NATIVE_PAYMENT_LANE_WALLET_RESULTS_DIR
+test -d "$result_dir"
+for index in $(seq 0 7); do
+  expected_lane=$((index % 4))
   IFS=' ' read -r result_index result_lane source_result destination_result source_hex destination_hex extra \
     < "$result_dir/$index"
   [[ $result_index == "$index" ]]
   [[ $result_lane == "$expected_lane" ]]
   [[ $source_result == created && $destination_result == created && -z ${extra:-} ]]
-  [[ $(native_payment_lane_for_address "$wallet_dir/source-$index.addr") == "$expected_lane" ]]
-  [[ $(native_payment_lane_for_address "$wallet_dir/dest-$index.addr") == "$expected_lane" ]]
+  [[ $(native_payment_lane_for_address "$wallet_dir/source-$index.addr" 2) == "$expected_lane" ]]
+  [[ $(native_payment_lane_for_address "$wallet_dir/dest-$index.addr" 2) == "$expected_lane" ]]
   [[ $source_hex == "$(native_payment_lane_address_hex "$wallet_dir/source-$index.addr")" ]]
   [[ $destination_hex == "$(native_payment_lane_address_hex "$wallet_dir/dest-$index.addr")" ]]
+  printf -v expected_first_byte '%02x' "$(((expected_lane << 6) + 1))"
+  [[ $(xxd -p -l 1 "$wallet_dir/source-$index.addr") == "$expected_first_byte" ]]
+  [[ $(xxd -p -l 1 "$wallet_dir/dest-$index.addr") == "$expected_first_byte" ]]
 done
 [[ $(<"$test_dir/max-active") -ge 2 ]]
 rm -rf -- "$result_dir"
 
+# Every newly created wallet rejected the deliberately wrong first attempt and
+# accepted the second attempt in its requested depth-1 or depth-2 lane.
+attempt_files_before_reuse=$(find "$test_dir/attempts" -type f | wc -l)
+[[ $attempt_files_before_reuse -eq 24 ]]
+while IFS= read -r attempt_file; do
+  [[ $(<"$attempt_file") == 2 ]]
+done < <(find "$test_dir/attempts" -type f -print)
+
 # A restart does not regenerate already-complete, lane-correct files; it only
 # produces fresh staging rows, preserving the original safe reuse behavior.
-prepare_native_payment_lane_wallet_sets_parallel "$wallet_dir" 8 2 4
+prepare_native_payment_lane_wallet_sets_parallel "$wallet_dir" 8 2 4 2
 result_dir=$NATIVE_PAYMENT_LANE_WALLET_RESULTS_DIR
 for index in $(seq 0 7); do
   IFS=' ' read -r result_index result_lane source_result destination_result source_hex destination_hex extra \
@@ -106,3 +146,20 @@ for index in $(seq 0 7); do
   [[ $result_index == "$index" && $source_result == reused && $destination_result == reused ]]
 done
 rm -rf -- "$result_dir"
+[[ $(find "$test_dir/attempts" -type f | wc -l) -eq $attempt_files_before_reuse ]]
+
+# Complete wallets in another depth-2 quadrant and partial wallet files fail
+# closed without being overwritten or completed.
+source_zero_before=$(sha256sum "$wallet_dir/source-0.addr")
+! prepare_native_payment_lane_wallet "$wallet_dir/source-0" 1 2 2 >/dev/null 2>&1
+[[ $(sha256sum "$wallet_dir/source-0.addr") == "$source_zero_before" ]]
+
+partial_base=$wallet_dir/partial
+printf 'retain-me\n' > "$partial_base.pk"
+! prepare_native_payment_lane_wallet "$partial_base" 0 2 2 >/dev/null 2>&1
+grep -qx 'retain-me' "$partial_base.pk"
+[[ ! -e $partial_base.pub && ! -e $partial_base.addr ]]
+
+! native_payment_lane_for_address "$wallet_dir/source-0.addr" 0 >/dev/null 2>&1
+! native_payment_lane_for_address "$wallet_dir/source-0.addr" 3 >/dev/null 2>&1
+! prepare_native_payment_lane_wallet_sets_parallel "$wallet_dir" 1 2 1 3 >/dev/null 2>&1

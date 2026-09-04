@@ -428,42 +428,346 @@ strict_genesis_reuse_self_test() {
   fi
 }
 
+native_payment_lanes_canonical_awk_uint() {
+  local value=$1 maximum=9007199254740991
+  local LC_ALL=C
+
+  [[ $value =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  if (( ${#value} != ${#maximum} )); then
+    (( ${#value} < ${#maximum} ))
+    return
+  fi
+  [[ $value == "$maximum" || $value < "$maximum" ]]
+}
+
+native_payment_lanes_decimal_ge() {
+  local left=$1 right=$2
+  local LC_ALL=C
+
+  if (( ${#left} != ${#right} )); then
+    (( ${#left} > ${#right} ))
+    return
+  fi
+  [[ $left == "$right" || $left > "$right" ]]
+}
+
+native_payment_lanes_manifest_header_valid() {
+  local schema=$1 depth=$2 lane_count=$3 source_count=$4 extra=${5:-}
+
+  [[ $schema == NATIVE_PAYMENT_LANES_MANIFEST_V1 && -z $extra ]] || return 1
+  case "$depth:$lane_count" in
+    1:2|2:4) ;;
+    *) return 1 ;;
+  esac
+  native_payment_lanes_canonical_awk_uint "$source_count" &&
+    native_payment_lanes_decimal_ge "$source_count" "$lane_count"
+}
+
 native_payment_lanes_manifest_summary() {
-  local manifest_file=$1 expected=$2
-  awk -v expected="$expected" '
-    NR > 1 && /^[[:space:]]*#/ { next }
-    NR > 1 && NF > 0 {
+  local manifest_file=$1 expected=$2 depth=$3 lane_count=$4
+  awk -v expected="$expected" -v depth="$depth" -v lanes="$lane_count" '
+    function decimal_compare(left, right, left_length, right_length, digit_index, left_digit, right_digit) {
+      left_length = length(left)
+      right_length = length(right)
+      if (left_length < right_length) return -1
+      if (left_length > right_length) return 1
+      for (digit_index = 1; digit_index <= left_length; ++digit_index) {
+        left_digit = substr(left, digit_index, 1) + 0
+        right_digit = substr(right, digit_index, 1) + 0
+        if (left_digit < right_digit) return -1
+        if (left_digit > right_digit) return 1
+      }
+      return 0
+    }
+    function canonical_uint(value) {
+      return value ~ /^(0|[1-9][0-9]*)$/ &&
+        decimal_compare(value, "9007199254740991") <= 0
+    }
+    function hex_value(character, position) {
+      character = tolower(character)
+      position = index("0123456789abcdef", character)
+      return position - 1
+    }
+    NR == 1 {
+      header_seen = 1
+      if (NF != 4 || $1 != "NATIVE_PAYMENT_LANES_MANIFEST_V1" ||
+          $2 !~ /^[0-9]+$/ || ($2 + 0) != depth ||
+          $3 !~ /^[0-9]+$/ || ($3 + 0) != lanes ||
+          $4 !~ /^[0-9]+$/ || ($4 + 0) != expected) {
+        invalid = 1
+      }
+      next
+    }
+    /^[[:space:]]*#/ { next }
+    NF > 0 {
       records++
-      if (NF != 4 || $1 !~ /^[0-9]+$/ || $2 !~ /^[01]$/ ||
-          length($3) != 64 || $3 !~ /^[[:xdigit:]]+$/ ||
-          length($4) != 64 || $4 !~ /^[[:xdigit:]]+$/ || seen[$1]++) {
+      row_index_valid = canonical_uint($1)
+      lane_valid = ($2 ~ /^[0-9]+$/ && ($2 + 0) < lanes)
+      accounts_valid = (length($3) == 64 && $3 ~ /^[[:xdigit:]]+$/ &&
+                        length($4) == 64 && $4 ~ /^[[:xdigit:]]+$/)
+      if (NF != 4 || !row_index_valid || !lane_valid || !accounts_valid) {
         invalid = 1
       }
-      if (($1 + 0) % 2 != $2 ||
-          ($2 == 0 && ($3 !~ /^[0-7]/ || $4 !~ /^[0-7]/)) ||
-          ($2 == 1 && ($3 !~ /^[89a-fA-F]/ || $4 !~ /^[89a-fA-F]/))) {
-        invalid = 1
+      if (row_index_valid) {
+        row_index = $1 + 0
+        if (decimal_compare($1, expected) >= 0 || seen["row:" $1]++) invalid = 1
       }
-      if ($2 == 0) lane_zero++
-      if ($2 == 1) lane_one++
+      if (lane_valid) {
+        lane = $2 + 0
+        lane_records[lane]++
+        if (!row_index_valid || (row_index % lanes) != lane) invalid = 1
+        if (accounts_valid) {
+          lane_divisor = 16 / lanes
+          if (int(hex_value(substr($3, 1, 1)) / lane_divisor) != lane ||
+              int(hex_value(substr($4, 1, 1)) / lane_divisor) != lane) {
+            invalid = 1
+          }
+        }
+      }
     }
     END {
-      for (row_index = 0; row_index < expected; ++row_index) {
-        if (!(row_index in seen)) invalid = 1
+      if (!header_seen) invalid = 1
+      if (decimal_compare(sprintf("%.0f", records), expected) != 0) invalid = 1
+      min_records = lane_records[0] + 0
+      max_records = min_records
+      lane_record_total = 0
+      for (lane = 0; lane < lanes; ++lane) {
+        count = lane_records[lane] + 0
+        lane_record_total += count
+        if (count < min_records) min_records = count
+        if (count > max_records) max_records = count
       }
-      printf "%d %d %d %d\n", records, lane_zero, lane_one, invalid
+      balanced = (lane_record_total == records && max_records - min_records <= 1)
+      printf "{\"records\":%.0f,\"invalid\":%s,\"lane_record_counts\":[", \
+        records, invalid ? "true" : "false"
+      for (lane = 0; lane < lanes; ++lane) {
+        if (lane > 0) printf ","
+        printf "%.0f", lane_records[lane] + 0
+      }
+      printf "],\"lane_balance\":{\"min_records\":%.0f,\"max_records\":%.0f,\"difference\":%.0f,\"balanced\":%s}}\n", \
+        min_records, max_records, max_records - min_records, balanced ? "true" : "false"
     }
   ' "$manifest_file"
 }
 
+native_payment_lanes_runtime_enabled_check() {
+  local runtime_environment=$1 requested_enabled=$2
+  jq -cn --argjson runtime "$runtime_environment" --arg requested "$requested_enabled" '
+    ($runtime | has("NATIVE_PAYMENT_LANES_ENABLED")) as $explicit |
+    ($runtime.NATIVE_PAYMENT_LANES_ENABLED // null) as $runtime_value |
+    {
+      requested_value:$requested,
+      runtime_value:$runtime_value,
+      requested_valid:($requested == "0" or $requested == "1"),
+      runtime_explicit:$explicit,
+      runtime_valid:($runtime_value == "0" or $runtime_value == "1"),
+      matches_requested:($runtime_value == $requested)
+    } | . + {
+      valid:(.requested_valid and .runtime_explicit and .runtime_valid and .matches_requested)
+    }
+  '
+}
+
+native_payment_lanes_configuration_checks() {
+  local runtime_environment=$1 genesis_environment=$2
+  local manifest_depth=$3 lane_count=$4 manifest_sources=$5
+  jq -cn \
+    --argjson runtime "$runtime_environment" \
+    --argjson durable "$genesis_environment" \
+    --arg depth "$manifest_depth" \
+    --arg lanes "$lane_count" \
+    --arg sources "$manifest_sources" '
+    ($durable | has("NATIVE_PAYMENT_LANE_COUNT")) as $lane_count_explicit |
+    (($lane_count_explicit and $durable.NATIVE_PAYMENT_LANE_COUNT == $lanes) or
+     (($lane_count_explicit | not) and $depth == "1" and $lanes == "2")) as $lane_count_valid |
+    {
+      runtime:{
+        fixed_split: ($runtime.ACTUAL_MIN_SPLIT == $depth and
+                      $runtime.MIN_SPLIT == $depth and
+                      $runtime.MAX_SPLIT == $depth),
+        signed_runs: ($runtime.NATIVE_TRANSFER_RUNS_ENABLED == "1" and
+                      $runtime.NATIVE_TRANSFER_RUNS_GLOBAL_VERSION == "15" and
+                      $runtime.NATIVE_TRANSFER_RUNS_CAPABILITY == "1024"),
+        payment_lanes: ($runtime.NATIVE_PAYMENT_LANES_ENABLED == "1" and
+                        $runtime.NATIVE_PAYMENT_LANE_DEPTH == $depth and
+                        $runtime.NATIVE_PAYMENT_LANES_GLOBAL_VERSION == "16" and
+                        $runtime.NATIVE_PAYMENT_LANES_CAPABILITY == "2048")
+      },
+      durable:{
+        fixed_split: ($durable.NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT == $depth and
+                      $durable.NATIVE_PAYMENT_LANE_MIN_SPLIT == $depth and
+                      $durable.NATIVE_PAYMENT_LANE_MAX_SPLIT == $depth),
+        signed_runs: ($durable.NATIVE_TRANSFER_RUNS_ENABLED == "1"),
+        payment_lanes: ($durable.NATIVE_PAYMENT_LANES_ENABLED == "1" and
+                        $durable.NATIVE_PAYMENT_LANE_DEPTH == $depth),
+        lane_count: $lane_count_valid,
+        lane_count_explicit: $lane_count_explicit,
+        lane_count_legacy_inferred: (($lane_count_explicit | not) and
+                                     $depth == "1" and $lanes == "2"),
+        effective_capabilities: ($durable.NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES == "3072"),
+        effective_global_version: ($durable.NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION == "16"),
+        manifest_sources: ($durable.NATIVE_SPAM_REQUESTED_SOURCES == $sources and
+                           $durable.NATIVE_SPAM_SOURCES == $sources and
+                           $durable.NATIVE_SPAM_GENESIS_SOURCES == $sources)
+      },
+      consistency:{
+        header_lane_count: (($depth == "1" and $lanes == "2") or
+                            ($depth == "2" and $lanes == "4")),
+        runtime_manifest_depth: ($runtime.NATIVE_PAYMENT_LANE_DEPTH == $depth),
+        durable_manifest_depth: ($durable.NATIVE_PAYMENT_LANE_DEPTH == $depth),
+        durable_manifest_lane_count: $lane_count_valid,
+        runtime_durable_split: ($runtime.ACTUAL_MIN_SPLIT == $durable.NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT and
+                                $runtime.MIN_SPLIT == $durable.NATIVE_PAYMENT_LANE_MIN_SPLIT and
+                                $runtime.MAX_SPLIT == $durable.NATIVE_PAYMENT_LANE_MAX_SPLIT)
+      }
+    } as $checks |
+    $checks + {
+      valid:([
+        $checks.runtime.fixed_split,
+        $checks.runtime.signed_runs,
+        $checks.runtime.payment_lanes,
+        $checks.durable.fixed_split,
+        $checks.durable.signed_runs,
+        $checks.durable.payment_lanes,
+        $checks.durable.lane_count,
+        $checks.durable.effective_capabilities,
+        $checks.durable.effective_global_version,
+        $checks.durable.manifest_sources,
+        $checks.consistency.header_lane_count,
+        $checks.consistency.runtime_manifest_depth,
+        $checks.consistency.durable_manifest_depth,
+        $checks.consistency.durable_manifest_lane_count,
+        $checks.consistency.runtime_durable_split
+      ] | all)
+    }
+  '
+}
+
 native_payment_lanes_manifest_summary_self_test() {
   local zero=0000000000000000000000000000000000000000000000000000000000000000
+  local four=4444444444444444444444444444444444444444444444444444444444444444
   local eight=8888888888888888888888888888888888888888888888888888888888888888
-  local summary
+  local cee=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  local runtime runtime_depth_one durable durable_depth_one durable_depth_one_legacy
+  local summary checks enabled_check
+
   summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2\n0 0 %s %s\n1 1 %s %s\n' \
     "$zero" "$zero" "$eight" "$eight" |
-    native_payment_lanes_manifest_summary /dev/stdin 2)
-  [[ $summary == "2 1 1 0" ]]
+    native_payment_lanes_manifest_summary /dev/stdin 2 1 2)
+  jq -e '.records == 2 and .invalid == false and .lane_record_counts == [1,1] and
+         .lane_balance.balanced == true and .lane_balance.difference == 0' \
+    <<<"$summary" >/dev/null
+
+  summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 4\n0 0 %s %s\n1 1 %s %s\n2 2 %s %s\n3 3 %s %s\n' \
+    "$zero" "$zero" "$four" "$four" "$eight" "$eight" "$cee" "$cee" |
+    native_payment_lanes_manifest_summary /dev/stdin 4 2 4)
+  jq -e '.records == 4 and .invalid == false and .lane_record_counts == [1,1,1,1] and
+         .lane_balance.balanced == true' <<<"$summary" >/dev/null
+
+  summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 4\n0 0 %s %s\n1 1 %s %s\n2 2 %s %s\n3 3 %s %s\n' \
+    "$zero" "$zero" "$eight" "$four" "$eight" "$eight" "$cee" "$cee" |
+    native_payment_lanes_manifest_summary /dev/stdin 4 2 4)
+  jq -e '.invalid == true' <<<"$summary" >/dev/null
+
+  summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 4\n0 0 %s %s\n1 1 %s %s\n2 2 %s %s\n' \
+    "$zero" "$zero" "$four" "$four" "$eight" "$eight" |
+    native_payment_lanes_manifest_summary /dev/stdin 4 2 4)
+  jq -e '.records == 3 and .invalid == true' <<<"$summary" >/dev/null
+
+  summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 6\n0 0 %s %s\n4 0 %s %s\n8 0 %s %s\n1 1 %s %s\n2 2 %s %s\n3 3 %s %s\n' \
+    "$zero" "$zero" "$zero" "$zero" "$zero" "$zero" "$four" "$four" \
+    "$eight" "$eight" "$cee" "$cee" |
+    native_payment_lanes_manifest_summary /dev/stdin 6 2 4)
+  jq -e '.invalid == true and .lane_record_counts == [3,1,1,1] and
+         .lane_balance.balanced == false and .lane_balance.difference == 2' \
+    <<<"$summary" >/dev/null
+
+  native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2 ''
+  native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 4 ''
+  native_payment_lanes_manifest_header_valid \
+    NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 9007199254740991 ''
+  if native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 2 2 4 ''; then
+    return 1
+  fi
+  if native_payment_lanes_manifest_header_valid \
+      NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 9007199254740992 ''; then
+    return 1
+  fi
+  if native_payment_lanes_manifest_header_valid \
+      NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 18446744073709551616 ''; then
+    return 1
+  fi
+  summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 9007199254740991\n' |
+    native_payment_lanes_manifest_summary /dev/stdin 9007199254740991 2 4)
+  jq -e '.records == 0 and .invalid == true' <<<"$summary" >/dev/null
+
+  enabled_check=$(native_payment_lanes_runtime_enabled_check \
+    '{"NATIVE_PAYMENT_LANES_ENABLED":"0"}' 0)
+  jq -e '.valid and .runtime_explicit and .runtime_valid and .matches_requested' \
+    <<<"$enabled_check" >/dev/null
+  enabled_check=$(native_payment_lanes_runtime_enabled_check \
+    '{"NATIVE_PAYMENT_LANES_ENABLED":"1"}' 1)
+  jq -e '.valid' <<<"$enabled_check" >/dev/null
+  enabled_check=$(native_payment_lanes_runtime_enabled_check '{}' 0)
+  jq -e '.valid == false and .runtime_explicit == false' <<<"$enabled_check" >/dev/null
+  enabled_check=$(native_payment_lanes_runtime_enabled_check \
+    '{"NATIVE_PAYMENT_LANES_ENABLED":"enabled"}' 1)
+  jq -e '.valid == false and .runtime_valid == false' <<<"$enabled_check" >/dev/null
+  enabled_check=$(native_payment_lanes_runtime_enabled_check \
+    '{"NATIVE_PAYMENT_LANES_ENABLED":"1"}' 0)
+  jq -e '.valid == false and .matches_requested == false' <<<"$enabled_check" >/dev/null
+  enabled_check=$(native_payment_lanes_runtime_enabled_check \
+    '{"NATIVE_PAYMENT_LANES_ENABLED":"1"}' malformed)
+  jq -e '.valid == false and .requested_valid == false' <<<"$enabled_check" >/dev/null
+
+  runtime='{"ACTUAL_MIN_SPLIT":"2","MIN_SPLIT":"2","MAX_SPLIT":"2","NATIVE_TRANSFER_RUNS_ENABLED":"1","NATIVE_TRANSFER_RUNS_GLOBAL_VERSION":"15","NATIVE_TRANSFER_RUNS_CAPABILITY":"1024","NATIVE_PAYMENT_LANES_ENABLED":"1","NATIVE_PAYMENT_LANE_DEPTH":"2","NATIVE_PAYMENT_LANES_GLOBAL_VERSION":"16","NATIVE_PAYMENT_LANES_CAPABILITY":"2048"}'
+  durable='{"NATIVE_SPAM_REQUESTED_SOURCES":"4","NATIVE_SPAM_SOURCES":"4","NATIVE_SPAM_GENESIS_SOURCES":"4","NATIVE_TRANSFER_RUNS_ENABLED":"1","NATIVE_PAYMENT_LANES_ENABLED":"1","NATIVE_PAYMENT_LANE_DEPTH":"2","NATIVE_PAYMENT_LANE_COUNT":"4","NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION":"16","NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES":"3072","NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT":"2","NATIVE_PAYMENT_LANE_MIN_SPLIT":"2","NATIVE_PAYMENT_LANE_MAX_SPLIT":"2"}'
+  checks=$(native_payment_lanes_configuration_checks "$runtime" "$durable" 2 4 4)
+  jq -e '.valid and .runtime.fixed_split and .durable.manifest_sources and
+         .durable.lane_count_explicit and (.durable.lane_count_legacy_inferred | not) and
+         .consistency.header_lane_count' <<<"$checks" >/dev/null
+  runtime_depth_one=$(jq -c '
+    .ACTUAL_MIN_SPLIT = "1" | .MIN_SPLIT = "1" | .MAX_SPLIT = "1" |
+    .NATIVE_PAYMENT_LANE_DEPTH = "1"
+  ' <<<"$runtime")
+  durable_depth_one=$(jq -c '
+    .NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT = "1" |
+    .NATIVE_PAYMENT_LANE_MIN_SPLIT = "1" |
+    .NATIVE_PAYMENT_LANE_MAX_SPLIT = "1" |
+    .NATIVE_PAYMENT_LANE_DEPTH = "1" |
+    .NATIVE_PAYMENT_LANE_COUNT = "2"
+  ' <<<"$durable")
+  checks=$(native_payment_lanes_configuration_checks \
+    "$runtime_depth_one" "$durable_depth_one" 1 2 4)
+  jq -e '.valid and .consistency.header_lane_count and
+         .consistency.runtime_durable_split' <<<"$checks" >/dev/null
+  durable_depth_one_legacy=$(jq -c 'del(.NATIVE_PAYMENT_LANE_COUNT)' <<<"$durable_depth_one")
+  checks=$(native_payment_lanes_configuration_checks \
+    "$runtime_depth_one" "$durable_depth_one_legacy" 1 2 4)
+  jq -e '.valid and .durable.lane_count and
+         (.durable.lane_count_explicit | not) and .durable.lane_count_legacy_inferred and
+         .consistency.durable_manifest_lane_count' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks "$runtime_depth_one" \
+    "$(jq -c '.NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION = "15"' <<<"$durable_depth_one_legacy")" \
+    1 2 4)
+  jq -e '.valid == false and .durable.lane_count_legacy_inferred and
+         .durable.effective_global_version == false' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks \
+    "$(jq -c '.NATIVE_PAYMENT_LANE_DEPTH = "1"' <<<"$runtime")" "$durable" 2 4 4)
+  jq -e '.valid == false and .runtime.payment_lanes == false and
+         .consistency.runtime_manifest_depth == false' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks "$runtime" \
+    "$(jq -c 'del(.NATIVE_PAYMENT_LANE_MAX_SPLIT)' <<<"$durable")" 2 4 4)
+  jq -e '.valid == false and .durable.fixed_split == false and
+         .consistency.runtime_durable_split == false' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks "$runtime" \
+    "$(jq -c 'del(.NATIVE_PAYMENT_LANE_COUNT)' <<<"$durable")" 2 4 4)
+  jq -e '.valid == false and .durable.lane_count == false and
+         .consistency.durable_manifest_lane_count == false' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks "$runtime" \
+    "$(jq -c '.NATIVE_PAYMENT_LANE_COUNT = "2"' <<<"$durable")" 2 4 4)
+  jq -e '.valid == false and .durable.lane_count_explicit and
+         .durable.lane_count == false' <<<"$checks" >/dev/null
 }
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -801,10 +1105,11 @@ capture_ext_messages_broadcast_state() {
 # fail closed for an enabled lane profile if its durable activation evidence is
 # absent; retained Docker startup logs are supplemental.
 capture_native_payment_lanes_provenance() {
-  local runtime_environment enabled captured_at manifest_path
+  local runtime_environment requested_enabled enabled_check enabled captured_at manifest_path
   local schema manifest_depth lane_count manifest_sources extra
-  local manifest_records lane_zero_records lane_one_records manifest_invalid lane_difference
-  local genesis_environment durable_checks activation_checks
+  local manifest_summary manifest_records lane_zero_records lane_one_records
+  local lane_record_counts lane_records lane_balance
+  local genesis_environment configuration_checks runtime_checks durable_checks consistency_checks activation_checks
   local manifest_sha256 genesis_env_sha256 activation_sha256
 
   captured_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -817,13 +1122,22 @@ capture_native_payment_lanes_provenance() {
     echo "failed to inspect native payment-lane runtime configuration" >&2
     return 1
   fi
-  enabled=$(jq -r '.NATIVE_PAYMENT_LANES_ENABLED // "0"' <<<"$runtime_environment")
+  requested_enabled=${NATIVE_PAYMENT_LANES_ENABLED:-0}
+  if ! enabled_check=$(native_payment_lanes_runtime_enabled_check \
+      "$runtime_environment" "$requested_enabled") ||
+     ! jq -e '.valid == true' <<<"$enabled_check" >/dev/null; then
+    echo "native payment-lane runtime enablement is missing, malformed, or differs from the requested setting" >&2
+    return 1
+  fi
+  enabled=$(jq -r '.runtime_value' <<<"$enabled_check")
   if [[ $enabled != 1 ]]; then
     jq -n \
       --arg schema native-payment-lanes-provenance-v1 \
       --arg captured_at "$captured_at" \
       --argjson runtime_environment "$runtime_environment" \
+      --argjson enabled_check "$enabled_check" \
       '{$schema,$captured_at,enabled:false,container_environment:$runtime_environment,
+        runtime_enabled_check:$enabled_check,
         semantics:"no fixed native payment-lane profile was enabled for this benchmark"}' \
       >"$native_payment_lanes_provenance_file"
     return
@@ -849,23 +1163,29 @@ capture_native_payment_lanes_provenance() {
     ' >"$native_payment_lanes_activation_file" || :
 
   IFS=' ' read -r schema manifest_depth lane_count manifest_sources extra < "$native_payment_lanes_manifest_file" || true
-  if [[ $schema != NATIVE_PAYMENT_LANES_MANIFEST_V1 || $manifest_depth != 1 || $lane_count != 2 ||
-        ! $manifest_sources =~ ^[0-9]+$ || -n ${extra:-} ]]; then
+  if ! native_payment_lanes_manifest_header_valid \
+      "$schema" "$manifest_depth" "$lane_count" "$manifest_sources" "${extra:-}"; then
     echo "captured native payment-lane manifest has an invalid header" >&2
     return 1
   fi
-  read -r manifest_records lane_zero_records lane_one_records manifest_invalid < <(
-    native_payment_lanes_manifest_summary "$native_payment_lanes_manifest_file" "$manifest_sources"
-  )
-  lane_difference=$((lane_zero_records - lane_one_records))
-  if (( lane_difference < 0 )); then
-    lane_difference=$((-lane_difference))
-  fi
-  if [[ $manifest_records != "$manifest_sources" || $manifest_invalid != 0 ||
-        $((lane_zero_records + lane_one_records)) != "$manifest_records" || $lane_difference -gt 1 ]]; then
-    echo "captured native payment-lane manifest is incomplete or unbalanced" >&2
+  if ! manifest_summary=$(native_payment_lanes_manifest_summary \
+      "$native_payment_lanes_manifest_file" "$manifest_sources" "$manifest_depth" "$lane_count") ||
+     ! jq -e --argjson expected "$manifest_sources" --argjson lanes "$lane_count" '
+       .records == $expected and .invalid == false and
+       (.lane_record_counts | length) == $lanes and
+       all(.lane_record_counts[]; . > 0) and
+       .lane_balance.balanced == true and .lane_balance.difference <= 1
+     ' <<<"$manifest_summary" >/dev/null; then
+    echo "captured native payment-lane manifest is incomplete, invalid, or unbalanced" >&2
     return 1
   fi
+  manifest_records=$(jq -r '.records' <<<"$manifest_summary")
+  lane_zero_records=$(jq -r '.lane_record_counts[0]' <<<"$manifest_summary")
+  lane_one_records=$(jq -r '.lane_record_counts[1]' <<<"$manifest_summary")
+  lane_record_counts=$(jq -c '.lane_record_counts' <<<"$manifest_summary")
+  lane_records=$(jq -c '[.lane_record_counts | to_entries[] | {lane:.key,records:.value}]' \
+    <<<"$manifest_summary")
+  lane_balance=$(jq -c '.lane_balance' <<<"$manifest_summary")
 
   if ! genesis_environment=$(jq -Rn '
     [inputs |
@@ -876,36 +1196,34 @@ capture_native_payment_lanes_provenance() {
     echo "failed to parse native payment-lane genesis environment" >&2
     return 1
   fi
-  durable_checks=$(jq -n --argjson genesis_environment "$genesis_environment" '
-    $genesis_environment as $env |
-    {
-      fixed_split: ($env.NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT == "1" and
-                    $env.NATIVE_PAYMENT_LANE_MIN_SPLIT == "1" and
-                    $env.NATIVE_PAYMENT_LANE_MAX_SPLIT == "1"),
-      signed_runs: ($env.NATIVE_TRANSFER_RUNS_ENABLED == "1"),
-      payment_lanes: ($env.NATIVE_PAYMENT_LANES_ENABLED == "1" and
-                      $env.NATIVE_PAYMENT_LANE_DEPTH == "1"),
-      effective_capabilities: ($env.NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES == "3072"),
-      effective_global_version: ($env.NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION == "16")
-    }
-  ')
-  if ! jq -e '.fixed_split and .signed_runs and .payment_lanes and .effective_capabilities and .effective_global_version' \
-      <<<"$durable_checks" >/dev/null; then
-    echo "native payment-lane durable genesis marker does not prove the required v16 fixed-lane configuration" >&2
+  configuration_checks=$(native_payment_lanes_configuration_checks \
+    "$runtime_environment" "$genesis_environment" "$manifest_depth" "$lane_count" "$manifest_sources")
+  runtime_checks=$(jq -c '.runtime' <<<"$configuration_checks")
+  durable_checks=$(jq -c '.durable' <<<"$configuration_checks")
+  consistency_checks=$(jq -c '.consistency' <<<"$configuration_checks")
+  if ! jq -e '.valid == true' <<<"$configuration_checks" >/dev/null; then
+    echo "native payment-lane runtime and durable genesis marker do not match the captured fixed-lane topology" >&2
     return 1
   fi
   activation_checks=$(jq -n \
-    --rawfile activation "$native_payment_lanes_activation_file" '
+    --rawfile activation "$native_payment_lanes_activation_file" \
+    --arg split "$manifest_depth" \
+    --arg manifest_depth "depth=$manifest_depth" \
+    --arg manifest_lanes "lanes=$lane_count" \
+    --arg manifest_sources "sources=$manifest_sources" '
       ($activation | split("\\n")) as $lines |
       {
         available:(($lines | map(select(length > 0)) | length) > 0),
-        fixed_split: (($lines | index("ACTUAL_MIN_SPLIT=1")) != null and
-                      ($lines | index("MIN_SPLIT=1")) != null and
-                      ($lines | index("MAX_SPLIT=1")) != null),
+        fixed_split: (($lines | index("ACTUAL_MIN_SPLIT=" + $split)) != null and
+                      ($lines | index("MIN_SPLIT=" + $split)) != null and
+                      ($lines | index("MAX_SPLIT=" + $split)) != null),
         signed_runs: (($lines | index("NATIVE_TRANSFER_RUNS_ENABLED=1")) != null),
         payment_lanes: (($lines | index("NATIVE_PAYMENT_LANES_ENABLED=1")) != null),
         effective_capabilities: (($lines | index("NATIVE_PROTOCOL_CAPABILITIES=3072")) != null),
-        effective_global_version: (($lines | index("VERSION_CAPABILITIES=16")) != null)
+        effective_global_version: (($lines | index("VERSION_CAPABILITIES=16")) != null),
+        manifest_topology: any($lines[];
+          contains("Native payment lane manifest written:") and
+          contains($manifest_depth) and contains($manifest_lanes) and contains($manifest_sources))
       }
     ')
   manifest_sha256=$(sha256sum "$native_payment_lanes_manifest_file" | awk '{print $1}')
@@ -922,21 +1240,34 @@ capture_native_payment_lanes_provenance() {
     --arg activation_sha256 "$activation_sha256" \
     --argjson runtime_environment "$runtime_environment" \
     --argjson genesis_environment "$genesis_environment" \
+    --argjson enabled_check "$enabled_check" \
+    --argjson manifest_depth "$manifest_depth" \
+    --argjson lane_count "$lane_count" \
     --argjson manifest_records "$manifest_records" \
     --argjson lane_zero_records "$lane_zero_records" \
     --argjson lane_one_records "$lane_one_records" \
+    --argjson lane_record_counts "$lane_record_counts" \
+    --argjson lane_records "$lane_records" \
+    --argjson lane_balance "$lane_balance" \
+    --argjson runtime_checks "$runtime_checks" \
     --argjson durable_checks "$durable_checks" \
+    --argjson consistency_checks "$consistency_checks" \
     --argjson activation_checks "$activation_checks" \
     '{$schema,$captured_at,enabled:true,
       container_environment:$runtime_environment,genesis_environment:$genesis_environment,
-      manifest:{artifact:$manifest_artifact,sha256:$manifest_sha256,depth:1,lanes:2,
+      runtime_enabled_check:$enabled_check,
+      manifest:{artifact:$manifest_artifact,sha256:$manifest_sha256,depth:$manifest_depth,lanes:$lane_count,
                 records:$manifest_records,lane_zero_records:$lane_zero_records,
-                lane_one_records:$lane_one_records,contains_private_keys:false},
+                lane_one_records:$lane_one_records,lane_record_counts:$lane_record_counts,
+                lane_records:$lane_records,lane_balance:$lane_balance,
+                balanced:$lane_balance.balanced,contains_private_keys:false},
+      runtime_activation_checks:$runtime_checks,
       durable_activation_checks:$durable_checks,
+      topology_consistency_checks:$consistency_checks,
       activation_log:{artifact:$activation_artifact,sha256:$activation_sha256,
                       supplemental:true,checks:$activation_checks},
       genesis_env:{artifact:$genesis_env_artifact,sha256:$genesis_env_sha256},
-      semantics:"public manifest plus durable genesis activation evidence for the fixed two-lane Phase-A benchmark; container input and retained startup logs are supplemental"}' \
+      semantics:"public manifest plus runtime and durable genesis activation evidence for a fixed native payment-lane topology; container input and retained startup logs are supplemental"}' \
     >"$native_payment_lanes_provenance_file"
 }
 

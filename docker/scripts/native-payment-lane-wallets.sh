@@ -2,10 +2,10 @@
 
 # Wallet preparation helpers for the fixed-depth native payment-lane profile.
 # A source set is always generated and recorded as one unit: its source and
-# destination have the same lane bit, while source index parity keeps the two
-# depth-1 lanes balanced.  Workers only create independent wallet files.  The
-# caller remains responsible for serializing the base-state Fift script and
-# the manifest after every worker succeeds.
+# destination have the same fixed-depth lane prefix, while source-index modulo
+# the lane count keeps every supported topology balanced.  Workers only create
+# independent wallet files.  The caller remains responsible for serializing
+# the base-state Fift script and the manifest after every worker succeeds.
 
 NATIVE_PAYMENT_LANE_WALLET_RESULTS_DIR=
 
@@ -19,16 +19,34 @@ native_payment_lane_address_hex() {
   printf '%s\n' "$address_hex"
 }
 
-# The initial Phase-A harness intentionally uses the two fixed leaves at
-# depth 1. Assigning source index parity to the top account-id bit gives an
-# exactly balanced distribution (within one account for an odd source count)
-# while retaining a source/destination pair in the same payment lane.
+native_payment_lane_depth_is_valid() {
+  [[ ${1:-} == 1 || ${1:-} == 2 ]]
+}
+
+native_payment_lane_count() {
+  local depth=${1:-1}
+
+  native_payment_lane_depth_is_valid "$depth" || return 2
+  printf '%s\n' "$((1 << depth))"
+}
+
+# The benchmark harness supports the two fixed leaves at depth 1 and the four
+# fixed leaves at depth 2.  The lane is selected by the corresponding high
+# account-id bits; textual user-friendly address encodings are never used for
+# shard placement.
 native_payment_lane_for_address() {
+  local address_file=$1 depth=${2:-1}
   local address_hex
-  address_hex=$(native_payment_lane_address_hex "$1") || return 1
-  case "$address_hex" in
-    [01234567]*) printf '0\n' ;;
-    [89aAbBcCdDeEfF]*) printf '1\n' ;;
+
+  native_payment_lane_depth_is_valid "$depth" || return 2
+  address_hex=$(native_payment_lane_address_hex "$address_file") || return 1
+  case "$depth:$address_hex" in
+    1:[01234567]*) printf '0\n' ;;
+    1:[89aAbBcCdDeEfF]*) printf '1\n' ;;
+    2:[0123]*) printf '0\n' ;;
+    2:[4567]*) printf '1\n' ;;
+    2:[89aAbB]*) printf '2\n' ;;
+    2:[cCdDeEfF]*) printf '3\n' ;;
     *) return 1 ;;
   esac
 }
@@ -56,20 +74,31 @@ native_payment_lane_wallet_parallelism_is_valid() {
 
 create_native_payment_lane_wallet() {
   local base=$1 expected_lane=$2 retries=$3
-  local wallet_dir temp_dir temp_base attempt lane
+  local depth=${4:-1}
+  local wallet_dir temp_dir temp_base attempt lane lane_count
+
+  lane_count=$(native_payment_lane_count "$depth") || {
+    genesis_log "Native payment lane depth must be 1 or 2, got '$depth'"
+    return 2
+  }
+  if ! [[ $expected_lane =~ ^[0-9]+$ ]] || ((10#$expected_lane >= lane_count)); then
+    genesis_log "Native payment lane must be in [0,$((lane_count - 1))], got '$expected_lane'"
+    return 2
+  fi
 
   wallet_dir=$(dirname "$base")
   temp_dir=$(mktemp -d "$wallet_dir/.native-payment-lane.XXXXXX") || return 1
   temp_base="$temp_dir/wallet"
   for ((attempt = 1; attempt <= retries; ++attempt)); do
     if ! NATIVE_PAYMENT_LANE_EXPECTED_LANE="$expected_lane" \
+      NATIVE_PAYMENT_LANE_EXPECTED_DEPTH="$depth" \
       fift -s /usr/share/ton/smartcont/new-native-wallet.fif 0 "$temp_base" > "$temp_dir/create.log" 2>&1; then
       genesis_log "Can't create native payment lane wallet; last log lines follow"
       tail -n 20 "$temp_dir/create.log" >&2
       rm -rf -- "$temp_dir"
       return 1
     fi
-    lane=$(native_payment_lane_for_address "$temp_base.addr") || {
+    lane=$(native_payment_lane_for_address "$temp_base.addr" "$depth") || {
       genesis_log "Native payment lane wallet generator produced an invalid address"
       rm -rf -- "$temp_dir"
       return 1
@@ -92,15 +121,16 @@ create_native_payment_lane_wallet() {
 
 prepare_native_payment_lane_wallet() {
   local base=$1 expected_lane=$2 retries=$3
+  local depth=${4:-1}
   local state lane
 
   state=$(native_payment_lane_wallet_state "$base")
   case "$state" in
     absent)
-      create_native_payment_lane_wallet "$base" "$expected_lane" "$retries"
+      create_native_payment_lane_wallet "$base" "$expected_lane" "$retries" "$depth"
       ;;
     complete)
-      lane=$(native_payment_lane_for_address "$base.addr") || {
+      lane=$(native_payment_lane_for_address "$base.addr" "$depth") || {
         genesis_log "Existing native payment lane wallet has an invalid address: $base.addr"
         return 1
       }
@@ -122,15 +152,21 @@ prepare_native_payment_lane_wallet() {
 # generated and checked, so a caller never serializes a half-complete pair.
 prepare_native_payment_lane_wallet_set() {
   local wallet_dir=$1 index=$2 retries=$3 result_dir=$4
-  local expected_lane=$((index % 2))
+  local depth=${5:-1}
+  local lane_count expected_lane
   local source_base="$wallet_dir/source-$index"
   local destination_base="$wallet_dir/dest-$index"
   local source_result destination_result source_address_hex destination_address_hex
   local result_file="$result_dir/$index"
   local result_tmp="$result_file.tmp.$$"
 
-  source_result=$(prepare_native_payment_lane_wallet "$source_base" "$expected_lane" "$retries") || return 1
-  destination_result=$(prepare_native_payment_lane_wallet "$destination_base" "$expected_lane" "$retries") || return 1
+  lane_count=$(native_payment_lane_count "$depth") || {
+    genesis_log "Native payment lane depth must be 1 or 2, got '$depth'"
+    return 2
+  }
+  expected_lane=$((index % lane_count))
+  source_result=$(prepare_native_payment_lane_wallet "$source_base" "$expected_lane" "$retries" "$depth") || return 1
+  destination_result=$(prepare_native_payment_lane_wallet "$destination_base" "$expected_lane" "$retries" "$depth") || return 1
   source_address_hex=$(native_payment_lane_address_hex "$source_base.addr") || return 1
   destination_address_hex=$(native_payment_lane_address_hex "$destination_base.addr") || return 1
   case "$source_result:$destination_result" in
@@ -153,9 +189,14 @@ prepare_native_payment_lane_wallet_set() {
 # a private staging directory for the caller to read in source-index order.
 prepare_native_payment_lane_wallet_sets_parallel() {
   local wallet_dir=$1 source_count=$2 retries=$3 parallelism=$4
+  local depth=${5:-1}
   local result_dir index active_workers=0 worker_failed=0
 
   NATIVE_PAYMENT_LANE_WALLET_RESULTS_DIR=
+  if ! native_payment_lane_depth_is_valid "$depth"; then
+    genesis_log "Native payment lane depth must be 1 or 2, got '$depth'"
+    return 2
+  fi
   if ! native_payment_lane_wallet_parallelism_is_valid "$parallelism"; then
     genesis_log "NATIVE_PAYMENT_LANE_WALLET_PARALLELISM must be an integer from 1 through 32, got '$parallelism'"
     return 2
@@ -163,7 +204,7 @@ prepare_native_payment_lane_wallet_sets_parallel() {
   result_dir=$(mktemp -d "$wallet_dir/.native-payment-lane-workers.XXXXXX") || return 1
 
   for ((index = 0; index < source_count; ++index)); do
-    prepare_native_payment_lane_wallet_set "$wallet_dir" "$index" "$retries" "$result_dir" &
+    prepare_native_payment_lane_wallet_set "$wallet_dir" "$index" "$retries" "$result_dir" "$depth" &
     active_workers=$((active_workers + 1))
     if ((active_workers >= parallelism)); then
       if ! wait -n; then
