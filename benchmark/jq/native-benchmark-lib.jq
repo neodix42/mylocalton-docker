@@ -35,7 +35,7 @@ def native_work_time_counter_values($rows; $name):
     select(. != null)];
 
 # Native checkpoint groups are committed transactionally.  Counters below are
-# additive across collated candidates except the two per-candidate maxima.
+# additive across collated candidates except per-candidate maxima.
 # Report null values for an old or mixed image instead of treating a missing
 # telemetry field as a zero-value coalescing experiment.
 def native_checkpoint_coalescing_summary($rows):
@@ -51,6 +51,10 @@ def native_checkpoint_coalescing_summary($rows):
     "native_checkpoint_flush_fanout",
     "native_checkpoint_flush_headroom",
     "native_checkpoint_flush_latency",
+    "native_checkpoint_refill_continuations",
+    "native_checkpoint_refill_expirations",
+    "native_checkpoint_ingress_retentions",
+    "native_checkpoint_ingress_retention_max_dirty_accounts",
     "native_checkpoint_rollbacks",
     "native_checkpoint_rollback_entries"
   ] as $fields |
@@ -96,6 +100,12 @@ def native_checkpoint_coalescing_summary($rows):
     native_checkpoint_flush_fanout:total("native_checkpoint_flush_fanout"),
     native_checkpoint_flush_headroom:total("native_checkpoint_flush_headroom"),
     native_checkpoint_flush_latency:total("native_checkpoint_flush_latency"),
+    native_checkpoint_refill_continuations:total("native_checkpoint_refill_continuations"),
+    native_checkpoint_refill_expirations:total("native_checkpoint_refill_expirations"),
+    native_checkpoint_ingress_retentions:total("native_checkpoint_ingress_retentions"),
+    native_checkpoint_ingress_retention_max_dirty_accounts:(
+      maximum("native_checkpoint_ingress_retention_max_dirty_accounts")
+    ),
     native_checkpoint_rollbacks:total("native_checkpoint_rollbacks"),
     native_checkpoint_rollback_entries:total("native_checkpoint_rollback_entries")
   };

@@ -73,7 +73,9 @@ jq -n -e -L "$jq_dir" '
       "native_checkpoint_group_max_fragments=2 native_checkpoint_flush_capacity=1 " +
       "native_checkpoint_flush_ingress=0 native_checkpoint_flush_deadline=0 " +
       "native_checkpoint_flush_fanout=0 native_checkpoint_flush_headroom=0 " +
-      "native_checkpoint_flush_latency=0 native_checkpoint_rollbacks=0 " +
+      "native_checkpoint_flush_latency=0 native_checkpoint_refill_continuations=2 " +
+      "native_checkpoint_refill_expirations=1 native_checkpoint_ingress_retentions=3 " +
+      "native_checkpoint_ingress_retention_max_dirty_accounts=900 native_checkpoint_rollbacks=0 " +
       "native_checkpoint_rollback_entries=0"
     )},
     {work_time_real_stats:(
@@ -82,7 +84,9 @@ jq -n -e -L "$jq_dir" '
       "native_checkpoint_group_max_fragments=3 native_checkpoint_flush_capacity=0 " +
       "native_checkpoint_flush_ingress=1 native_checkpoint_flush_deadline=1 " +
       "native_checkpoint_flush_fanout=2 native_checkpoint_flush_headroom=1 " +
-      "native_checkpoint_flush_latency=1 native_checkpoint_rollbacks=1 " +
+      "native_checkpoint_flush_latency=1 native_checkpoint_refill_continuations=4 " +
+      "native_checkpoint_refill_expirations=2 native_checkpoint_ingress_retentions=5 " +
+      "native_checkpoint_ingress_retention_max_dirty_accounts=1400 native_checkpoint_rollbacks=1 " +
       "native_checkpoint_rollback_entries=512"
     )}
   ])) as $checkpoint |
@@ -102,6 +106,10 @@ jq -n -e -L "$jq_dir" '
   ($checkpoint.native_checkpoint_flush_fanout == 2) and
   ($checkpoint.native_checkpoint_flush_headroom == 1) and
   ($checkpoint.native_checkpoint_flush_latency == 1) and
+  ($checkpoint.native_checkpoint_refill_continuations == 6) and
+  ($checkpoint.native_checkpoint_refill_expirations == 3) and
+  ($checkpoint.native_checkpoint_ingress_retentions == 8) and
+  ($checkpoint.native_checkpoint_ingress_retention_max_dirty_accounts == 1400) and
   ($checkpoint.native_checkpoint_rollbacks == 1) and
   ($checkpoint.native_checkpoint_rollback_entries == 512) and
 
@@ -114,6 +122,10 @@ jq -n -e -L "$jq_dir" '
   ($partial_checkpoint.records_with_telemetry == 1) and
   ($partial_checkpoint.native_checkpoint_groups == null) and
   ($partial_checkpoint.native_checkpoint_group_entries == null) and
+  ($partial_checkpoint.native_checkpoint_refill_continuations == null) and
+  ($partial_checkpoint.native_checkpoint_refill_expirations == null) and
+  ($partial_checkpoint.native_checkpoint_ingress_retentions == null) and
+  ($partial_checkpoint.native_checkpoint_ingress_retention_max_dirty_accounts == null) and
 
   ({
     required:true, valid:true, topology_complete:true, totals_reconcile:true,
@@ -975,6 +987,10 @@ for field in \
   native_checkpoint_flush_fanout \
   native_checkpoint_flush_headroom \
   native_checkpoint_flush_latency \
+  native_checkpoint_refill_continuations \
+  native_checkpoint_refill_expirations \
+  native_checkpoint_ingress_retentions \
+  native_checkpoint_ingress_retention_max_dirty_accounts \
   native_checkpoint_rollbacks \
   native_checkpoint_rollback_entries; do
   grep -q "$field" "$jq_dir/native-benchmark-lib.jq" || {

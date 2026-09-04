@@ -255,6 +255,16 @@ transport's before/after snapshots, deltas, observed high-water/max-push/max-pop
 diagnostics, prefetch activity, and empty-pop events that occurred while a
 native push was already reserved.
 
+`TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1` enables a default-off throughput
+experiment for work-driven shard collation. It may retain a noninitial native
+checkpoint across an ingress-only boundary, while the existing deadline,
+capacity, fanout, and headroom guards remain mandatory. Retention never resets
+the checkpoint's fixed 25 ms latency deadline. Keep the flag at `0` for the
+baseline and change only this variable for the treatment run.
+`native_checkpoint_ingress_retentions` counts suppressed ingress-only flushes;
+`native_checkpoint_ingress_retention_max_dirty_accounts` records their largest
+pending account fanout.
+
 Checkpoint-coalescing treatments are reported under
 `validator-pipeline-summary.json` at
 `measured.collated_basechain.native_fast_path_counters.checkpoint_coalescing`
