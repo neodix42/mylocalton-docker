@@ -2819,6 +2819,8 @@ jq -L "$benchmark_jq_dir" -Rs '
   include "native-benchmark-lib";
   [split("\n")[] | fromjson? | select(.schema == "native-load-v2")] as $records |
   ($records | map(select(.final == true)) | last) as $final |
+  capacity_acceptance($final) as $acceptance |
+  canonical_lane_balance_telemetry($final) as $lane_telemetry |
   {
     records: ($records | length),
     max_offered_tps: ($records | map(.offered_tps // 0) | max),
@@ -2854,15 +2856,20 @@ jq -L "$benchmark_jq_dir" -Rs '
     canonical_backpressure_engaged: (($final.canonical_backpressure_s // 0) > 0),
     measured_canonical_backpressure_seconds: ($final.measure_canonical_backpressure_s // null),
     measured_canonical_backpressure_fraction: ($final.measure_canonical_backpressure_fraction // null),
-    ingress_capacity_valid: (
+    ingress_capacity_valid:(
       if $final == null then null else ($final.ingress_capacity_valid // false) end
     ),
-    chain_capacity_valid: (
-      if $final == null then null else ($final.chain_capacity_valid // false) end
+    chain_capacity_valid:(
+      if $final == null then null else ($acceptance.chain_capacity_valid // false) end
     ),
-    chain_correctness_valid: (
+    chain_correctness_valid:(
       if $final == null then null else ($final.chain_correctness_valid // false) end
     ),
+    canonical_lane_balance:$lane_telemetry.canonical_lane_balance,
+    canonical_lanes:$lane_telemetry.canonical_lanes,
+    canonical_lane_balance_required:$acceptance.canonical_lane_balance_required,
+    canonical_lane_balance_valid:$acceptance.canonical_lane_balance_valid,
+    canonical_lane_balance_invalid_reasons:$acceptance.canonical_lane_balance_invalid_reasons,
     canonical_observer_invalid_or_lagging_at_end: (
       (($final.canonical_follower_errors // 0) > 0) or
       (($final.canonical_follower_retry_exhausted // 0) > 0) or
@@ -2981,12 +2988,18 @@ jq -L "$benchmark_jq_dir" -Rs '
       (($final.canonical_total_backlog_after_drain // -1) == 0) and
       ($final.canonical_measured_offers_after_drain == $final.steady_offered)
     ),
-    capacity_acceptance:capacity_acceptance($final),
+    capacity_acceptance:$acceptance,
     generator_reported_invalid_reasons:(if $final == null then null else {
       correctness:($final.correctness_invalid_reasons // []),
       run_completion:($final.run_incomplete_reasons // []),
       ingress_capacity:($final.ingress_capacity_invalid_reasons // []),
-      chain_capacity:($final.chain_capacity_invalid_reasons // [])
+      chain_capacity:($final.chain_capacity_invalid_reasons // []),
+      canonical_lane_balance:(
+        field_or_null($final; "canonical_lane_balance") as $balance |
+        if ($balance | type) == "object" then ($balance.invalid_reasons // [])
+        else null
+        end
+      )
     } end),
     final: $final
   }

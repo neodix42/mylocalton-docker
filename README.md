@@ -170,6 +170,20 @@ v16/capability-3072 setup, the selected fixed depth, its `2^depth` lane count,
 and matching split values; retained startup lines are supplemental. No private
 wallet keys are copied into the bundle.
 
+The final generator record and `benchmark-summary.json.generator` also retain
+`canonical_lane_balance` and its deterministic `lanes` array. Counts come from
+the same proof-anchored, whole-second measurement cohort as aggregate canonical
+TPS. For a depth-2 result, the wrapper independently requires the generator's
+required/topology/reconciliation/activity/tolerance/validity checks to be true,
+exactly four expected and observed lanes, equal aggregate and summed lane
+transfers, and exactly four lane records. Every lane must be nonempty and its
+share must stay within five percent of an equal quarter. A false, missing, or
+self-inconsistent balance record fails
+`acceptance.canonical_lane_balance_valid`, records stable invalid-reason codes,
+and forces `acceptance.chain_capacity_valid` false without reclassifying proof
+correctness. Missing balance telemetry remains non-applicable for historical
+depth-0 and depth-1 summaries.
+
 The profile supports only fixed depths 1 and 2. It measures independent local
 lanes, not cross-lane receipts: cross-lane debit/proof/credit/refund semantics
 remain a later protocol phase. A depth change requires a fresh zero state. Do
@@ -523,8 +537,10 @@ diagnostic and does not change benchmark acceptance. Legacy or mixed records kee
 `null` with `capture_complete:false`.
 
 `benchmark-summary.json.acceptance` keeps canonical proof correctness, complete
-settled execution, ingress-capacity validity, chain-capacity validity,
-validator canonical cleanup, and reproducibility as independent decisions.
+settled execution, ingress-capacity validity, canonical lane-balance validity,
+chain-capacity validity, validator canonical cleanup, and reproducibility as
+independent decisions. Lane-balance validity is required only for depth 2, but
+an invalid or absent required balance also prevents a chain-capacity pass.
 Each failed decision has stable reason codes. Missing reconciliation or pending
 pool snapshots fail closed rather than silently accepting an old image or a
 failed validator-console query. A literal JSON `false` is retained as false,

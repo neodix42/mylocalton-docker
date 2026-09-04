@@ -115,6 +115,34 @@ jq -n -e -L "$jq_dir" '
   ($partial_checkpoint.native_checkpoint_groups == null) and
   ($partial_checkpoint.native_checkpoint_group_entries == null) and
 
+  ({
+    required:true, valid:true, topology_complete:true, totals_reconcile:true,
+    every_lane_active:true, within_tolerance:true,
+    depth:2, tolerance_bps:500,
+    expected_lanes:4, observed_lanes:4,
+    measured_transfers:4000, lane_measured_transfers_sum:4000,
+    lanes:[
+      {shard:"0:2000000000000000", depth:2, measured_native_transfers:1000},
+      {shard:"0:6000000000000000", depth:2, measured_native_transfers:1000},
+      {shard:"0:a000000000000000", depth:2, measured_native_transfers:1000},
+      {shard:"0:e000000000000000", depth:2, measured_native_transfers:1000}
+    ]
+  }) as $raw_lane_balance |
+  (canonical_lane_balance_telemetry({
+    canonical_lane_balance:$raw_lane_balance
+  })) as $lane_telemetry |
+  ($lane_telemetry.canonical_lane_balance == $raw_lane_balance) and
+  ($lane_telemetry.canonical_lanes == $raw_lane_balance.lanes) and
+  ((canonical_lane_balance_telemetry({})).canonical_lane_balance == null) and
+  ((canonical_lane_balance_telemetry({})).canonical_lanes == null) and
+  ([
+    ($raw_lane_balance | .lanes[3] = null),
+    ($raw_lane_balance | .lanes[3].shard = ""),
+    ($raw_lane_balance | .lanes[3].measured_native_transfers = "1000"),
+    ($raw_lane_balance | .lanes[3].measured_native_transfers = -1),
+    ($raw_lane_balance | .lanes[3].measured_native_transfers = 0.5)
+  ] | all(.[]; (canonical_depth2_lane_record_checks(.).records_valid == false))) and
+
   (capacity_acceptance({
     chain_correctness_valid:false,
     correctness_invalid_reasons:["proof_error"],
@@ -128,10 +156,231 @@ jq -n -e -L "$jq_dir" '
   ($acceptance.run_complete == true) and
   ($acceptance.ingress_capacity_valid == false) and
   ($acceptance.chain_capacity_valid == true) and
+  ($acceptance.canonical_lane_balance_required == false) and
+  ($acceptance.canonical_lane_balance_valid == null) and
+  ($acceptance.canonical_lane_balance_invalid_reasons == []) and
+
+  # A depth-2 chain-capacity pass additionally requires a complete, reconciled,
+  # active, and balanced four-lane canonical observation.
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_correctness_valid:true,
+    correctness_invalid_reasons:[],
+    run_incomplete_reasons:[],
+    ingress_capacity_valid:true,
+    ingress_capacity_invalid_reasons:[],
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:{
+      required:true, valid:true, topology_complete:true, totals_reconcile:true,
+      every_lane_active:true, within_tolerance:true,
+      depth:2, tolerance_bps:500,
+      expected_lanes:4, observed_lanes:4,
+      measured_transfers:4000, lane_measured_transfers_sum:4000,
+      lanes:[
+        {shard:"0:2000000000000000", depth:2, measured_native_transfers:1000},
+        {shard:"0:6000000000000000", depth:2, measured_native_transfers:1000},
+        {shard:"0:a000000000000000", depth:2, measured_native_transfers:1000},
+        {shard:"0:e000000000000000", depth:2, measured_native_transfers:1000}
+      ]
+    }
+  })) as $balanced_lanes |
+  ($balanced_lanes.canonical_lane_balance_required == true) and
+  ($balanced_lanes.canonical_lane_balance_valid == true) and
+  ($balanced_lanes.canonical_lane_balance_invalid_reasons == []) and
+  ($balanced_lanes.chain_capacity_valid == true) and
+  ($balanced_lanes.chain_capacity_invalid_reasons == []) and
+
+  # Producer booleans cannot mask self-inconsistent counts, aggregate totals,
+  # or a truncated per-lane record array.
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:{
+      required:true, valid:true, topology_complete:true, totals_reconcile:true,
+      every_lane_active:true, within_tolerance:true,
+      depth:2, tolerance_bps:500,
+      expected_lanes:2, observed_lanes:3,
+      measured_transfers:4000, lane_measured_transfers_sum:3999,
+      lanes:[
+        {shard:"a", depth:2, measured_native_transfers:1000},
+        {shard:"b", depth:2, measured_native_transfers:1000},
+        {shard:"c", depth:2, measured_native_transfers:1000},
+        {shard:"d", depth:2, measured_native_transfers:1000}
+      ]
+    }
+  })) as $inconsistent_lanes |
+  ($inconsistent_lanes.canonical_lane_balance_valid == false) and
+  ($inconsistent_lanes.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_expected_lanes_mismatch",
+    "canonical_lane_balance_observed_lanes_mismatch",
+    "canonical_lane_balance_record_sum_mismatch"
+  ]) and
+  ($inconsistent_lanes.chain_capacity_valid == false) and
+  ($inconsistent_lanes.chain_capacity_invalid_reasons ==
+    $inconsistent_lanes.canonical_lane_balance_invalid_reasons) and
+
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:($raw_lane_balance |
+      .lanes[3].shard = .lanes[2].shard)
+  })) as $duplicate_lane |
+  ($duplicate_lane.canonical_lane_balance_valid == false) and
+  ($duplicate_lane.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_duplicate_shard"
+  ]) and
+  ($duplicate_lane.chain_capacity_valid == false) and
+
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:($raw_lane_balance |
+      .lanes[3].shard = "" |
+      .lanes[3].measured_native_transfers = "1000")
+  })) as $bad_lane_record |
+  ($bad_lane_record.canonical_lane_balance_valid == false) and
+  ($bad_lane_record.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_lane_record_invalid"
+  ]) and
+  ($bad_lane_record.chain_capacity_valid == false) and
+
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:($raw_lane_balance |
+      .lanes[3].measured_native_transfers = 999)
+  })) as $record_sum_mismatch |
+  ($record_sum_mismatch.canonical_lane_balance_valid == false) and
+  ($record_sum_mismatch.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_record_sum_mismatch"
+  ]) and
+  ($record_sum_mismatch.chain_capacity_valid == false) and
+
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:($raw_lane_balance |
+      .lanes[0].measured_native_transfers = 950 |
+      .lanes[3].measured_native_transfers = 1050)
+  })) as $share_boundary |
+  ($share_boundary.canonical_lane_balance_valid == true) and
+  ($share_boundary.chain_capacity_valid == true) and
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:($raw_lane_balance |
+      .lanes[0].measured_native_transfers = 949 |
+      .lanes[3].measured_native_transfers = 1051)
+  })) as $share_outside |
+  ($share_outside.canonical_lane_balance_valid == false) and
+  ($share_outside.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_record_share_outside_tolerance"
+  ]) and
+  ($share_outside.chain_capacity_valid == false) and
+
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[],
+    canonical_lane_balance:($raw_lane_balance |
+      .depth = 1 |
+      .tolerance_bps = 501)
+  })) as $unpinned_policy |
+  ($unpinned_policy.canonical_lane_balance_valid == false) and
+  ($unpinned_policy.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_depth_mismatch",
+    "canonical_lane_balance_tolerance_mismatch"
+  ]) and
+  ($unpinned_policy.chain_capacity_valid == false) and
+
+  # One inactive/starved lane is an independent rejection and must turn an
+  # otherwise generator-reported chain-capacity pass into a failure.
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:["reported_capacity_context"],
+    canonical_lane_balance:{
+      required:true, valid:false, topology_complete:true, totals_reconcile:true,
+      every_lane_active:false, within_tolerance:false,
+      depth:2, tolerance_bps:500,
+      expected_lanes:4, observed_lanes:4,
+      measured_transfers:3000, lane_measured_transfers_sum:3000,
+      lanes:[
+        {shard:"0:2000000000000000", depth:2, measured_native_transfers:1000},
+        {shard:"0:6000000000000000", depth:2, measured_native_transfers:1000},
+        {shard:"0:a000000000000000", depth:2, measured_native_transfers:1000},
+        {shard:"0:e000000000000000", depth:2, measured_native_transfers:0}
+      ]
+    }
+  })) as $starved_lane |
+  ($starved_lane.canonical_lane_balance_valid == false) and
+  ($starved_lane.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_inactive",
+    "canonical_lane_imbalance",
+    "canonical_lane_balance_invalid",
+    "canonical_lane_balance_inactive_record",
+    "canonical_lane_balance_record_share_outside_tolerance"
+  ]) and
+  ($starved_lane.chain_capacity_valid == false) and
+  ($starved_lane.chain_capacity_invalid_reasons == [
+    "reported_capacity_context",
+    "canonical_lane_inactive",
+    "canonical_lane_imbalance",
+    "canonical_lane_balance_invalid",
+    "canonical_lane_balance_inactive_record",
+    "canonical_lane_balance_record_share_outside_tolerance"
+  ]) and
+
+  (capacity_acceptance({
+    native_payment_lane_depth:2,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[]
+  })) as $missing_lane_balance |
+  ($missing_lane_balance.canonical_lane_balance_required == true) and
+  ($missing_lane_balance.canonical_lane_balance_valid == false) and
+  ($missing_lane_balance.canonical_lane_balance_invalid_reasons == [
+    "canonical_lane_balance_missing"
+  ]) and
+  ($missing_lane_balance.chain_capacity_valid == false) and
+  ($missing_lane_balance.chain_capacity_invalid_reasons == [
+    "canonical_lane_balance_missing"
+  ]) and
+
+  # Historic non-lane and two-lane records do not acquire a new retroactive
+  # requirement merely because the balance object did not exist yet.
+  (capacity_acceptance({
+    native_payment_lane_depth:1,
+    chain_capacity_valid:true,
+    chain_capacity_invalid_reasons:[]
+  })) as $legacy_depth_one |
+  ($legacy_depth_one.canonical_lane_balance_required == false) and
+  ($legacy_depth_one.canonical_lane_balance_valid == null) and
+  ($legacy_depth_one.chain_capacity_valid == true) and
+  (capacity_acceptance({
+    native_payment_lane_depth:0,
+    chain_capacity_valid:false,
+    chain_capacity_invalid_reasons:["existing_failure"]
+  })) as $legacy_depth_zero |
+  ($legacy_depth_zero.canonical_lane_balance_required == false) and
+  ($legacy_depth_zero.canonical_lane_balance_valid == null) and
+  ($legacy_depth_zero.chain_capacity_valid == false) and
+  ($legacy_depth_zero.chain_capacity_invalid_reasons == ["existing_failure"]) and
 
   (capacity_acceptance(null)) as $missing |
   ($missing.run_complete == null) and
   ($missing.run_incomplete_reasons == ["missing_final_generator_record"]) and
+  ($missing.canonical_lane_balance_required == null) and
+  ($missing.canonical_lane_balance_valid == null) and
+  ($missing.canonical_lane_balance_invalid_reasons == [
+    "missing_final_generator_record"
+  ]) and
 
   (validator_pool_cleanup_acceptance(
     {pending_sources:0,failures:3}; {accounts:0,messages:0,nonce_watermarks:4096}
@@ -564,6 +813,11 @@ jq -n -e -L "$jq_dir" '
 for field in \
   canonical_follower_transient_liteserver_timeouts \
   canonical_follower_transient_not_ready \
+  canonical_lane_balance \
+  canonical_lanes \
+  canonical_lane_balance_required \
+  canonical_lane_balance_valid \
+  canonical_lane_balance_invalid_reasons \
   retry_horizon_exhausted \
   canonical_state_lag_retry_exhausted \
   adaptive_cwnd \
@@ -648,6 +902,16 @@ for field in \
 done
 
 for field in \
+  canonical_lane_balance_telemetry \
+  canonical_lane_balance_acceptance \
+  canonical_lane_balance_expected_lanes_mismatch \
+  canonical_lane_balance_observed_lanes_mismatch \
+  canonical_lane_balance_lane_records_mismatch \
+  canonical_lane_balance_lane_record_invalid \
+  canonical_lane_balance_duplicate_shard \
+  canonical_lane_balance_inactive_record \
+  canonical_lane_balance_record_sum_mismatch \
+  canonical_lane_balance_record_share_outside_tolerance \
   shard_state_requests \
   shard_manager_waits \
   shard_fetches \
