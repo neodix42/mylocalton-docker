@@ -158,6 +158,11 @@ for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
   grep -qx 'NATIVE_LOAD_PAYMENT_LANE_DEPTH=0' "$repo_dir/$env_file"
 done
 
+grep -qx 'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1' "$repo_dir/.env.physical"
+[[ $(grep -Fc \
+  'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=${TON_NATIVE_CHECKPOINT_RETAIN_INGRESS:-0}' \
+  "$repo_dir/docker-compose.yaml") -eq 6 ]]
+
 grep -Fqx 'VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or NATIVE_PROTOCOL_CAPABILITIES or config.version!' \
   "$repo_dir/docker/scripts/gen-zerostate.fif"
 grep -Fq 'native payment lanes require ACTUAL_MIN_SPLIT, MIN_SPLIT, and MAX_SPLIT' \

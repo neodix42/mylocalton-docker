@@ -255,12 +255,13 @@ transport's before/after snapshots, deltas, observed high-water/max-push/max-pop
 diagnostics, prefetch activity, and empty-pop events that occurred while a
 native push was already reserved.
 
-`TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1` enables a default-off throughput
-experiment for work-driven shard collation. It may retain a noninitial native
-checkpoint across an ingress-only boundary, while the existing deadline,
-capacity, fanout, and headroom guards remain mandatory. Retention never resets
-the checkpoint's fixed 25 ms latency deadline. Keep the flag at `0` for the
-baseline and change only this variable for the treatment run.
+`TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1` retains a noninitial native checkpoint
+across an ingress-only boundary, while the existing deadline, capacity, fanout,
+and headroom guards remain mandatory. Retention never resets the checkpoint's
+fixed 25 ms latency deadline. The tracked physical profile enables this
+optimization; Compose's fallback remains `0`, so other profiles and ordinary
+deployments stay fail-closed. Set it explicitly to `0` when reproducing the
+control baseline.
 `native_checkpoint_ingress_retentions` counts suppressed ingress-only flushes;
 `native_checkpoint_ingress_retention_max_dirty_accounts` records their largest
 pending account fanout.
