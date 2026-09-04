@@ -280,6 +280,18 @@ and maximum collation latency exceeded the predeclared two-second bound. The
 physical profile therefore keeps this experiment at `0`; it must earn a new
 sustained A/B result before being enabled by default.
 
+Core revision `63285ce9` removes a second full native-batch reserialization
+from validator decode while rebuilding and checking the same canonical NTRM
+tree. In clean exact-image 60-second depth-2 runs at a 40k target, the accepted
+`6b7f04c4` control produced 38,314.0 canonical and 37,447.7 proof-cohort tx/s;
+the accepted warmed `63285ce9` treatment produced 38,774.5 and 37,852.8 tx/s
+(+1.20% and +1.08%). Average `unpack_block_candidate` time fell from 6.762 to
+5.526 ms per validated block (-18.28%), byte-normalized unpack cost fell
+14.23%, and total validation CPU fell 9.12%. Both selected runs passed proof,
+completion, ingress, chain-capacity, lane-balance, signed-run, and cleanup
+gates. A cold first treatment remained proof-correct but missed the ingress
+gate and is excluded from the capacity comparison.
+
 Checkpoint-coalescing treatments are reported under
 `validator-pipeline-summary.json` at
 `measured.collated_basechain.native_fast_path_counters.checkpoint_coalescing`
