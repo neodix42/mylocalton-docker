@@ -266,6 +266,14 @@ control baseline.
 `native_checkpoint_ingress_retention_max_dirty_accounts` records their largest
 pending account fanout.
 
+`TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=1` is a default-off dense-packing
+treatment for work-driven shard collation. It extends only the idle wait after
+an exact native checkpoint from 10 ms to 20 ms; partial fragments keep their
+independent 10 ms refill boundary, retained checkpoints keep their fixed 25 ms
+latency deadline, and candidate intake/finalization deadlines remain
+authoritative. Enable it only for a controlled A/B because denser blocks trade
+up to 10 ms of last-work publication latency for lower fixed per-block cost.
+
 Checkpoint-coalescing treatments are reported under
 `validator-pipeline-summary.json` at
 `measured.collated_basechain.native_fast_path_counters.checkpoint_coalescing`

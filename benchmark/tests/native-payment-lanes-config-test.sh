@@ -162,6 +162,13 @@ grep -qx 'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1' "$repo_dir/.env.physical"
 [[ $(grep -Fc \
   'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=${TON_NATIVE_CHECKPOINT_RETAIN_INGRESS:-0}' \
   "$repo_dir/docker-compose.yaml") -eq 6 ]]
+grep -qx 'TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=0' "$repo_dir/.env.physical"
+[[ $(grep -Fc \
+  'TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=${TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS:-0}' \
+  "$repo_dir/docker-compose.yaml") -eq 6 ]]
+for env_file in .env .env.desktop .env.devnet .env.laptop; do
+  ! grep -q '^TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=' "$repo_dir/$env_file"
+done
 
 grep -Fqx 'VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or NATIVE_PROTOCOL_CAPABILITIES or config.version!' \
   "$repo_dir/docker/scripts/gen-zerostate.fif"
