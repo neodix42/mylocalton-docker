@@ -202,6 +202,7 @@ grep -qx 'NATIVE_PAYMENT_LANE_DEPTH=1' <<< "$profile_environment"
 grep -qx 'NATIVE_TRANSFER_RUNS_ENABLED=1' <<< "$profile_environment"
 grep -qx 'ACTUAL_MIN_SPLIT=1' <<< "$profile_environment"
 grep -qx 'MAX_SPLIT=1' <<< "$profile_environment"
+grep -qx 'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=360' <<< "$profile_environment"
 
 profile_environment=$(native_payment_lanes_profile_env 2 env)
 grep -qx 'NATIVE_PAYMENT_LANE_DEPTH=2' <<< "$profile_environment"
@@ -209,6 +210,12 @@ grep -qx 'NATIVE_LOAD_PAYMENT_LANE_DEPTH=2' <<< "$profile_environment"
 grep -qx 'ACTUAL_MIN_SPLIT=2' <<< "$profile_environment"
 grep -qx 'MIN_SPLIT=2' <<< "$profile_environment"
 grep -qx 'MAX_SPLIT=2' <<< "$profile_environment"
+grep -qx 'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=900' <<< "$profile_environment"
+
+profile_environment=$(native_payment_lanes_profile_env 2 \
+  env NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=1200 env)
+grep -qx 'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=1200' <<< "$profile_environment"
+! grep -qx 'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=900' <<< "$profile_environment"
 ! native_payment_lanes_profile_env 0 env >/dev/null 2>&1
 ! native_payment_lanes_profile_env 3 env >/dev/null 2>&1
 

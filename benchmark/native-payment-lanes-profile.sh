@@ -5,6 +5,7 @@
 # reuse a lane genesis with the default scalar configuration.
 native_payment_lanes_profile_env() {
   local lane_depth=1
+  local readiness_timeout_seconds=360
 
   # The runners always pass an explicit depth. Retain the original command-
   # first form as a depth-1 compatibility path for callers that source this
@@ -20,6 +21,12 @@ native_payment_lanes_profile_env() {
       return 2
       ;;
   esac
+
+  if (( lane_depth == 2 )); then
+    # A fresh depth-2 topology splits in two sequential rounds. The first
+    # round alone can consume most of the depth-1 readiness allowance.
+    readiness_timeout_seconds=900
+  fi
 
   env \
     NATIVE_TRANSFER_RUNS_ENABLED=1 \
@@ -38,7 +45,7 @@ native_payment_lanes_profile_env() {
     NATIVE_SPAM_GENESIS_DESTINATIONS=1 \
     NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1 \
     NATIVE_LOAD_PAYMENT_LANE_DEPTH="$lane_depth" \
-    NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=360 \
+    NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS="$readiness_timeout_seconds" \
     NATIVE_LOAD_PAYMENT_LANE_READY_POLL_SECONDS=2 \
     NATIVE_LOAD_PAYMENT_LANE_READY_STABLE_OBSERVATIONS=2 \
     "$@"
