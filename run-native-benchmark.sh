@@ -2464,6 +2464,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
         ),
         checkpoint_rebuilds:native_work_counter_sum($rows; "native_stat_checkpoint_rebuilds"),
         checkpoint_coalescing:native_checkpoint_coalescing_summary($rows),
+        deferrals:native_collator_deferral_summary($rows),
         fragment_refill_waits:native_work_counter_sum($rows; "native_fragment_refill_waits"),
         fragment_refill_timeouts:native_work_counter_sum($rows; "native_fragment_refill_timeouts"),
         fragment_refill_messages:native_work_counter_sum($rows; "native_fragment_refill_messages"),

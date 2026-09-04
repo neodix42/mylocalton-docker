@@ -59,6 +59,40 @@ jq -n -e -L "$jq_dir" '
     "external_wait_native_producer_drain_s=0 external_wait_native_producer_drain_calls=0 " +
     "external_wait_native_sync_snapshot_s=0 external_wait_native_sync_snapshot_calls=0 " +
     "external_wait_accounted_s=\($accounted) external_wait_calls=1";
+  def native_deferral_stats($factor; $overrides; $drop_fields):
+    ({
+      native_deferral_intake_deadline_idle_entries:$factor,
+      native_deferral_intake_deadline_fragment_entries:$factor,
+      native_deferral_checkpoint_deadline_rollback_entries:$factor,
+      native_deferral_checkpoint_hard_preflight_entries:$factor,
+      native_deferral_checkpoint_size_preflight_entries:$factor,
+      native_deferral_medium_timeout_entries:$factor,
+      native_deferral_candidate_headroom_entries:$factor,
+      native_deferral_candidate_size_guard_entries:$factor,
+      native_deferral_protocol_account_capacity_entries:$factor,
+      native_deferral_account_unavailable_entries:$factor,
+      native_deferral_account_balance_unrepresentable_entries:$factor,
+      native_deferral_state_invalid_fields_entries:$factor,
+      native_deferral_state_invalid_signature_entries:$factor,
+      native_deferral_state_nonce_mismatch_entries:$factor,
+      native_deferral_state_nonce_overflow_entries:$factor,
+      native_deferral_state_invalid_source_entries:$factor,
+      native_deferral_state_invalid_destination_entries:$factor,
+      native_deferral_state_insufficient_balance_entries:$factor,
+      native_deferral_state_balance_overflow_entries:$factor,
+      native_microbatch_delayed:(19 * $factor),
+      native_checkpoint_rollback_entries:(3 * $factor),
+      native_deadline_deferred:(2 * $factor),
+      native_prebatch_protocol_capacity_requeue_works:$factor,
+      native_prebatch_protocol_capacity_requeue_entries:(10 * $factor),
+      native_prebatch_carryover_requeue_works:(2 * $factor),
+      native_prebatch_carryover_requeue_entries:(20 * $factor),
+      native_prebatch_scalar_decode_retry_works:(3 * $factor)
+    } + $overrides) as $counters |
+    (reduce $drop_fields[] as $field ($counters; del(.[$field]))) |
+    to_entries |
+    map("\(.key)=\(.value)") |
+    join(" ");
 
   (field_or_null({present:false}; "present") == false) and
   (field_or_null({}; "missing") == null) and
@@ -126,6 +160,107 @@ jq -n -e -L "$jq_dir" '
   ($partial_checkpoint.native_checkpoint_refill_expirations == null) and
   ($partial_checkpoint.native_checkpoint_ingress_retentions == null) and
   ($partial_checkpoint.native_checkpoint_ingress_retention_max_dirty_accounts == null) and
+
+  # Deferral attribution is additive across candidates, while all three
+  # entry-domain equations reconcile independently. Prebatch work and entry
+  # units remain visible in their separate domain.
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(1; {}; [])},
+    {work_time_real_stats:native_deferral_stats(2; {}; [])}
+  ])) as $deferrals |
+  ($deferrals.capture_complete == true) and
+  ($deferrals.records_total == 2) and
+  ($deferrals.records_with_telemetry == 2) and
+  ($deferrals.native_microbatch_delayed == 57) and
+  ($deferrals.reason_entries_sum == 57) and
+  ($deferrals.delayed_accounting_error == 0) and
+  ($deferrals.native_checkpoint_rollback_entries == 9) and
+  ($deferrals.checkpoint_reason_entries_sum == 9) and
+  ($deferrals.checkpoint_accounting_error == 0) and
+  ($deferrals.native_deadline_deferred == 6) and
+  ($deferrals.deadline_reason_entries_sum == 6) and
+  ($deferrals.deadline_accounting_error == 0) and
+  ($deferrals.totals_reconcile == true) and
+  ($deferrals.native_deferral_intake_deadline_idle_entries == 3) and
+  ($deferrals.native_deferral_state_balance_overflow_entries == 3) and
+  ($deferrals.prebatch.capture_complete == true) and
+  ($deferrals.prebatch.records_with_telemetry == 2) and
+  ($deferrals.prebatch.native_prebatch_protocol_capacity_requeue_works == 3) and
+  ($deferrals.prebatch.native_prebatch_protocol_capacity_requeue_entries == 30) and
+  ($deferrals.prebatch.native_prebatch_carryover_requeue_works == 6) and
+  ($deferrals.prebatch.native_prebatch_carryover_requeue_entries == 60) and
+  ($deferrals.prebatch.native_prebatch_scalar_decode_retry_works == 9) and
+
+  # The total and each documented subset must fail independently rather than
+  # letting one matching equation hide another mismatch.
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(
+      1; {native_microbatch_delayed:20}; []
+    )}
+  ])) as $delayed_mismatch |
+  ($delayed_mismatch.capture_complete == true) and
+  ($delayed_mismatch.delayed_accounting_error == 1) and
+  ($delayed_mismatch.checkpoint_accounting_error == 0) and
+  ($delayed_mismatch.deadline_accounting_error == 0) and
+  ($delayed_mismatch.totals_reconcile == false) and
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(
+      1; {native_checkpoint_rollback_entries:4}; []
+    )}
+  ])) as $checkpoint_mismatch |
+  ($checkpoint_mismatch.delayed_accounting_error == 0) and
+  ($checkpoint_mismatch.checkpoint_accounting_error == 1) and
+  ($checkpoint_mismatch.deadline_accounting_error == 0) and
+  ($checkpoint_mismatch.totals_reconcile == false) and
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(
+      1; {native_deadline_deferred:3}; []
+    )}
+  ])) as $deadline_mismatch |
+  ($deadline_mismatch.delayed_accounting_error == 0) and
+  ($deadline_mismatch.checkpoint_accounting_error == 0) and
+  ($deadline_mismatch.deadline_accounting_error == 1) and
+  ($deadline_mismatch.totals_reconcile == false) and
+
+  # A missing field in one row, including a mixed old/new result set, makes
+  # every quantitative primary-domain value unavailable. The independent
+  # prebatch contract fails closed on its own fields as well.
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(
+      1; {}; ["native_deferral_state_balance_overflow_entries"]
+    )}
+  ])) as $missing_deferral |
+  ($missing_deferral.capture_complete == false) and
+  ($missing_deferral.records_with_telemetry == 1) and
+  ($missing_deferral.native_microbatch_delayed == null) and
+  ($missing_deferral.reason_entries_sum == null) and
+  ($missing_deferral.delayed_accounting_error == null) and
+  ($missing_deferral.checkpoint_reason_entries_sum == null) and
+  ($missing_deferral.deadline_reason_entries_sum == null) and
+  ($missing_deferral.totals_reconcile == null) and
+  ($missing_deferral.native_deferral_intake_deadline_idle_entries == null) and
+  ($missing_deferral.native_deferral_state_balance_overflow_entries == null) and
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(1; {}; [])},
+    {work_time_real_stats:native_deferral_stats(
+      1; {}; ["native_deferral_state_balance_overflow_entries"]
+    )}
+  ])) as $mixed_deferral |
+  ($mixed_deferral.capture_complete == false) and
+  ($mixed_deferral.records_total == 2) and
+  ($mixed_deferral.records_with_telemetry == 2) and
+  ($mixed_deferral.native_microbatch_delayed == null) and
+  ($mixed_deferral.totals_reconcile == null) and
+  (native_collator_deferral_summary([
+    {work_time_real_stats:native_deferral_stats(
+      1; {}; ["native_prebatch_scalar_decode_retry_works"]
+    )}
+  ])) as $missing_prebatch |
+  ($missing_prebatch.capture_complete == true) and
+  ($missing_prebatch.totals_reconcile == true) and
+  ($missing_prebatch.prebatch.capture_complete == false) and
+  ($missing_prebatch.prebatch.native_prebatch_protocol_capacity_requeue_works == null) and
+  ($missing_prebatch.prebatch.native_prebatch_scalar_decode_retry_works == null) and
 
   ({
     required:true, valid:true, topology_complete:true, totals_reconcile:true,
@@ -859,6 +994,7 @@ for field in \
   native_size_guard_serialized_oversize_bytes \
   native_stat_checkpoint_rebuilds \
   checkpoint_coalescing \
+  deferrals \
   native_deadline_seals \
   native_deadline_deferred \
   native_deadline_first_fragment_commits \
@@ -884,6 +1020,46 @@ for field in \
     exit 1
   }
 done
+
+for field in \
+  native_collator_deferral_summary \
+  native_microbatch_delayed \
+  native_deferral_intake_deadline_idle_entries \
+  native_deferral_intake_deadline_fragment_entries \
+  native_deferral_checkpoint_deadline_rollback_entries \
+  native_deferral_checkpoint_hard_preflight_entries \
+  native_deferral_checkpoint_size_preflight_entries \
+  native_deferral_medium_timeout_entries \
+  native_deferral_candidate_headroom_entries \
+  native_deferral_candidate_size_guard_entries \
+  native_deferral_protocol_account_capacity_entries \
+  native_deferral_account_unavailable_entries \
+  native_deferral_account_balance_unrepresentable_entries \
+  native_deferral_state_invalid_fields_entries \
+  native_deferral_state_invalid_signature_entries \
+  native_deferral_state_nonce_mismatch_entries \
+  native_deferral_state_nonce_overflow_entries \
+  native_deferral_state_invalid_source_entries \
+  native_deferral_state_invalid_destination_entries \
+  native_deferral_state_insufficient_balance_entries \
+  native_deferral_state_balance_overflow_entries \
+  native_checkpoint_rollback_entries \
+  native_deadline_deferred \
+  native_prebatch_protocol_capacity_requeue_works \
+  native_prebatch_protocol_capacity_requeue_entries \
+  native_prebatch_carryover_requeue_works \
+  native_prebatch_carryover_requeue_entries \
+  native_prebatch_scalar_decode_retry_works; do
+  grep -q "$field" "$jq_dir/native-benchmark-lib.jq" || {
+    echo "benchmark jq library does not report native deferral field $field" >&2
+    exit 1
+  }
+done
+
+grep -Fq 'deferrals:native_collator_deferral_summary($rows)' "$wrapper" || {
+  echo "benchmark wrapper does not publish native collator deferrals" >&2
+  exit 1
+}
 
 for field in \
   native-payment-lanes-provenance.json \

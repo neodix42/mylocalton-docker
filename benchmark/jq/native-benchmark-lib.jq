@@ -110,6 +110,151 @@ def native_checkpoint_coalescing_summary($rows):
     native_checkpoint_rollback_entries:total("native_checkpoint_rollback_entries")
   };
 
+# Attribute every delayed native microbatch entry to exactly one terminal
+# collator decision.  The 19 reason counters and the three counters used for
+# reconciliation are an atomic telemetry contract: old, partial, or mixed
+# validator images report unavailable values rather than plausible zeroes.
+#
+# Prebatch requeues live outside native_microbatch_delayed.  Entry counters
+# count decoded logical transfers, while work counters count physical input
+# envelopes; they consequently have their own completeness boundary and must
+# not be added to one another or to the delayed-entry reasons.
+def native_collator_deferral_summary($rows):
+  [
+    "native_deferral_intake_deadline_idle_entries",
+    "native_deferral_intake_deadline_fragment_entries",
+    "native_deferral_checkpoint_deadline_rollback_entries",
+    "native_deferral_checkpoint_hard_preflight_entries",
+    "native_deferral_checkpoint_size_preflight_entries",
+    "native_deferral_medium_timeout_entries",
+    "native_deferral_candidate_headroom_entries",
+    "native_deferral_candidate_size_guard_entries",
+    "native_deferral_protocol_account_capacity_entries",
+    "native_deferral_account_unavailable_entries",
+    "native_deferral_account_balance_unrepresentable_entries",
+    "native_deferral_state_invalid_fields_entries",
+    "native_deferral_state_invalid_signature_entries",
+    "native_deferral_state_nonce_mismatch_entries",
+    "native_deferral_state_nonce_overflow_entries",
+    "native_deferral_state_invalid_source_entries",
+    "native_deferral_state_invalid_destination_entries",
+    "native_deferral_state_insufficient_balance_entries",
+    "native_deferral_state_balance_overflow_entries"
+  ] as $reason_fields |
+  [
+    "native_microbatch_delayed",
+    "native_checkpoint_rollback_entries",
+    "native_deadline_deferred"
+  ] as $reconciliation_fields |
+  [
+    "native_prebatch_protocol_capacity_requeue_works",
+    "native_prebatch_protocol_capacity_requeue_entries",
+    "native_prebatch_carryover_requeue_works",
+    "native_prebatch_carryover_requeue_entries",
+    "native_prebatch_scalar_decode_retry_works"
+  ] as $prebatch_fields |
+  ($rows | length) as $records_total |
+  (reduce ($reason_fields + $reconciliation_fields + $prebatch_fields)[] as $field ({};
+    .[$field] = native_work_time_counter_values($rows; $field))) as $values |
+  (
+    ($records_total > 0) and
+    ([$reason_fields[], $reconciliation_fields[] |
+      select(($values[.] | length) != $records_total)] | length == 0)
+  ) as $capture_complete |
+  (
+    ($records_total > 0) and
+    ([$prebatch_fields[] |
+      select(($values[.] | length) != $records_total)] | length == 0)
+  ) as $prebatch_capture_complete |
+  def primary_total($field):
+    if $capture_complete then ($values[$field] | add) else null end;
+  def prebatch_total($field):
+    if $prebatch_capture_complete then ($values[$field] | add) else null end;
+  (
+    if $capture_complete
+    then [$reason_fields[] | ($values[.] | add)] | add
+    else null
+    end
+  ) as $reason_entries_sum |
+  primary_total("native_microbatch_delayed") as $delayed |
+  primary_total("native_checkpoint_rollback_entries") as $checkpoint_rollbacks |
+  primary_total("native_deadline_deferred") as $deadline_deferred |
+  (
+    if $capture_complete then
+      primary_total("native_deferral_checkpoint_deadline_rollback_entries") +
+      primary_total("native_deferral_checkpoint_hard_preflight_entries") +
+      primary_total("native_deferral_checkpoint_size_preflight_entries")
+    else null
+    end
+  ) as $checkpoint_reason_entries_sum |
+  (
+    if $capture_complete then
+      primary_total("native_deferral_intake_deadline_fragment_entries") +
+      primary_total("native_deferral_checkpoint_deadline_rollback_entries")
+    else null
+    end
+  ) as $deadline_reason_entries_sum |
+  ({
+    semantics:(
+      "native delayed-entry reasons summed across collated candidates; every " +
+      "_entries counter counts logical transfers and the 19 reasons must " +
+      "partition native_microbatch_delayed; missing or mixed source telemetry " +
+      "is reported as unavailable"
+    ),
+    capture_complete:$capture_complete,
+    records_total:$records_total,
+    records_with_telemetry:(
+      $values["native_deferral_intake_deadline_idle_entries"] | length
+    ),
+    native_microbatch_delayed:$delayed,
+    reason_entries_sum:$reason_entries_sum,
+    delayed_accounting_error:(
+      if $capture_complete then $delayed - $reason_entries_sum else null end
+    ),
+    native_checkpoint_rollback_entries:$checkpoint_rollbacks,
+    checkpoint_reason_entries_sum:$checkpoint_reason_entries_sum,
+    checkpoint_accounting_error:(
+      if $capture_complete
+      then $checkpoint_rollbacks - $checkpoint_reason_entries_sum
+      else null
+      end
+    ),
+    native_deadline_deferred:$deadline_deferred,
+    deadline_reason_entries_sum:$deadline_reason_entries_sum,
+    deadline_accounting_error:(
+      if $capture_complete
+      then $deadline_deferred - $deadline_reason_entries_sum
+      else null
+      end
+    ),
+    totals_reconcile:(
+      if $capture_complete then
+        ($delayed == $reason_entries_sum) and
+        ($checkpoint_rollbacks == $checkpoint_reason_entries_sum) and
+        ($deadline_deferred == $deadline_reason_entries_sum)
+      else null
+      end
+    )
+  } +
+  (reduce $reason_fields[] as $field ({};
+    .[$field] = primary_total($field))) +
+  {
+    prebatch:({
+      semantics:(
+        "prebatch requeues summed across collated candidates and excluded from " +
+        "native_microbatch_delayed; _entries count decoded logical transfers, " +
+        "while _works count physical input envelopes and are not additive with entries"
+      ),
+      capture_complete:$prebatch_capture_complete,
+      records_total:$records_total,
+      records_with_telemetry:(
+        $values["native_prebatch_protocol_capacity_requeue_works"] | length
+      )
+    } +
+    (reduce $prebatch_fields[] as $field ({};
+      .[$field] = prebatch_total($field))))
+  });
+
 # Summarize the exact immutable shard-state cache used by external-message
 # admission. C13 names cache misses handed to ValidatorManager
 # shard_manager_waits. C12 emitted the same logical event as shard_fetches, so

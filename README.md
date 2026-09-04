@@ -278,6 +278,17 @@ mislabeling absent telemetry as a zero-coalescing run. Compare the associated
 checkpoint-rebuild cost across treatments; these diagnostics do not replace proof,
 cleanup, or sub-second cadence acceptance gates.
 
+Native collator deferrals are reported beside checkpoint coalescing at
+`measured.collated_basechain.native_fast_path_counters.deferrals` (and in the
+corresponding `all_run` view). Its 19 `native_deferral_*_entries` counters are
+mutually exclusive logical-transfer outcomes and must sum exactly to
+`native_microbatch_delayed`; the report also reconciles checkpoint rollback and
+deadline subsets. The nested `prebatch` counters describe requeues before that
+microbatch accounting boundary and therefore are excluded from the delayed
+total. Names ending in `_entries` count decoded logical transfers, while names
+ending in `_works` count physical input envelopes; those units are not
+additive. Both views fail closed for missing or mixed telemetry.
+
 Size arithmetic must use the same layer on both sides. A signed native external BoC is 176 bytes. Inside a v4 batch, 512 transfers serialize to 101,399 bytes with unique endpoints (198.0 bytes/transfer), or 81,456 bytes with a shared destination (159.1 bytes/transfer). Those batch sizes include the compact account table, but they are not complete block costs: the block also carries the updated `ShardAccounts` dictionary, Merkle/proof cells, headers, and limit-estimator allowance. Use the measured `actual_block_bytes_per_transfer` and `estimated_block_bytes_per_transfer` in `validator-pipeline-summary.json` when dividing the configured block limit; never divide it by the 104-byte transfer leaf alone.
 
 `run-native-benchmark.sh` reuses an already-running healthy `genesis` container
