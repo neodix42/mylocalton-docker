@@ -110,6 +110,10 @@ The generator reads `/usr/share/data/global.config.json` from the shared config 
 
 `NATIVE_LOAD_NATIVE_RUN_BATCHING=0` preserves the existing generator batching policy. Set `NATIVE_LOAD_NATIVE_RUN_BATCHING=1` only with `NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1`, `NATIVE_LOAD_SUBMIT_BATCH_SIZE` greater than 1, and a generator image advertising `--native-run-batching`. This generator-only experiment does not change genesis or protocol settings. The benchmark verifies the final `native_run_batching_requested` and `native_run_batching_enabled` booleans against the resolved mode; explicitly requested batching fails acceptance if either field is missing or false. Default-off runs remain compatible with older images that omit both fields. Existing signed-run quantum, offered-load, proof, cleanup, and strict image reuse gates still apply.
 
+On generator images with the bounded NTRN coalescer, freshly ready source heads within each worker share one absolute `NATIVE_LOAD_SUBMIT_COALESCE_MS` deadline, starting with the first ready head. Later signer completions do not extend it. A batch can leave earlier when it fills the physical body limit or available logical transfer credit. Retries, repairs, and drain work bypass this wait; parents remain intact, with no splitting or padding. The deadline bounds intentional coalescing delay; dispatch still requires client and admission credit. The physical profile uses 20 ms; the other checked-in profiles use 2 ms.
+
+The JSON field `native_run_batching_coalesce_ms` reports that configured delay when batching is enabled and zero when it is off. Use the pinned generator image revision and this field to distinguish the bounded coalescer from earlier immediate batching images, which can report both mode booleans as true while omitting the delay field. The existing boolean acceptance contract remains compatible with those images.
+
 #### Phase-A native payment lanes (two or four fixed shards)
 
 The opt-in Phase-A profile keeps every source/destination pair inside one
@@ -193,9 +197,9 @@ not reuse a payment-lane database with the default scalar profile, or a default
 database with this profile; genesis fails closed if its recorded mode does not
 match.
 
-The generator issues one fair, bounded contiguous nonce burst per source turn and
-waits `NATIVE_LOAD_SUBMIT_COALESCE_MS` (2 ms by default) for signer completions
-before assembling a batch. A retrying lowest unresolved admission task blocks
+For scalar transfers, the generator issues one fair, bounded contiguous nonce burst
+per source turn and waits up to `NATIVE_LOAD_SUBMIT_COALESCE_MS` (2 ms by default)
+for signer completions before assembling a batch. A retrying lowest unresolved admission task blocks
 newer unsent tasks from that source, but an already admitted nonce is removed
 from the admission head and does not prevent later batches from pipelining while
 canonical proof catches up. `source_issue_burst_*`,
