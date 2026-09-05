@@ -108,6 +108,8 @@ The generator reads `/usr/share/data/global.config.json` from the shared config 
 
 `NATIVE_TRANSFER_RUNS_ENABLED=0` and `NATIVE_LOAD_NATIVE_TRANSFER_RUNS=0` preserve the v14 scalar-transfer protocol. Source-signed v5 runs must be enabled only on a fresh genesis: setting `NATIVE_TRANSFER_RUNS_ENABLED=1` writes GlobalVersion `15` and adds exactly `capNativeTransferRuns=1024` to the separate capability field; set `NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1` only with matching v5-capable validator and generator images. `NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE` is passed only in that mode and is limited by the generator to 1..16. Never enable it on an existing v14 database or mix v14/v5 binaries.
 
+`NATIVE_LOAD_NATIVE_RUN_BATCHING=0` preserves the existing generator batching policy. Set `NATIVE_LOAD_NATIVE_RUN_BATCHING=1` only with `NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1`, `NATIVE_LOAD_SUBMIT_BATCH_SIZE` greater than 1, and a generator image advertising `--native-run-batching`. This generator-only experiment does not change genesis or protocol settings. The benchmark verifies the final `native_run_batching_requested` and `native_run_batching_enabled` booleans against the resolved mode; explicitly requested batching fails acceptance if either field is missing or false. Default-off runs remain compatible with older images that omit both fields. Existing signed-run quantum, offered-load, proof, cleanup, and strict image reuse gates still apply.
+
 #### Phase-A native payment lanes (two or four fixed shards)
 
 The opt-in Phase-A profile keeps every source/destination pair inside one

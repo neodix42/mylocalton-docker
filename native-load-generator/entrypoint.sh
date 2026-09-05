@@ -15,6 +15,7 @@ submit_batch_size=${NATIVE_LOAD_SUBMIT_BATCH_SIZE:-1}
 submit_source_run_size=${NATIVE_LOAD_SUBMIT_SOURCE_RUN_SIZE:-1}
 native_transfer_runs=${NATIVE_LOAD_NATIVE_TRANSFER_RUNS:-0}
 native_transfer_run_size=${NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE:-16}
+native_run_batching=${NATIVE_LOAD_NATIVE_RUN_BATCHING:-0}
 native_payment_lanes=${NATIVE_PAYMENT_LANES_ENABLED:-0}
 native_payment_lane_depth=${NATIVE_PAYMENT_LANE_DEPTH:-1}
 native_load_payment_lane_depth=${NATIVE_LOAD_PAYMENT_LANE_DEPTH:-0}
@@ -89,6 +90,20 @@ case "$native_transfer_runs" in
     ;;
 esac
 
+case "$native_run_batching" in
+  0) ;;
+  1)
+    if [ "$native_transfer_runs_enabled" != 1 ]; then
+      echo "NATIVE_LOAD_NATIVE_RUN_BATCHING=1 requires NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "NATIVE_LOAD_NATIVE_RUN_BATCHING must be 0 or 1, got '$native_run_batching'" >&2
+    exit 2
+    ;;
+esac
+
 native_payment_lanes_validate_mode \
   "$native_payment_lanes" "$native_transfer_runs_enabled" \
   "$native_payment_lane_depth" "$native_load_payment_lane_depth" || exit $?
@@ -156,6 +171,15 @@ case "$native_transfer_runs" in
     exit 2
     ;;
 esac
+
+if [ "$native_run_batching" = 1 ]; then
+  if ! printf '%s\n' "$generator_help" |
+       grep -Eq -- '(^|[[:space:]])--native-run-batching([=[:space:]]|$)'; then
+    echo "NATIVE_LOAD_NATIVE_RUN_BATCHING=1 requires a native-load-generator image with --native-run-batching" >&2
+    exit 2
+  fi
+  set -- "$@" --native-run-batching
+fi
 
 if [ "$native_payment_lanes" = 1 ]; then
   if ! printf '%s\n' "$generator_help" | grep -q -- '--native-payment-lane-depth'; then

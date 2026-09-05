@@ -212,6 +212,7 @@ services:
       # this off unless explicitly requested, so v14 workloads are unchanged.
       - NATIVE_LOAD_NATIVE_TRANSFER_RUNS=${NATIVE_LOAD_NATIVE_TRANSFER_RUNS:-0}
       - NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=${NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE:-16}
+      - NATIVE_LOAD_NATIVE_RUN_BATCHING=${NATIVE_LOAD_NATIVE_RUN_BATCHING:-0}
       # The lane profile validates its manifest and waits for the exact 2^depth
       # masterchain-anchored basechain leaves before generating traffic.
       - NATIVE_PAYMENT_LANES_ENABLED=${NATIVE_PAYMENT_LANES_ENABLED:-0}

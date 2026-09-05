@@ -1081,6 +1081,10 @@ native_signed_runs_expected_raw=$(awk -F= '
 native_signed_run_target_expected=$(awk -F= '
   $1 == "NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE" {sub(/^[^=]*=/, ""); print; exit}
 ' <<<"$compose_environment")
+native_run_batching_expected_raw=$(awk -F= '
+  $1 == "NATIVE_LOAD_NATIVE_RUN_BATCHING" {sub(/^[^=]*=/, ""); print; exit}
+' <<<"$compose_environment")
+native_run_batching_expected_raw=${native_run_batching_expected_raw:-0}
 native_signed_runs_expected_raw=${native_signed_runs_expected_raw:-0}
 native_signed_run_target_expected=${native_signed_run_target_expected:-16}
 case "$native_signed_runs_expected_raw" in
@@ -1091,6 +1095,18 @@ case "$native_signed_runs_expected_raw" in
     exit 2
     ;;
 esac
+case "$native_run_batching_expected_raw" in
+  0) native_run_batching_expected=false ;;
+  1) native_run_batching_expected=true ;;
+  *)
+    echo "resolved NATIVE_LOAD_NATIVE_RUN_BATCHING must be 0 or 1, got '$native_run_batching_expected_raw'" >&2
+    exit 2
+    ;;
+esac
+if [[ $native_run_batching_expected == true && $native_signed_runs_expected != true ]]; then
+  echo "resolved NATIVE_LOAD_NATIVE_RUN_BATCHING=1 requires NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1" >&2
+  exit 2
+fi
 if ! [[ $native_signed_run_target_expected =~ ^([1-9]|1[0-6])$ ]]; then
   echo "resolved NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE must be an integer from 1 through 16, got '$native_signed_run_target_expected'" >&2
   exit 2
@@ -3050,6 +3066,7 @@ jq -n \
   ' >"$session_stats_summary_file"
 
 jq -L "$benchmark_jq_dir" -Rs \
+  --argjson expected_run_batching "$native_run_batching_expected" \
   --argjson expected_signed_runs "$native_signed_runs_expected" \
   --argjson expected_run_target "$native_signed_run_target_expected" '
   include "native-benchmark-lib";
@@ -3058,8 +3075,10 @@ jq -L "$benchmark_jq_dir" -Rs \
   native_signed_run_quantum_acceptance(
     $final; $expected_signed_runs; $expected_run_target
   ) as $run_quantum |
-  capacity_acceptance(
-    $final; $expected_signed_runs; $expected_run_target
+  native_run_batching_acceptance($final; $expected_run_batching) as $run_batching |
+  with_native_run_batching_acceptance(
+    capacity_acceptance($final; $expected_signed_runs; $expected_run_target);
+    $run_batching
   ) as $acceptance |
   canonical_lane_balance_telemetry($final) as $lane_telemetry |
   {
@@ -3111,6 +3130,7 @@ jq -L "$benchmark_jq_dir" -Rs \
     canonical_lane_balance_required:$acceptance.canonical_lane_balance_required,
     canonical_lane_balance_valid:$acceptance.canonical_lane_balance_valid,
     canonical_lane_balance_invalid_reasons:$acceptance.canonical_lane_balance_invalid_reasons,
+    native_run_batching:$run_batching,
     native_signed_run_quantum:$run_quantum,
     native_signed_run_quantum_required:$acceptance.native_signed_run_quantum_required,
     native_signed_run_quantum_valid:$acceptance.native_signed_run_quantum_valid,
@@ -3268,6 +3288,10 @@ if [[ $generator_container_exit_code -eq 0 ]] &&
    ! jq -e '.final != null' "$generator_summary_file" >/dev/null; then
   echo "generator exited successfully without a final native-load-v2 record" >&2
   benchmark_exit_code=125
+elif [[ $generator_container_exit_code -eq 0 ]] &&
+     ! jq -e '.native_run_batching.valid == true' "$generator_summary_file" >/dev/null; then
+  echo "generator exited successfully but requested/effective native-run batching validation failed" >&2
+  benchmark_exit_code=3
 elif [[ $generator_container_exit_code -eq 0 ]] &&
      ! jq -e '.native_signed_run_quantum.valid == true' "$generator_summary_file" >/dev/null; then
   echo "generator exited successfully but signed-run quantum telemetry/profile validation failed" >&2
@@ -3631,7 +3655,7 @@ jq -n -L "$benchmark_jq_dir" \
       validator_cleanup_invalid_reasons:$validator_pool[0].cleanup_acceptance.invalid_reasons,
       reproducible:$run[0].reproducibility.valid,
       reproducibility_reasons:$run[0].reproducibility.reasons,
-      semantics:"proof correctness, run completion, signed-run physical quantum, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
+      semantics:"proof correctness, run completion, signed-run physical quantum, requested/effective generator batching, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
     })} | . + {load_level_acceptance:native_benchmark_load_level_acceptance(.)}' \
   >"$summary_file"
 

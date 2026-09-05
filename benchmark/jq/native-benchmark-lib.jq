@@ -1200,6 +1200,57 @@ def canonical_lane_balance_acceptance($final):
     end
   end;
 
+# The experimental generator batching policy is independent from signed-run
+# geometry. Older default-off images may omit both telemetry fields; once
+# requested or reported, require complete booleans matching the resolved mode.
+def native_run_batching_acceptance($final; $expected_requested):
+  field_or_null($final; "native_run_batching_requested") as $requested |
+  field_or_null($final; "native_run_batching_enabled") as $enabled |
+  (if ($final | type) == "object" then
+     ($final | has("native_run_batching_requested") or has("native_run_batching_enabled"))
+   else false end) as $available |
+  (($requested | type) == "boolean" and ($enabled | type) == "boolean") as $complete |
+  ($expected_requested == true or $available) as $enforced |
+  ([
+    if $final == null then "missing_final_generator_record" else empty end,
+    if $enforced and ($complete | not) then "native_run_batching_telemetry_incomplete" else empty end,
+    if $complete and $requested != $expected_requested then "native_run_batching_requested_mode_mismatch" else empty end,
+    if $complete and $enabled != $expected_requested then "native_run_batching_effective_mode_mismatch" else empty end,
+    if $expected_requested == true and field_or_null($final; "native_signed_runs_enabled") != true
+      then "native_run_batching_requires_signed_runs" else empty end
+  ]) as $reasons |
+  {
+    expected_requested:$expected_requested,
+    required:($expected_requested == true),
+    enforced:$enforced,
+    requested:$requested,
+    enabled:$enabled,
+    telemetry_available:$available,
+    telemetry_complete:$complete,
+    valid:($reasons | length == 0),
+    invalid_reasons:$reasons
+  };
+
+# Only add failure reasons or turn capacity booleans false. Never replace or
+# relax the existing proof, quantum, density, lane, or offered-load decisions.
+def with_native_run_batching_acceptance($acceptance; $batching):
+  $acceptance + {
+    native_run_batching_required:$batching.required,
+    native_run_batching_enforced:$batching.enforced,
+    native_run_batching_valid:$batching.valid,
+    native_run_batching_invalid_reasons:$batching.invalid_reasons
+  } |
+  if $batching.enforced == true and $batching.valid != true then
+    .ingress_capacity_valid = false |
+    .chain_capacity_valid = false |
+    .ingress_capacity_invalid_reasons =
+      (reduce $batching.invalid_reasons[] as $reason (.ingress_capacity_invalid_reasons // [];
+        if index($reason) == null then . + [$reason] else . end)) |
+    .chain_capacity_invalid_reasons =
+      (reduce $batching.invalid_reasons[] as $reason (.chain_capacity_invalid_reasons // [];
+        if index($reason) == null then . + [$reason] else . end))
+  else . end;
+
 # Validate the generator's finalized signed-run geometry independently from its
 # own acceptance booleans.  Ordinary traffic must keep a fixed effective
 # quantum; only a freshly created drain-repair suffix or the uint64 terminal
@@ -1635,6 +1686,8 @@ def native_benchmark_load_level_acceptance($summary):
    ($generator.valid_canonical_run == true) and
    ($generator.ingress_capacity_valid == true) and
    ($generator.native_signed_run_quantum.valid == true) and
+   (if $generator.native_run_batching.enforced == true then
+      $generator.native_run_batching.valid == true else true end) and
    ($summary.validator_pool.cleanup_acceptance.valid == true) and
    (if $generator.capacity_acceptance.canonical_lane_balance_required == true then
       $generator.capacity_acceptance.canonical_lane_balance_valid == true else true end) and

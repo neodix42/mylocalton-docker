@@ -9,6 +9,7 @@ wrapper=$script_dir/../../run-native-benchmark.sh
 "$script_dir/native-payment-lanes-config-test.sh"
 "$script_dir/native-payment-lanes-helper-test.sh"
 bash "$script_dir/native-payment-lane-wallets-test.sh"
+bash "$script_dir/native-run-batching-config-test.sh"
 
 command -v jq >/dev/null 2>&1 || {
   echo "required command is not installed: jq" >&2
@@ -92,6 +93,7 @@ jq -n -e -L "$jq_dir" '
     .generator.valid_canonical_run = false,
     .generator.ingress_capacity_valid = false,
     .generator.native_signed_run_quantum.valid = false,
+    .generator.native_run_batching = {enforced:true,valid:false},
     .validator_pool.cleanup_acceptance.valid = false,
     .generator.capacity_acceptance.canonical_lane_balance_valid = false,
     .strict_image_reuse.valid = false,
@@ -113,6 +115,7 @@ jq -n -e -L "$jq_dir" '
     .generator.valid_canonical_run = false,
     .generator.ingress_capacity_valid = false,
     .generator.native_signed_run_quantum.valid = false,
+    .generator.native_run_batching = {enforced:true,valid:false},
     .validator_pool.cleanup_acceptance.valid = false,
     .generator.capacity_acceptance.canonical_lane_balance_valid = false,
     .strict_image_reuse.valid = false,
