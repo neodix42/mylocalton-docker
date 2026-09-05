@@ -109,10 +109,11 @@ native_payment_lanes_profile_env "$lane_depth" \
   env NATIVE_LOAD_TARGET_TPS=4000 \
   "$script_dir/run-fresh-native-cycle.sh" "$env_file" "$result_dir"
 
-if ! jq -e --arg harness_revision "$harness_revision" \
+if ! jq -e -L "$script_dir/jq" --arg harness_revision "$harness_revision" \
     --arg env_sha "$env_sha" \
     --argjson expected_depth "$lane_depth" \
     --argjson expected_lane_count "$lane_count" '
+    include "native-benchmark-lib";
   .run.benchmark_exit_code == 0 and
   (.run.interrupted // false) == false and
   .run.git_revision == $harness_revision and
@@ -143,11 +144,11 @@ if ! jq -e --arg harness_revision "$harness_revision" \
   .generator.native_signed_run_quantum.benchmark_profile_valid == true and
   .generator.native_signed_run_quantum.valid == true and
   .generator.ingress_capacity_valid == true and
-  .generator.chain_capacity_valid == true and
+  (native_benchmark_load_level_acceptance(.).valid == true) and
   .validator_pool.cleanup_acceptance.valid == true
 ' "$result_dir/benchmark-summary.json" >/dev/null; then
-  echo "fresh depth-$lane_depth baseline did not satisfy every correctness, topology, signed-run quantum, capacity, and cleanup gate: $result_dir/benchmark-summary.json" >&2
+  echo "fresh depth-$lane_depth baseline did not satisfy every correctness, topology, signed-run quantum, offered-load, and cleanup gate: $result_dir/benchmark-summary.json" >&2
   exit 3
 fi
 
-echo "Accepted fresh depth-$lane_depth baseline: $result_dir/benchmark-summary.json"
+echo "Accepted fresh depth-$lane_depth load-validation baseline (no capacity claim): $result_dir/benchmark-summary.json"

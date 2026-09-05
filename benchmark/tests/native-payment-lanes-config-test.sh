@@ -158,7 +158,7 @@ for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
   grep -qx 'NATIVE_LOAD_PAYMENT_LANE_DEPTH=0' "$repo_dir/$env_file"
 done
 
-grep -qx 'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1' "$repo_dir/.env.physical"
+grep -qx 'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=0' "$repo_dir/.env.physical"
 [[ $(grep -Fc \
   'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=${TON_NATIVE_CHECKPOINT_RETAIN_INGRESS:-0}' \
   "$repo_dir/docker-compose.yaml") -eq 6 ]]
@@ -194,12 +194,12 @@ grep -Fq 'payment-lanes.sh' "$repo_dir/native-load-generator/Dockerfile"
 grep -Fq 'native-payment-lanes-profile.sh' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
 grep -Fq 'NATIVE_LOAD_TARGET_TPS=4000' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
 grep -Fq 'canonical_lane_balance.valid == true' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
-grep -Fq 'chain_capacity_valid == true' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
+grep -Fq 'native_benchmark_load_level_acceptance(.).valid == true' "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh"
 grep -Fq 'BENCHMARK_STRICT_GENESIS_REUSE=1' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'BENCHMARK_RECREATE_GENESIS=0' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'require_matching_accepted_baseline' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'genesis_image_id' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
-grep -Fq 'chain_capacity_valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
+grep -Fq 'native_benchmark_load_level_acceptance(.).valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq '.run.git_revision == $harness_revision' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'canonical_lane_balance.valid == true' "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh"
 grep -Fq 'strict_genesis_reuse_preflight' "$repo_dir/run-native-benchmark.sh"

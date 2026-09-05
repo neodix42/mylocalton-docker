@@ -132,13 +132,14 @@ require_matching_accepted_baseline() {
   fi
 
   while IFS=' ' read -r _ summary; do
-    if jq -e --arg manifest_sha "$manifest_sha" --arg genesis_env_sha "$genesis_env_sha" \
+    if jq -e -L "$script_dir/jq" --arg manifest_sha "$manifest_sha" --arg genesis_env_sha "$genesis_env_sha" \
         --arg genesis_image_id "$genesis_image_id" \
         --arg harness_revision "$harness_revision" \
         --arg env_sha "$env_sha" \
         --argjson desired_generator_environment "$desired_generator_environment" \
         --argjson expected_depth "$expected_depth" \
         --argjson expected_lane_count "$expected_lane_count" '
+    include "native-benchmark-lib";
       ($expected_depth == 1 and $expected_lane_count == 2) as $legacy_depth_one |
       ($legacy_depth_one and
        (.native_payment_lanes.manifest | has("balanced") | not) and
@@ -156,7 +157,7 @@ require_matching_accepted_baseline() {
        ] | from_entries | del(.NATIVE_LOAD_TARGET_TPS)) == $desired_generator_environment and
       .generator.final.target_tps == 4000 and
       ((.run.containers // [] | map(select(.name == "genesis") | .image_id)) == [$genesis_image_id]) and
-      .native_payment_lanes.enabled == true and
+    .native_payment_lanes.enabled == true and
       .native_payment_lanes.manifest.sha256 == $manifest_sha and
       .native_payment_lanes.manifest.depth == $expected_depth and
       .native_payment_lanes.manifest.lanes == $expected_lane_count and
@@ -209,7 +210,7 @@ require_matching_accepted_baseline() {
       ($expected_depth == 1 or .generator.final.canonical_lane_balance.valid == true) and
       .generator.valid_canonical_run == true and
       .generator.ingress_capacity_valid == true and
-      .generator.chain_capacity_valid == true and
+      (native_benchmark_load_level_acceptance(.).valid == true) and
       .validator_pool.cleanup_acceptance.valid == true
     ' "$summary" >/dev/null; then
       matching_summary=$summary
@@ -222,7 +223,7 @@ require_matching_accepted_baseline() {
     echo "native payment-lane staircase requires an accepted 4k depth-$expected_depth ($expected_lane_count-lane) result matching the active genesis" >&2
     return 2
   fi
-  echo "Reusing genesis proven by accepted 4k baseline: $matching_summary"
+  echo "Reusing genesis proven by accepted 4k load-validation baseline (no capacity claim): $matching_summary"
 }
 
 if [[ $env_file != /* ]]; then
@@ -266,12 +267,14 @@ for target_tps in "$@"; do
   result_dir=$repo_dir/benchmark-results/$run_id
   echo "Starting native payment-lane rung: depth=$lane_depth lanes=$lane_count target_tps=$target_tps result_dir=$result_dir"
   native_payment_lanes_profile_env "$lane_depth" \
-    env BENCHMARK_RECREATE_GENESIS=0 BENCHMARK_STRICT_GENESIS_REUSE=1 NATIVE_LOAD_TARGET_TPS="$target_tps" \
+    env BENCHMARK_RECREATE_GENESIS=0 BENCHMARK_STRICT_GENESIS_REUSE=1 \
+      BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_STRICT_IMAGE_REUSE=1 NATIVE_LOAD_TARGET_TPS="$target_tps" \
     "$repo_dir/run-native-benchmark.sh" "$env_file" "$result_dir"
 
-  if ! jq -e --argjson expected_depth "$lane_depth" \
+  if ! jq -e -L "$script_dir/jq" --argjson expected_depth "$lane_depth" \
       --argjson expected_lane_count "$lane_count" \
       --argjson expected_target_tps "$target_tps" '
+    include "native-benchmark-lib";
     .native_payment_lanes.enabled == true and
     .native_payment_lanes.manifest.depth == $expected_depth and
     .native_payment_lanes.manifest.lanes == $expected_lane_count and
@@ -295,10 +298,16 @@ for target_tps in "$@"; do
     ($expected_depth == 1 or .generator.final.canonical_lane_balance.valid == true) and
     .generator.valid_canonical_run == true and
     .generator.ingress_capacity_valid == true and
-    .generator.chain_capacity_valid == true and
+    (native_benchmark_load_level_acceptance(.).valid == true) and
     .validator_pool.cleanup_acceptance.valid == true
   ' "$result_dir/benchmark-summary.json" >/dev/null; then
-    echo "Stopping ladder: rung $target_tps was not a valid capacity result; inspect $result_dir/benchmark-summary.json" >&2
+    echo "Stopping ladder: rung $target_tps failed load-validation/capacity acceptance; inspect $result_dir/benchmark-summary.json" >&2
     exit 3
   fi
+  jq -r -L "$script_dir/jq" '
+    include "native-benchmark-lib";
+    native_benchmark_load_level_acceptance(.) |
+    if .capacity_claim_allowed then "Accepted capacity-eligible rung; assess sustained throughput separately"
+    else "Accepted offered-load validation; no capacity claim" end
+  ' "$result_dir/benchmark-summary.json"
 done

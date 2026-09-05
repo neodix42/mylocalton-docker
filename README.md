@@ -258,10 +258,10 @@ native push was already reserved.
 `TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=1` retains a noninitial native checkpoint
 across an ingress-only boundary, while the existing deadline, capacity, fanout,
 and headroom guards remain mandatory. Retention never resets the checkpoint's
-fixed 25 ms latency deadline. The tracked physical profile enables this
-optimization; Compose's fallback remains `0`, so other profiles and ordinary
-deployments stay fail-closed. Set it explicitly to `0` when reproducing the
-control baseline.
+fixed 25 ms latency deadline and requires an active producer epoch with selected
+native work still unconsumed. An idle callback or refill request is insufficient.
+The physical profile and Compose fallback both keep this experiment at `0`
+after its measured regression; enable it only for a controlled paired run.
 `native_checkpoint_ingress_retentions` counts suppressed ingress-only flushes;
 `native_checkpoint_ingress_retention_max_dirty_accounts` records their largest
 pending account fanout.
@@ -317,6 +317,38 @@ ending in `_works` count physical input envelopes; those units are not
 additive. Both views fail closed for missing or mixed telemetry.
 
 Size arithmetic must use the same layer on both sides. A signed native external BoC is 176 bytes. Inside a v4 batch, 512 transfers serialize to 101,399 bytes with unique endpoints (198.0 bytes/transfer), or 81,456 bytes with a shared destination (159.1 bytes/transfer). Those batch sizes include the compact account table, but they are not complete block costs: the block also carries the updated `ShardAccounts` dictionary, Merkle/proof cells, headers, and limit-estimator allowance. Use the measured `actual_block_bytes_per_transfer` and `estimated_block_bytes_per_transfer` in `validator-pipeline-summary.json` when dividing the configured block limit; never divide it by the 104-byte transfer leaf alone.
+
+For future paired A/B measurements, build both derived images before the pair,
+then use `BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_STRICT_IMAGE_REUSE=1` on every
+run. Strict image reuse implies strict genesis reuse, requires prebuilt images,
+forbids image builds/pulls, and leaves the active validator container in place.
+It fails if the validator container ID, image ID, start time, or restart count
+changes between setup and the end of load. It also requires exactly one
+`validator-engine` daemon and compares its PID and kernel start ticks, so a
+restart inside the same container is detected. It rejects a generator using a different
+image than the preflight or its container is replaced during load.
+`strict-image-reuse.json` records that evidence.
+Prebuild and activate a treatment image before starting its paired measurement;
+never rebuild a derived image inside a control run. Actual measured offered TPS
+must exceed canonical production TPS for chain-capacity acceptance; an unmet
+request rate, equal/insufficient actual load, or missing rate telemetry cannot
+support a capacity claim.
+A mandatory 4k baseline or ladder rung can still pass as `load_validation` when
+insufficient actual overdrive is its only effective capacity failure and the
+generator's original capacity, correctness, completion, density, lane balance,
+and validator cleanup checks all pass. `load_level_acceptance` labels this
+explicitly with `capacity_claim_allowed:false`. Missing rate telemetry or any
+additional failure stops the baseline/ladder. Ladder rungs always require
+strict prebuilt image reuse.
+
+`native_fast_path_counters.staged_worker_histograms` reports disjoint account
+and staged-update bins (`le64`, `65_80`, `81_128`, `129_256`, `257_511`, `512`,
+`gt512`) and worker tiers (`1`, `2`, `4`, `8`, `other`). Every field must be
+present and each candidate must reconcile microbatch bucket counts to
+`native_microbatches` and staged-update bucket counts to worker-tier counts.
+Missing, mixed, malformed, or inconsistent telemetry produces unavailable
+histograms. Counts include execution attempts and rollback; committed TPS
+remains an independent canonical-chain measurement.
 
 `run-native-benchmark.sh` reuses an already-running healthy `genesis` container
 when its Compose configuration and local image match the requested environment.

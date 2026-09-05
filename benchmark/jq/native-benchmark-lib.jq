@@ -37,6 +37,40 @@ def native_work_time_counter_values($rows; $name):
      stat_counter_value) |
     select(. != null)];
 
+# Attempt histograms include rolled-back microbatches and dictionary updates;
+# they describe production work sizes, never committed-transfer throughput.
+def native_staged_worker_histograms($rows):
+  ["le64", "65_80", "81_128", "129_256", "257_511", "512", "gt512"] as $bins |
+  ["1", "2", "4", "8", "other"] as $tiers |
+  (["native_microbatches"] +
+   [$bins[] | "native_microbatch_accounts_" + .] +
+   [$bins[] | "native_staged_updates_" + .] +
+   [$tiers[] | "native_staged_workers_" + .]) as $fields |
+  [$rows[] as $row |
+    reduce $fields[] as $field ({};
+      [($row.work_time_real_stats? // "" | split(" ")[] |
+        select(startswith($field + "=")) | ltrimstr($field + "="))] as $tokens |
+      (if ($tokens | length) == 1 then ($tokens[0] | tonumber? // null) else null end) as $value |
+      .[$field] = (if $value | nonnegative_integer then $value else null end))] as $records |
+  (($records | length) > 0 and all($records[]; all(.[]; . != null))) as $complete |
+  ($complete and all($records[];
+    . as $row |
+    ([$bins[] | $row["native_microbatch_accounts_" + .]] | add) == $row.native_microbatches and
+    ([$bins[] | $row["native_staged_updates_" + .]] | add) ==
+      ([$tiers[] | $row["native_staged_workers_" + .]] | add))) as $reconciled |
+  def histogram($prefix; $keys):
+    if $reconciled then reduce $keys[] as $key ({};
+      .[$key] = ([$records[] | .[$prefix + $key]] | add)) else null end;
+  {
+    semantics:"counts of execution/staged-trie attempts including rollback; not committed TPS",
+    records_total:($rows | length),
+    capture_complete:$complete,
+    reconciled:$reconciled,
+    microbatch_accounts:histogram("native_microbatch_accounts_"; $bins),
+    staged_updates:histogram("native_staged_updates_"; $bins),
+    staged_workers:histogram("native_staged_workers_"; $tiers)
+  };
+
 # Native checkpoint groups are committed transactionally.  Counters below are
 # additive across collated candidates except per-candidate maxima.
 # Report null values for an old or mixed image instead of treating a missing
@@ -1470,6 +1504,22 @@ def native_signed_run_quantum_acceptance($final; $expected_enabled; $expected_ta
     }
   end;
 
+# Requested target TPS is not offered work. Capacity claims require actual
+# offered traffic above the canonical production rate over the measured run.
+def native_capacity_load_acceptance($final):
+  field_or_null($final; "steady_offered_avg_tps") as $offered |
+  field_or_null($final; "canonical_chain_measure_avg_tps") as $canonical |
+  (($offered | type) == "number" and ($canonical | type) == "number" and
+   $offered > 0 and $canonical > 0) as $complete |
+  {
+    measured_offered_avg_tps:$offered,
+    measured_canonical_chain_avg_tps:$canonical,
+    offered_above_canonical:($complete and $offered > $canonical),
+    invalid_reasons:(if $complete | not then ["measured_capacity_rates_missing_or_invalid"]
+                     elif $offered <= $canonical then ["offered_load_not_above_canonical_throughput"]
+                     else [] end)
+  };
+
 # Lift the generator's independent acceptance dimensions into the report
 # without weakening its proof/capacity contract. For depth 2, canonical lane
 # balance is an additional independent decision and a prerequisite for an
@@ -1498,6 +1548,7 @@ def capacity_acceptance($final; $expected_signed_runs; $expected_run_target):
       })
   else
     canonical_lane_balance_acceptance($final) as $lane_balance |
+    native_capacity_load_acceptance($final) as $load |
     native_signed_run_quantum_acceptance(
       $final; $expected_signed_runs; $expected_run_target
     ) as $run_quantum |
@@ -1523,7 +1574,9 @@ def capacity_acceptance($final; $expected_signed_runs; $expected_run_target):
          ($run_chain_reasons;
           if index($reason) == null then . + [$reason] else . end)
      else $run_chain_reasons
-     end) as $chain_reasons |
+     end) as $lane_chain_reasons |
+    (reduce $load.invalid_reasons[] as $reason ($lane_chain_reasons;
+      if index($reason) == null then . + [$reason] else . end)) as $chain_reasons |
     {
       chain_correctness_valid:field_or_null($final; "chain_correctness_valid"),
       correctness_invalid_reasons:($final.correctness_invalid_reasons // []),
@@ -1541,13 +1594,15 @@ def capacity_acceptance($final; $expected_signed_runs; $expected_run_target):
       ),
       ingress_capacity_invalid_reasons:$ingress_reasons,
       chain_capacity_valid:(
-        if ($run_quantum.enforced == true and $run_quantum.valid != true) or
+        if $load.offered_above_canonical != true or
+           ($run_quantum.enforced == true and $run_quantum.valid != true) or
            ($lane_balance.canonical_lane_balance_required == true and
             $lane_balance.canonical_lane_balance_valid != true) then false
         else field_or_null($final; "chain_capacity_valid")
         end
       ),
       chain_capacity_invalid_reasons:$chain_reasons,
+      capacity_load:$load,
       native_signed_run_quantum_required:$run_quantum.required,
       native_signed_run_quantum_valid:$run_quantum.valid,
       native_signed_run_quantum_telemetry_contract_valid:$run_quantum.telemetry_contract_valid,
@@ -1565,6 +1620,41 @@ def capacity_acceptance($final):
     field_or_null($final; "native_signed_runs_enabled");
     field_or_null($final; "native_signed_run_target_size")
   );
+
+# A below-capacity baseline remains a useful load validation when the new
+# offered-load guard is its sole capacity failure. Never excuse a generator
+# capacity failure, missing rates, incomplete drain, density, or lane failure.
+def native_benchmark_load_level_acceptance($summary):
+  $summary.generator as $generator |
+  (($summary.run.benchmark_exit_code == 0) and
+   ($summary.run.interrupted == false) and
+   ($generator.final.chain_capacity_valid == true) and
+   ($generator.final.chain_capacity_invalid_reasons == []) and
+   ($generator.final.chain_correctness_valid == true) and
+   ($generator.final.run_incomplete_reasons == []) and
+   ($generator.valid_canonical_run == true) and
+   ($generator.ingress_capacity_valid == true) and
+   ($generator.native_signed_run_quantum.valid == true) and
+   ($summary.validator_pool.cleanup_acceptance.valid == true) and
+   (if $generator.capacity_acceptance.canonical_lane_balance_required == true then
+      $generator.capacity_acceptance.canonical_lane_balance_valid == true else true end) and
+   (if $summary.strict_image_reuse.required == true then
+      $summary.strict_image_reuse.valid == true else true end)) as $prerequisites |
+  ($prerequisites and $generator.chain_capacity_valid == true and
+   $generator.capacity_acceptance.chain_capacity_invalid_reasons == [] and
+   native_capacity_load_acceptance($generator.final).offered_above_canonical == true) as $capacity |
+  ($prerequisites and $generator.chain_capacity_valid == false and
+   $generator.capacity_acceptance.chain_capacity_invalid_reasons ==
+      ["offered_load_not_above_canonical_throughput"] and
+   native_capacity_load_acceptance($generator.final).invalid_reasons ==
+      ["offered_load_not_above_canonical_throughput"]) as $load_validation |
+  {
+    valid:($capacity or $load_validation),
+    classification:(if $capacity then "capacity_eligible"
+                    elif $load_validation then "load_validation" else "rejected" end),
+    capacity_claim_allowed:$capacity,
+    semantics:"load_validation proves the offered level only; it does not establish chain capacity"
+  };
 
 # Validator cleanup is a separate acceptance boundary from the generator's
 # proof follower.  Missing getstats snapshots must fail closed: otherwise an

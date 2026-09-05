@@ -22,6 +22,8 @@ Run this script itself with sudo when Docker requires root access. Optional:
   BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS=2 # must be less than sample cadence, max 5
   BENCHMARK_RECREATE_GENESIS=1   # force container recreation even when matching
   BENCHMARK_STRICT_GENESIS_REUSE=1 # fail instead of reconciling a mismatch
+  BENCHMARK_STRICT_IMAGE_REUSE=1 # paired runs: requires IMAGES_PREBUILT=1, verifies no validator restart
+  BENCHMARK_IMAGES_PREBUILT=1   # derived images already built and source revision verified
   BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=0|1 # opt-in validator control; unset is a no-op
 EOF
 }
@@ -344,6 +346,126 @@ strict_genesis_reuse_preflight() {
   fi
 }
 
+compose_service_image_from_config() {
+  local service=$1
+  jq -er --arg service "$service" '
+    .services[$service].image as $image |
+    if ($image | type) == "string" and ($image | length) > 0 then $image
+    else error("configured image missing for exact service " + $service) end'
+}
+
+resolve_compose_service_image() {
+  local service=$1
+  # Compose --images SERVICE also lists dependency images, whose ordering is
+  # not a service identity. Read the exact configured service from JSON.
+  "${compose[@]}" --profile native-load-generator --profile session-stats config --format json |
+    compose_service_image_from_config "$service"
+}
+
+resolve_compose_service_image_id() {
+  local service=$1 image
+  image=$(resolve_compose_service_image "$service")
+  docker image inspect -f '{{.Id}}' "$image"
+}
+
+compose_service_image_identity_self_test() (
+  # Exercise the production resolver with dependency/service order reversed.
+  # Both derived images can share a TON revision; only the requested image ID
+  # may become the strict generator baseline.
+  local config image
+  local compose=(mock_compose_service_config)
+  mock_compose_service_config() {
+    [[ "$*" == "--profile native-load-generator --profile session-stats config --format json" ]] || return 1
+    printf '%s\n' "$config"
+  }
+  docker() {
+    [[ $# == 5 && $1 == image && $2 == inspect && $3 == -f && $4 == '{{.Id}}' ]] || return 1
+    case "$5" in
+      example:genesis) printf 'sha256:genesis\n' ;;
+      example:generator) printf 'sha256:generator\n' ;;
+      example:stats) printf 'sha256:stats\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  for config in \
+    '{"services":{"native-load-generator":{"image":"example:generator","depends_on":{"genesis":{}}},"session-stats":{"image":"example:stats"},"genesis":{"image":"example:genesis"}}}' \
+    '{"services":{"genesis":{"image":"example:genesis"},"session-stats":{"image":"example:stats"},"native-load-generator":{"image":"example:generator","depends_on":{"genesis":{}}}}}'; do
+    image=$(resolve_compose_service_image_id native-load-generator)
+    [[ $image == sha256:generator && $image != sha256:genesis ]] || return 1
+    [[ $(resolve_compose_service_image_id genesis) == sha256:genesis ]] || return 1
+    [[ $(resolve_compose_service_image_id session-stats) == sha256:stats ]] || return 1
+  done
+  for config in '{"services":{"genesis":{"image":"example:genesis"}}}' \
+                '{"services":{"native-load-generator":{"image":""}}}' \
+                '{"services":{"native-load-generator":{"image":null}}}'; do
+    if resolve_compose_service_image native-load-generator >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+)
+
+strict_image_reuse_preflight() {
+  local strict=$1 prebuilt=$2
+  if [[ $strict != 0 && $strict != 1 ]]; then
+    echo "BENCHMARK_STRICT_IMAGE_REUSE must be 0 or 1" >&2
+    return 2
+  fi
+  if [[ $strict == 1 && $prebuilt != 1 ]]; then
+    echo "strict image reuse requires BENCHMARK_IMAGES_PREBUILT=1; build images before paired runs" >&2
+    return 2
+  fi
+}
+
+validator_process_identity_from_rows() {
+  jq -Rsec '
+    [split("\n")[] | select(length > 0) | split("\t") |
+     if length == 2 and all(.[]; test("^[0-9]+$")) then
+       {pid:(.[0] | tonumber),start_ticks:(.[1] | tonumber)}
+     else error("invalid validator process identity") end] |
+    if length == 1 and .[0].pid > 0 and .[0].start_ticks > 0 then .[0]
+    else error("strict image reuse requires exactly one running validator-engine") end'
+}
+
+capture_genesis_identity() {
+  local container_identity validator_identity
+  container_identity=$(docker inspect genesis | jq -ce '
+    if length != 1 then error("missing genesis identity") else .[0] end |
+    {container_id:.Id,image_id:.Image,started_at:.State.StartedAt,
+     restart_count:.RestartCount,running:.State.Running}')
+  # validator-engine is daemonized inside genesis. Container start/restart
+  # counters alone cannot detect a daemon restart; use PID plus kernel start
+  # ticks without inspecting or recording command lines or key arguments.
+  validator_identity=$(docker exec genesis sh -c '
+    for process in /proc/[0-9]*; do
+      executable=$(readlink "$process/exe" 2>/dev/null) || continue
+      case "$executable" in
+        */validator-engine|*/validator-engine\ \(deleted\)) ;;
+        *) continue ;;
+      esac
+      process_stat=$(cat "$process/stat" 2>/dev/null) || continue
+      stat_tail=${process_stat##*) }
+      set -- $stat_tail
+      [ "$#" -ge 20 ] || continue
+      shift 19
+      printf "%s\t%s\n" "${process##*/}" "$1"
+    done
+  ' | validator_process_identity_from_rows)
+  jq -cn --argjson container "$container_identity" --argjson validator "$validator_identity" \
+    '$container + {validator_process:$validator}'
+}
+
+strict_image_reuse_identity_matches() {
+  local before=$1 after=$2
+  jq -en --argjson before "$before" --argjson after "$after" '
+    $before == $after and $before.running == true and
+    ($before.container_id | type == "string" and length > 0) and
+    ($before.image_id | type == "string" and length > 0) and
+    ($before.started_at | type == "string" and length > 0) and
+    ($before.restart_count | type == "number" and . >= 0) and
+    ($before.validator_process.pid | type == "number" and . > 0) and
+    ($before.validator_process.start_ticks | type == "number" and . > 0)'
+}
+
 strict_genesis_reuse_can_skip_genesis_build() {
   local health=$1 recreate=$2 strict=$3
   [[ $strict == 1 && $recreate != 1 && $health == "true healthy" ]]
@@ -398,6 +520,35 @@ container_image_metadata_fallback_self_test() {
 }
 
 strict_genesis_reuse_self_test() {
+  compose_service_image_identity_self_test
+  printf '123\t456\n' | validator_process_identity_from_rows |
+    jq -e '.pid == 123 and .start_ticks == 456' >/dev/null
+  local invalid_process_rows
+  for invalid_process_rows in '' '123' $'123\t0' $'123\t456\n124\t789' $'123\tgarbage'; do
+    if printf '%s\n' "$invalid_process_rows" | validator_process_identity_from_rows >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  strict_image_reuse_preflight 1 1
+  strict_image_reuse_preflight 0 0
+  if strict_image_reuse_preflight 1 0 >/dev/null 2>&1 ||
+     strict_image_reuse_preflight invalid 1 >/dev/null 2>&1; then
+    return 1
+  fi
+  local identity='{"container_id":"container","image_id":"sha256:exact","started_at":"start","restart_count":0,"running":true,"validator_process":{"pid":123,"start_ticks":456}}'
+  strict_image_reuse_identity_matches "$identity" "$identity" >/dev/null
+  local mutation
+  for mutation in '.container_id="recreated"' '.image_id="sha256:changed"' \
+                  '.started_at="restarted"' '.restart_count=1' '.running=false' \
+                  '.validator_process.pid=124' '.validator_process.start_ticks=457' \
+                  '.validator_process=null'; do
+    if strict_image_reuse_identity_matches "$identity" "$(jq -c "$mutation" <<<"$identity")" >/dev/null; then
+      return 1
+    fi
+  done
+  if strict_image_reuse_identity_matches null null >/dev/null; then
+    return 1
+  fi
   strict_genesis_reuse_preflight "true healthy" 0 1
   strict_genesis_reuse_preflight "false unhealthy" 0 0
   strict_genesis_reuse_can_skip_genesis_build "true healthy" 0 1
@@ -2053,6 +2204,8 @@ collect_container_stats() {
 }
 
 images_prebuilt=${BENCHMARK_IMAGES_PREBUILT:-0}
+strict_image_reuse=${BENCHMARK_STRICT_IMAGE_REUSE:-0}
+strict_image_reuse_preflight "$strict_image_reuse" "$images_prebuilt"
 if [[ $images_prebuilt != 0 && $images_prebuilt != 1 ]]; then
   echo "BENCHMARK_IMAGES_PREBUILT must be 0 or 1" >&2
   exit 2
@@ -2062,7 +2215,17 @@ genesis_health=$(docker inspect -f \
   genesis 2>/dev/null || true)
 recreate_genesis=${BENCHMARK_RECREATE_GENESIS:-0}
 strict_genesis_reuse=${BENCHMARK_STRICT_GENESIS_REUSE:-0}
+if [[ $strict_image_reuse == 1 ]]; then
+  strict_genesis_reuse=1
+fi
 strict_genesis_reuse_preflight "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"
+strict_genesis_before=null
+strict_generator_image_id=
+strict_generator_container_id=
+if [[ $strict_image_reuse == 1 ]]; then
+  strict_genesis_before=$(capture_genesis_identity)
+  printf '%s\n' "$strict_genesis_before" >"$result_dir/strict-image-reuse-before.json"
+fi
 
 compose_build_args=(--build)
 if [[ $images_prebuilt == 1 ]]; then
@@ -2070,7 +2233,7 @@ if [[ $images_prebuilt == 1 ]]; then
   # state. Avoid hashing/building the same contexts three more times after the
   # destructive boundary; Compose still verifies that the tagged images exist
   # when it creates the containers below.
-  compose_build_args=()
+  compose_build_args=(--no-build --pull never)
   echo "Using derived images prebuilt by the guarded fresh-cycle runner"
   prebuilt_services=(genesis "$container_name")
   if strict_genesis_reuse_can_skip_genesis_build "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"; then
@@ -2079,7 +2242,7 @@ if [[ $images_prebuilt == 1 ]]; then
     prebuilt_services=("$container_name")
   fi
   for prebuilt_service in "${prebuilt_services[@]}"; do
-    prebuilt_image=$("${compose[@]}" --profile native-load-generator config --images "$prebuilt_service" | tail -n 1)
+    prebuilt_image=$(resolve_compose_service_image "$prebuilt_service")
     prebuilt_revision=$(docker image inspect -f \
       '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
       "$prebuilt_image" 2>/dev/null || true)
@@ -2088,6 +2251,11 @@ if [[ $images_prebuilt == 1 ]]; then
       exit 2
     fi
   done
+  if [[ $strict_image_reuse == 1 ]]; then
+    strict_generator_image_id=$(resolve_compose_service_image_id "$container_name")
+    session_stats_image=$(resolve_compose_service_image session-stats)
+    docker image inspect "$session_stats_image" >/dev/null
+  fi
 elif strict_genesis_reuse_can_skip_genesis_build "$genesis_health" "$recreate_genesis" "$strict_genesis_reuse"; then
   # A strict reuse run must preserve the exact live genesis that the
   # staircase proved with its accepted baseline. Building a derived image
@@ -2133,7 +2301,7 @@ if [[ $genesis_health == "true healthy" && $recreate_genesis != 1 ]]; then
       exit 2
     fi
   else
-    desired_genesis_image=$("${compose[@]}" config --images genesis | tail -n 1)
+    desired_genesis_image=$(resolve_compose_service_image genesis)
     desired_genesis_image_id=$(docker image inspect -f '{{.Id}}' "$desired_genesis_image" 2>/dev/null || true)
     if [[ -n $desired_genesis_hash && $running_genesis_hash == "$desired_genesis_hash" &&
           -n $desired_genesis_image_id && $running_genesis_image_id == "$desired_genesis_image_id" ]]; then
@@ -2147,7 +2315,11 @@ fi
 
 if [[ $genesis_matches == true ]]; then
   echo "Reusing the matching, already-healthy genesis container; starting session-stats only"
-  "${compose[@]}" --profile session-stats up -d "${compose_build_args[@]}" --no-deps session-stats
+  session_stats_reuse_args=()
+  if [[ $strict_image_reuse == 1 ]]; then
+    session_stats_reuse_args=(--no-recreate)
+  fi
+  "${compose[@]}" --profile session-stats up -d "${compose_build_args[@]}" "${session_stats_reuse_args[@]}" --no-deps session-stats
 else
   echo "Starting/recreating genesis and session-stats with $env_file"
   "${compose[@]}" --profile session-stats up -d "${compose_build_args[@]}" --force-recreate genesis session-stats
@@ -2195,8 +2367,20 @@ fi
 
 capture_validator_actor_stats_record \
   "$validator_actor_stats_pre_load_file" "$validator_actor_stats_pre_load_metadata_file" pre_load 0
+if [[ $strict_image_reuse == 1 ]] &&
+   ! strict_image_reuse_identity_matches "$strict_genesis_before" "$(capture_genesis_identity)" >/dev/null; then
+  echo "strict image reuse detected validator recreation or restart before measurement" >&2
+  exit 3
+fi
 echo "Starting a fresh native-load-generator container"
-"${compose[@]}" --profile native-load-generator up -d --force-recreate --no-deps "$container_name"
+generator_image_args=()
+if [[ $images_prebuilt == 1 ]]; then
+  generator_image_args=(--no-build --pull never)
+fi
+"${compose[@]}" --profile native-load-generator up -d "${generator_image_args[@]}" --force-recreate --no-deps "$container_name"
+if [[ $strict_image_reuse == 1 ]]; then
+  strict_generator_container_id=$(docker inspect -f '{{.Id}}' "$container_name")
+fi
 
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 started_epoch=$(date +%s)
@@ -2224,6 +2408,33 @@ if [[ $wait_status -ne 0 || ! $generator_container_exit_code =~ ^[0-9]+$ ]]; the
   generator_container_exit_code=125
 fi
 benchmark_exit_code=$generator_container_exit_code
+strict_image_reuse_valid=null
+strict_genesis_after=null
+strict_generator_image_after=
+strict_generator_container_after=
+if [[ $strict_image_reuse == 1 ]]; then
+  strict_genesis_after=$(capture_genesis_identity 2>/dev/null || printf 'null')
+  strict_generator_image_after=$(docker inspect -f '{{.Image}}' "$container_name" 2>/dev/null || true)
+  strict_generator_container_after=$(docker inspect -f '{{.Id}}' "$container_name" 2>/dev/null || true)
+  strict_image_reuse_valid=false
+  if strict_image_reuse_identity_matches "$strict_genesis_before" "$strict_genesis_after" >/dev/null &&
+     [[ -n $strict_generator_image_id && $strict_generator_image_after == "$strict_generator_image_id" &&
+        -n $strict_generator_container_id && $strict_generator_container_after == "$strict_generator_container_id" ]]; then
+    strict_image_reuse_valid=true
+  else
+    echo "strict image reuse failed: validator restarted/recreated or generator container/image changed during measurement" >&2
+    benchmark_exit_code=3
+  fi
+fi
+jq -n --argjson required "$strict_image_reuse" --argjson valid "$strict_image_reuse_valid" \
+  --argjson before "$strict_genesis_before" --argjson after "$strict_genesis_after" \
+  --arg generator_image_before "$strict_generator_image_id" --arg generator_image_after "$strict_generator_image_after" \
+  --arg generator_container_before "$strict_generator_container_id" --arg generator_container_after "$strict_generator_container_after" '
+  {required:($required == 1),valid:$valid,validator_before:$before,validator_after:$after,
+   generator_image_before:$generator_image_before,generator_image_after:$generator_image_after,
+   generator_container_before:$generator_container_before,generator_container_after:$generator_container_after,
+   semantics:"prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"}
+' >"$result_dir/strict-image-reuse.json"
 if [[ $interrupted -eq 1 ]]; then
   benchmark_exit_code=130
 fi
@@ -2484,6 +2695,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
         ),
         checkpoint_rebuilds:native_work_counter_sum($rows; "native_stat_checkpoint_rebuilds"),
         checkpoint_coalescing:native_checkpoint_coalescing_summary($rows),
+        staged_worker_histograms:native_staged_worker_histograms($rows),
         deferrals:native_collator_deferral_summary($rows),
         fragment_refill_waits:native_work_counter_sum($rows; "native_fragment_refill_waits"),
         fragment_refill_timeouts:native_work_counter_sum($rows; "native_fragment_refill_timeouts"),
@@ -2506,6 +2718,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
         size_guard_max_serialized_oversize_bytes:native_work_counter_max(
           $rows; "native_size_guard_serialized_oversize_bytes"
         ),
+        registered_run_reuses:native_work_counter_sum($rows; "native_registered_run_reuses"),
         canonical_roots_reused:native_work_counter_sum($rows; "native_canonical_root_reused"),
         canonical_accounts_reused:native_work_counter_sum($rows; "native_canonical_accounts_reused"),
         deadline_seals:native_work_counter_sum($rows; "native_deadline_seals"),
@@ -3043,6 +3256,14 @@ jq -L "$benchmark_jq_dir" -Rs \
   }
 ' "$generator_log_file" >"$generator_summary_file"
 
+if [[ $strict_image_reuse == 1 && $strict_image_reuse_valid != true ]]; then
+  jq '.chain_capacity_valid = false |
+      .capacity_acceptance.chain_capacity_valid = false |
+      .capacity_acceptance.chain_capacity_invalid_reasons += ["strict_image_reuse_failed"]' \
+    "$generator_summary_file" >"$generator_summary_file.tmp"
+  mv "$generator_summary_file.tmp" "$generator_summary_file"
+fi
+
 if [[ $generator_container_exit_code -eq 0 ]] &&
    ! jq -e '.final != null' "$generator_summary_file" >/dev/null; then
   echo "generator exited successfully without a final native-load-v2 record" >&2
@@ -3383,8 +3604,9 @@ jq -n \
                      reasons:$reproducibility_reasons,
                      semantics:"separate from proof correctness and capacity validity; dirty source or unpinned images make the run difficult to reproduce but do not alter canonical proof results"}}' >"$metadata_file"
 
-jq -n \
+jq -n -L "$benchmark_jq_dir" \
   --slurpfile run "$metadata_file" \
+  --slurpfile strict_image_reuse "$result_dir/strict-image-reuse.json" \
   --slurpfile generator "$generator_summary_file" \
   --slurpfile resources "$resource_summary_file" \
   --slurpfile session_stats "$session_stats_summary_file" \
@@ -3394,7 +3616,8 @@ jq -n \
   --slurpfile validator_actor_stats "$validator_actor_stats_summary_file" \
   --slurpfile ext_messages_broadcast "$ext_messages_broadcast_file" \
   --slurpfile native_payment_lanes "$native_payment_lanes_provenance_file" \
-  '{run:$run[0],generator:$generator[0],session_stats:$session_stats[0],
+  'include "native-benchmark-lib";
+   {run:$run[0],strict_image_reuse:$strict_image_reuse[0],generator:$generator[0],session_stats:$session_stats[0],
     validator_pipeline:$validator_pipeline[0],validator_pool:$validator_pool[0],
     validator_scheduling:$validator_scheduling[0],
     validator_actor_stats:$validator_actor_stats[0],
@@ -3402,12 +3625,14 @@ jq -n \
     native_payment_lanes:$native_payment_lanes[0],
     resources:$resources[0],
     acceptance:($generator[0].capacity_acceptance + {
+      strict_image_reuse_required:$strict_image_reuse[0].required,
+      strict_image_reuse_valid:$strict_image_reuse[0].valid,
       validator_cleanup_valid:$validator_pool[0].cleanup_acceptance.valid,
       validator_cleanup_invalid_reasons:$validator_pool[0].cleanup_acceptance.invalid_reasons,
       reproducible:$run[0].reproducibility.valid,
       reproducibility_reasons:$run[0].reproducibility.reasons,
       semantics:"proof correctness, run completion, signed-run physical quantum, ingress capacity, chain capacity, validator canonical cleanup, and reproducibility are independent acceptance dimensions"
-    })}' \
+    })} | . + {load_level_acceptance:native_benchmark_load_level_acceptance(.)}' \
   >"$summary_file"
 
 echo "Benchmark summary: $summary_file"

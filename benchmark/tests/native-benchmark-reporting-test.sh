@@ -23,6 +23,107 @@ command -v jq >/dev/null 2>&1 || {
 "$wrapper" --self-test-ext-messages-broadcast
 "$wrapper" --self-test-native-payment-lanes-manifest
 
+"$wrapper" --self-test-strict-genesis-reuse
+
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  def histogram_row($overrides; $dropped):
+    (["le64", "65_80", "81_128", "129_256", "257_511", "512", "gt512"]) as $bins |
+    (["1", "2", "4", "8", "other"]) as $tiers |
+    ((reduce $bins[] as $bin ({};
+        .["native_microbatch_accounts_" + $bin] = 0 |
+        .["native_staged_updates_" + $bin] = 0)) +
+     (reduce $tiers[] as $tier ({}; .["native_staged_workers_" + $tier] = 0)) +
+     {native_microbatches:2,native_microbatch_accounts_65_80:2,
+      native_staged_updates_512:1,native_staged_workers_4:1} + $overrides |
+     delpaths($dropped | map([.]))) as $fields |
+    {work_time_real_stats:($fields | to_entries | map(.key + "=" + (.value | tostring)) | join(" "))};
+  histogram_row({}; []) as $row |
+  native_staged_worker_histograms([$row,$row]) as $complete |
+  $complete.capture_complete and $complete.reconciled and
+  $complete.microbatch_accounts["65_80"] == 4 and
+  $complete.staged_updates["512"] == 2 and $complete.staged_workers["4"] == 2 and
+  ([[], [$row,{}], [$row | .work_time_real_stats += " native_microbatch_accounts_65_80=garbage"],
+    [$row | .work_time_real_stats += " native_microbatch_accounts_65_80=2"],
+    [histogram_row({}; ["native_staged_workers_other"])],
+    [histogram_row({native_staged_workers_4:-1}; [])],
+    [histogram_row({native_staged_workers_4:"1garbage"}; [])]] |
+    all(.[]; native_staged_worker_histograms(.) |
+      .capture_complete == false and .microbatch_accounts == null)) and
+  ([histogram_row({native_microbatches:3}; []),
+    histogram_row({native_staged_workers_4:2}; [])] |
+    all(.[]; native_staged_worker_histograms([.]) |
+      .capture_complete and .reconciled == false and .staged_workers == null)) and
+  (capacity_acceptance({chain_capacity_valid:true,steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100}).chain_capacity_valid == true) and
+  ([{chain_capacity_valid:true},
+    {chain_capacity_valid:true,steady_offered_avg_tps:100,canonical_chain_measure_avg_tps:100},
+    {chain_capacity_valid:true,steady_offered_avg_tps:90,canonical_chain_measure_avg_tps:100},
+    {chain_capacity_valid:true,steady_offered_avg_tps:110,canonical_chain_measure_avg_tps:0},
+    {chain_capacity_valid:true,steady_offered_avg_tps:"110",canonical_chain_measure_avg_tps:100}] |
+    all(.[]; capacity_acceptance(.) |
+      .chain_capacity_valid == false and (.chain_capacity_invalid_reasons | length > 0)))
+' >/dev/null
+
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  {run:{benchmark_exit_code:0,interrupted:false},generator:{
+    chain_capacity_valid:false,
+    capacity_acceptance:{
+      chain_capacity_invalid_reasons:["offered_load_not_above_canonical_throughput"],
+      canonical_lane_balance_required:true,canonical_lane_balance_valid:true},
+    final:{chain_capacity_valid:true,chain_capacity_invalid_reasons:[],
+      chain_correctness_valid:true,run_incomplete_reasons:[],
+      steady_offered_avg_tps:99,canonical_chain_measure_avg_tps:100},
+    valid_canonical_run:true,ingress_capacity_valid:true,
+    native_signed_run_quantum:{valid:true}},
+    validator_pool:{cleanup_acceptance:{valid:true}},
+    strict_image_reuse:{required:true,valid:true}} as $base |
+  native_benchmark_load_level_acceptance($base) as $valid |
+  $valid.valid and $valid.classification == "load_validation" and
+  $valid.capacity_claim_allowed == false and
+  ([$base | .run.benchmark_exit_code = 3,
+    .run.interrupted = true,
+    .generator.capacity_acceptance.chain_capacity_invalid_reasons += ["another_failure"],
+    .generator.final.chain_capacity_valid = false,
+    .generator.final.chain_capacity_invalid_reasons = ["generator_failure"],
+    .generator.final.chain_correctness_valid = false,
+    .generator.final.run_incomplete_reasons = ["incomplete_drain"],
+    .generator.valid_canonical_run = false,
+    .generator.ingress_capacity_valid = false,
+    .generator.native_signed_run_quantum.valid = false,
+    .validator_pool.cleanup_acceptance.valid = false,
+    .generator.capacity_acceptance.canonical_lane_balance_valid = false,
+    .strict_image_reuse.valid = false,
+    .generator.final.steady_offered_avg_tps = null,
+    .generator.final.canonical_chain_measure_avg_tps = 0] |
+    all(.[]; native_benchmark_load_level_acceptance(.) | .valid == false)) and
+  ($base | .generator.chain_capacity_valid = true |
+    .generator.capacity_acceptance.chain_capacity_invalid_reasons = [] |
+    .generator.final.steady_offered_avg_tps = 110) as $capacity_base |
+  (native_benchmark_load_level_acceptance($capacity_base) |
+    .valid and .classification == "capacity_eligible" and .capacity_claim_allowed) and
+  ([$capacity_base | .run.benchmark_exit_code = 3,
+    .run.interrupted = true,
+    .generator.capacity_acceptance.chain_capacity_invalid_reasons = ["another_failure"],
+    .generator.final.chain_capacity_valid = false,
+    .generator.final.chain_capacity_invalid_reasons = ["generator_failure"],
+    .generator.final.chain_correctness_valid = false,
+    .generator.final.run_incomplete_reasons = ["incomplete_drain"],
+    .generator.valid_canonical_run = false,
+    .generator.ingress_capacity_valid = false,
+    .generator.native_signed_run_quantum.valid = false,
+    .validator_pool.cleanup_acceptance.valid = false,
+    .generator.capacity_acceptance.canonical_lane_balance_valid = false,
+    .strict_image_reuse.valid = false,
+    .generator.final.steady_offered_avg_tps = null,
+    .generator.final.canonical_chain_measure_avg_tps = 0] |
+    all(.[]; native_benchmark_load_level_acceptance(.) |
+      .valid == false and .capacity_claim_allowed == false and .classification == "rejected")) and
+  ($base | .generator.chain_capacity_valid = true |
+    native_benchmark_load_level_acceptance(.) | .capacity_claim_allowed == false)
+' >/dev/null
+
 jq -n -e -L "$jq_dir" '
   include "native-benchmark-lib";
   def external_wait_stats($multiplier; $calls):
@@ -524,6 +625,8 @@ jq -n -e -L "$jq_dir" '
     ingress_capacity_valid:false,
     ingress_capacity_invalid_reasons:["offer_target_not_attained"],
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[]
   })) as $acceptance |
   ($acceptance.chain_correctness_valid == false) and
@@ -544,6 +647,8 @@ jq -n -e -L "$jq_dir" '
     ingress_capacity_valid:true,
     ingress_capacity_invalid_reasons:[],
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:{
       required:true, valid:true, topology_complete:true, totals_reconcile:true,
@@ -570,6 +675,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:{
       required:true, valid:true, topology_complete:true, totals_reconcile:true,
@@ -598,6 +705,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:($raw_lane_balance |
       .lanes[3].shard = .lanes[2].shard)
@@ -611,6 +720,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:($raw_lane_balance |
       .lanes[3].shard = "" |
@@ -625,6 +736,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:($raw_lane_balance |
       .lanes[3].measured_native_transfers = 999)
@@ -638,6 +751,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:($raw_lane_balance |
       .lanes[0].measured_native_transfers = 950 |
@@ -648,6 +763,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:($raw_lane_balance |
       .lanes[0].measured_native_transfers = 949 |
@@ -662,6 +779,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[],
     canonical_lane_balance:($raw_lane_balance |
       .depth = 1 |
@@ -679,6 +798,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:["reported_capacity_context"],
     canonical_lane_balance:{
       required:true, valid:false, topology_complete:true, totals_reconcile:true,
@@ -715,6 +836,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:2,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[]
   })) as $missing_lane_balance |
   ($missing_lane_balance.canonical_lane_balance_required == true) and
@@ -732,6 +855,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:1,
     chain_capacity_valid:true,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:[]
   })) as $legacy_depth_one |
   ($legacy_depth_one.canonical_lane_balance_required == false) and
@@ -740,6 +865,8 @@ jq -n -e -L "$jq_dir" '
   (capacity_acceptance({
     native_payment_lane_depth:0,
     chain_capacity_valid:false,
+    steady_offered_avg_tps:110,
+    canonical_chain_measure_avg_tps:100,
     chain_capacity_invalid_reasons:["existing_failure"]
   })) as $legacy_depth_zero |
   ($legacy_depth_zero.canonical_lane_balance_required == false) and
@@ -1215,6 +1342,7 @@ for field in \
   cwnd_cap_limited_acks \
   ready_source_queue_max_depth \
   native_fast_path_invocations \
+  native_registered_run_reuses \
   native_fragment_refill_waits \
   native_fragment_refill_timeouts \
   native_fragment_refill_messages \
