@@ -164,7 +164,7 @@ if ! awk -v value="$adaptive_initial_cwnd" 'BEGIN {exit !(value >= 0 && value <=
 fi
 if awk -v value="$adaptive_initial_cwnd" 'BEGIN {exit !(value > 0)}'; then
   if ! printf '%s\n' "$generator_help" |
-       grep -Eq -- '(^|[[:space:]])--adaptive-initial-cwnd([=[:space:]]|$)'; then
+       grep -Eq -- '(^|[[:space:]])--adaptive-initial-cwnd(<arg>)?([=[:space:]]|$)'; then
     echo "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND requires a native-load-generator image with --adaptive-initial-cwnd" >&2
     exit 2
   fi

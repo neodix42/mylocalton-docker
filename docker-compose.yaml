@@ -187,7 +187,7 @@ services:
   native-load-generator:
     container_name: native-load-generator
     profiles: [native-load-generator]
-    image: mylocalton-native-load-generator:${TON_BRANCH:-latest}
+    image: ${NATIVE_LOAD_IMAGE:-mylocalton-native-load-generator:${TON_BRANCH:-latest}}
     build:
       context: .
       dockerfile: ./native-load-generator/Dockerfile

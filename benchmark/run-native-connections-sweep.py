@@ -275,12 +275,18 @@ def assess(summary, a, count, frozen, wrapper_exit):
     def check(value, reason):
         if not value:
             errors.append(reason)
-    g = summary.get('generator', {})
-    f = g.get('final', {})
-    acceptance = summary.get('acceptance', {})
-    strict = summary.get('strict_image_reuse', {})
-    check(wrapper_exit == 0 and summary.get('run', {}).get('benchmark_exit_code') == 0 and
-          summary.get('run', {}).get('interrupted') is False, 'wrapper_or_generator_failed')
+    def section(value, name):
+        check(isinstance(value, dict), 'missing_or_malformed_' + name)
+        return value if isinstance(value, dict) else {}
+    summary = section(summary, 'summary')
+    run = section(summary.get('run'), 'run')
+    g = section(summary.get('generator'), 'generator')
+    f = section(g.get('final'), 'generator_final')
+    acceptance = section(summary.get('acceptance'), 'acceptance')
+    strict = section(summary.get('strict_image_reuse'), 'strict_image_reuse')
+    load = section(summary.get('load_level_acceptance'), 'load_level_acceptance')
+    check(wrapper_exit == 0 and run.get('benchmark_exit_code') == 0 and
+          run.get('interrupted') is False, 'wrapper_or_generator_failed')
     for field in ['chain_correctness_valid', 'run_complete', 'native_signed_run_quantum_valid',
                   'canonical_lane_balance_valid', 'native_run_batching_valid', 'validator_cleanup_valid']:
         check(acceptance.get(field) is True, field)
@@ -318,9 +324,16 @@ def assess(summary, a, count, frozen, wrapper_exit):
         check(type(logical) is int and logical >= 0 and type(elapsed) in (int, float) and elapsed > 0 and
               type(rate) in (int, float) and math.isfinite(rate) and
               math.isclose(logical / elapsed, rate, rel_tol=1e-8, abs_tol=1e-6), 'arithmetic_' + count_key)
-    runtime = summary.get('run', {}).get('containers', [])
+    runtime = run.get('containers')
     check(isinstance(runtime, list), 'runtime_containers_missing')
-    by_name = {c.get('name'): c for c in runtime if isinstance(c, dict)} if isinstance(runtime, list) else {}
+    by_name = {}
+    if isinstance(runtime, list):
+        for container in runtime:
+            valid_name = isinstance(container, dict) and isinstance(container.get('name'), str)
+            check(valid_name, 'malformed_runtime_container')
+            if valid_name:
+                check(container['name'] not in by_name, 'duplicate_runtime_container_' + container['name'])
+                by_name[container['name']] = container
     for name in SERVICES:
         check(by_name.get(name, {}).get('image_id') == frozen['images'][name]['image_id'], 'runtime_image_' + name)
     entries = by_name.get('native-load-generator', {}).get('benchmark_environment', [])
@@ -334,7 +347,6 @@ def assess(summary, a, count, frozen, wrapper_exit):
     for key, value in settings(a, count).items():
         if key.startswith('NATIVE_LOAD_'):
             check(actual_env.get(key) == value, 'runtime_environment_' + key)
-    load = summary.get('load_level_acceptance', {})
     capacity = (not errors and load.get('capacity_claim_allowed') is True and
                 load.get('classification') == 'capacity_eligible' and load.get('valid') is True and
                 acceptance.get('chain_capacity_valid') is True and acceptance.get('ingress_capacity_valid') is True and
@@ -343,8 +355,8 @@ def assess(summary, a, count, frozen, wrapper_exit):
     return {'connections': count, **rates, 'target_tps': a.target_tps,
             'target_attainment': 'not_applicable' if a.target_tps == 0 else g.get('offer_target_attainment_ratio'),
             'load_mode': expected['load_mode'], 'continue_safe': not errors, 'stop_reasons': errors,
-            'capacity_claim_allowed': capacity, 'original_load_level_acceptance': load,
-            'original_acceptance': acceptance,
+            'capacity_claim_allowed': capacity, 'original_load_level_acceptance': summary.get('load_level_acceptance'),
+            'original_acceptance': summary.get('acceptance'),
             'classification': 'capacity_eligible' if capacity else ('observation_only' if not errors else 'rejected'),
             'measured_offered_logical_transfers': f.get('steady_offered'),
             'measured_admitted_logical_transfers': f.get('steady_mempool_accepted'),

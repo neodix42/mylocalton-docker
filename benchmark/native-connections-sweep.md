@@ -20,6 +20,16 @@ python3 benchmark/run-native-connections-sweep.py \
 
 Pin `TON_IMAGE`/`TON_BRANCH` to the already prepared images in the environment or env file. The runner freezes exact resolved service image IDs before the first arm; dependency order cannot select a different service image. `plan.json` lists the common environment and each arm's environment. The preparation owner can use the first arm's environment with `native_payment_lanes_profile_env 2` when preparing genesis; `NATIVE_LOAD_SOURCES` selects the genesis source count, and changing submission connections does not alter genesis configuration. Existing images lacking `--adaptive-initial-cwnd` fail before offering load when the explicit initial window is requested.
 
+For a generator entrypoint-only rebuild, keep `TON_IMAGE` and `TON_BRANCH` pinned to the prepared validator and set `NATIVE_LOAD_IMAGE` to the **already built** replacement generator image before starting a new complete sweep:
+
+```sh
+NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:generator-entrypoint-v2 \
+  python3 benchmark/run-native-connections-sweep.py \
+    --connections 10 50 100 --output benchmark-results/connections-retry
+```
+
+The default generator image remains `mylocalton-native-load-generator:${TON_BRANCH:-latest}`. This optional override changes only the generator service image; it does not retag, rebuild, or recreate genesis. The replacement must retain the same TON source revision label as the validator. Its immutable image ID is frozen for every arm of the new sweep, and a partial failed sweep remains a separate rejected bundle. Build the replacement before starting the sweep; builds are never part of its measurement path.
+
 Default settings are:
 
 | Setting | Value |

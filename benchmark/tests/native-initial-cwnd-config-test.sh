@@ -31,6 +31,14 @@ cp "$scratch/base-help" "$scratch/new-help"
 printf '%s\n' '--adaptive-initial-cwnd VALUE' >>"$scratch/new-help"
 cp "$scratch/base-help" "$scratch/wrong-help"
 printf '%s\n' '--adaptive-initial-cwnd-other' >>"$scratch/wrong-help"
+cp "$scratch/base-help" "$scratch/actual-help"
+# Exact td::OptionParser syntax captured from the real generator image.
+printf '%s\n' '  --adaptive-initial-cwnd<arg>   Global initial adaptive admission window' >>"$scratch/actual-help"
+cp "$scratch/base-help" "$scratch/wrong-arg-help"
+printf '%s\n' '  --adaptive-initial-cwnd-other<arg>  Different option' >>"$scratch/wrong-arg-help"
+cp "$scratch/base-help" "$scratch/wrong-tail-help"
+printf '%s\n' '  --adaptive-initial-cwnd<arg>-other  Different option' >>"$scratch/wrong-tail-help"
+
 run_case() {
   local expected=$1 help=$2 status=0
   shift 2
@@ -49,6 +57,11 @@ run_case 0 base-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=0
 run_case 0 new-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768
 [[ $(grep -cx -- --adaptive-initial-cwnd "$scratch/args") == 1 ]]
 awk 'previous == "--adaptive-initial-cwnd" && $0 == "32768" {found=1} {previous=$0} END {exit !found}' "$scratch/args"
+run_case 0 actual-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768
+[[ $(grep -cx -- --adaptive-initial-cwnd "$scratch/args") == 1 ]]
+awk 'previous == "--adaptive-initial-cwnd" && $0 == "32768" {found=1} {previous=$0} END {exit !found}' "$scratch/args"
+run_case 2 wrong-arg-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768
+run_case 2 wrong-tail-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768
 run_case 2 base-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768
 run_case 2 wrong-help NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768
 for value in -1 1.5 NaN garbage 4294967296 99999999999999999999999999; do

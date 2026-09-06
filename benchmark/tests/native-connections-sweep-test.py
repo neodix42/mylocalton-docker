@@ -220,6 +220,35 @@ class AcceptanceTests(unittest.TestCase):
         self.assertTrue(r['continue_safe'])
         self.assertFalse(r['capacity_claim_allowed'])
 
+    def test_null_and_malformed_sections_are_explicit_rejections(self):
+        sections = [(['run'], 'run'), (['generator'], 'generator'),
+                    (['generator', 'final'], 'generator_final'), (['acceptance'], 'acceptance'),
+                    (['strict_image_reuse'], 'strict_image_reuse'),
+                    (['load_level_acceptance'], 'load_level_acceptance')]
+        for path, name in sections:
+            for malformed in [None, [], 'invalid', False]:
+                with self.subTest(path=path, malformed=malformed):
+                    s = copy.deepcopy(self.s)
+                    item = s
+                    for key in path[:-1]:
+                        item = item[key]
+                    item[path[-1]] = malformed
+                    r = self.assess(s)
+                    self.assertFalse(r['continue_safe'])
+                    self.assertFalse(r['capacity_claim_allowed'])
+                    self.assertEqual(r['classification'], 'rejected')
+                    self.assertIn('missing_or_malformed_' + name, r['stop_reasons'])
+        for malformed in [None, [], 'invalid']:
+            r = self.assess(malformed)
+            self.assertIn('missing_or_malformed_summary', r['stop_reasons'])
+            self.assertFalse(r['continue_safe'])
+        for containers in [None, [None], [{'name': []}]]:
+            s = copy.deepcopy(self.s)
+            s['run']['containers'] = containers
+            r = self.assess(s)
+            self.assertFalse(r['continue_safe'])
+            self.assertFalse(r['capacity_claim_allowed'])
+
     def test_completed_summary_is_hashed_before_use(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / 'summary.json'
@@ -231,7 +260,7 @@ class AcceptanceTests(unittest.TestCase):
 
 
 class SequentialTests(unittest.TestCase):
-    def execute_fixture(self, output, failed_first=False, change_identity=False):
+    def execute_fixture(self, output, failed_first=False, change_identity=False, missing_final=False):
         a = options('--output', str(output))
         calls = []
         class FakeHost:
@@ -255,9 +284,12 @@ class SequentialTests(unittest.TestCase):
             value = summary(a, count)
             if failed_first:
                 value['acceptance']['validator_cleanup_valid'] = False
+            if missing_final:
+                value['generator']['final'] = None
+                value['run']['benchmark_exit_code'] = 125
             (bundle / 'benchmark-summary.json').write_text(json.dumps(value))
             logfile.write_text('fixture only')
-            return 0
+            return 125 if missing_final else 0
         with patch.object(sweep, 'run_arm', run), contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):
             status = sweep.execute(a, FakeHost())
@@ -278,6 +310,20 @@ class SequentialTests(unittest.TestCase):
             self.assertFalse(report['complete'])
             self.assertIsNone(report['capacity_winner_connections'])
             self.assertEqual(len(report['arms']), 1)
+
+    def test_preload_failure_with_null_final_saves_observation_and_stops(self):
+        with tempfile.TemporaryDirectory() as d:
+            status, calls, report = self.execute_fixture(Path(d) / 'out', missing_final=True)
+            self.assertEqual((status, calls), (3, [10]))
+            self.assertFalse(report['complete'])
+            self.assertIsNone(report['capacity_winner_connections'])
+            self.assertEqual(len(report['arms']), 1)
+            arm = report['arms'][0]
+            self.assertEqual(arm['wrapper_exit'], 125)
+            self.assertIsNone(arm['offered_logical_tps'])
+            self.assertIn('missing_or_malformed_generator_final', arm['stop_reasons'])
+            self.assertIn('wrapper_or_generator_failed', arm['stop_reasons'])
+            self.assertEqual(arm['summary_sha256'], sweep.sha((Path(arm['raw_bundle']) / 'benchmark-summary.json').read_bytes()))
 
     def test_changed_process_between_arms_never_starts_next(self):
         with tempfile.TemporaryDirectory() as d:
