@@ -200,7 +200,7 @@ services:
       - shared-data:/usr/share/data:ro
       - native-load-wallets:/wallets:ro
     environment:
-      - NATIVE_LOAD_GLOBAL_CONFIG=/usr/share/data/global.config.json
+      - NATIVE_LOAD_GLOBAL_CONFIG=${NATIVE_LOAD_GLOBAL_CONFIG:-/usr/share/data/global.config.json}
       - NATIVE_LOAD_WALLET_DIR=/wallets
       - NATIVE_LOAD_SOURCES
       - NATIVE_LOAD_CONNECTIONS
@@ -248,6 +248,7 @@ services:
       - NATIVE_LOAD_ADAPTIVE_INFLIGHT
       - NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS
       - NATIVE_LOAD_ADAPTIVE_MAX_CWND
+      - NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=${NATIVE_LOAD_ADAPTIVE_INITIAL_CWND:-0}
       - NATIVE_LOAD_SOURCE_OFFSET
       - NATIVE_LOAD_FINALITY_POLL_SECONDS
       - NATIVE_LOAD_FINALITY_SAMPLE_SOURCES

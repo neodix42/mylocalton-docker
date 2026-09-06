@@ -48,6 +48,7 @@ auto_nonce=${NATIVE_LOAD_AUTO_NONCE:-1}
 adaptive_inflight=${NATIVE_LOAD_ADAPTIVE_INFLIGHT:-1}
 adaptive_initial_rtt_seconds=${NATIVE_LOAD_ADAPTIVE_INITIAL_RTT_SECONDS:-1}
 adaptive_max_cwnd=${NATIVE_LOAD_ADAPTIVE_MAX_CWND:-0}
+adaptive_initial_cwnd=${NATIVE_LOAD_ADAPTIVE_INITIAL_CWND:-0}
 source_offset=${NATIVE_LOAD_SOURCE_OFFSET:-0}
 finality_poll_seconds=${NATIVE_LOAD_FINALITY_POLL_SECONDS:-10}
 finality_sample_sources=${NATIVE_LOAD_FINALITY_SAMPLE_SOURCES:-256}
@@ -150,6 +151,25 @@ set -- /usr/local/bin/native-load-generator \
   --canonical-retry-backoff-seconds "$canonical_retry_backoff_seconds" \
   --canonical-retry-max-backoff-seconds "$canonical_retry_max_backoff_seconds" \
   --repair-cooldown-seconds "$repair_cooldown_seconds"
+
+# Optional global initial budget. Zero retains compatibility with older images.
+case "$adaptive_initial_cwnd" in
+  ''|*[!0-9]*)
+    echo "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND must be an integer in [0, 4294967295]" >&2
+    exit 2 ;;
+esac
+if ! awk -v value="$adaptive_initial_cwnd" 'BEGIN {exit !(value >= 0 && value <= 4294967295)}'; then
+  echo "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND must be an integer in [0, 4294967295]" >&2
+  exit 2
+fi
+if awk -v value="$adaptive_initial_cwnd" 'BEGIN {exit !(value > 0)}'; then
+  if ! printf '%s\n' "$generator_help" |
+       grep -Eq -- '(^|[[:space:]])--adaptive-initial-cwnd([=[:space:]]|$)'; then
+    echo "NATIVE_LOAD_ADAPTIVE_INITIAL_CWND requires a native-load-generator image with --adaptive-initial-cwnd" >&2
+    exit 2
+  fi
+  set -- "$@" --adaptive-initial-cwnd "$adaptive_initial_cwnd"
+fi
 
 case "$auto_nonce" in
   1|true|TRUE|yes|YES) set -- "$@" --auto-nonce ;;

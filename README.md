@@ -1012,6 +1012,10 @@ These wallets will always be available in the blockchain, and you can use them i
 
 Refer to [ton4j](https://github.com/ton-blockchain/ton4j) SDK.
 
+## Persistent submission connection benchmark
+
+Use the [connection sweep](benchmark/native-connections-sweep.md) to test 10, 50 and 100 persistent ADNL/TCP submission clients against one prepared local validator. It keeps global initial/inflight budgets fixed, requires strict prebuilt image and validator reuse, and saves admission and canonical TPS with their original validity gates. The default is bounded unpaced load with 60 seconds of warmup and 180 seconds of measurement per count.
+
 <!-- @formatter:on -->
 **Important!** MyLocalTon-Docker lite-server runs inside genesis container in its own network on IP `172.28.1.10`,
 if you want to access it from localhost, you have to refer to `127.0.0.1` IP address or simply use this config:

@@ -10,6 +10,8 @@ wrapper=$script_dir/../../run-native-benchmark.sh
 "$script_dir/native-payment-lanes-helper-test.sh"
 bash "$script_dir/native-payment-lane-wallets-test.sh"
 bash "$script_dir/native-run-batching-config-test.sh"
+bash "$script_dir/native-initial-cwnd-config-test.sh"
+python3 "$script_dir/native-connections-sweep-test.py"
 
 command -v jq >/dev/null 2>&1 || {
   echo "required command is not installed: jq" >&2
