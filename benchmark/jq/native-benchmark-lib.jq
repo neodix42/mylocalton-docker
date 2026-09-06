@@ -37,6 +37,30 @@ def native_work_time_counter_values($rows; $name):
      stat_counter_value) |
     select(. != null)];
 
+# Additive finer populations: old images keep usable coarse histograms while
+# absent/mixed/malformed sub-bins remain explicitly unavailable.
+def native_small_staged_histograms($rows):
+  ["le8", "9_16", "17_32", "33_64"] as $bins |
+  ["native_microbatch_accounts_", "native_staged_updates_"] as $prefixes |
+  [$prefixes[] as $prefix | ($bins + ["le64"])[] | $prefix + .] as $fields |
+  [$rows[] as $row |
+    reduce $fields[] as $field ({};
+      [($row.work_time_real_stats? // "" | split(" ")[] |
+        select(startswith($field + "=")) | ltrimstr($field + "="))] as $tokens |
+      (if ($tokens | length) == 1 then ($tokens[0] | tonumber? // null) else null end) as $value |
+      .[$field] = (if ($value | nonnegative_integer) then $value else null end))] as $records |
+  (($records | length) > 0 and all($records[]; all(.[]; . != null))) as $complete |
+  ($complete and all($records[];
+    . as $row | all($prefixes[];
+      . as $prefix | ([$bins[] | $row[$prefix + .]] | add) == $row[$prefix + "le64"]))) as $reconciled |
+  def histogram($prefix):
+    if $reconciled then reduce $bins[] as $bin ({};
+      .[$bin] = ([$records[] | .[$prefix + $bin]] | add)) else null end;
+  {semantics:"sub-bins partition legacy le64; le8 includes zero-account attempts; not committed TPS",
+   capture_complete:$complete, reconciled:$reconciled,
+   microbatch_accounts:histogram("native_microbatch_accounts_"),
+   staged_updates:histogram("native_staged_updates_")};
+
 # Attempt histograms include rolled-back microbatches and dictionary updates;
 # they describe production work sizes, never committed-transfer throughput.
 def native_staged_worker_histograms($rows):
@@ -68,7 +92,8 @@ def native_staged_worker_histograms($rows):
     reconciled:$reconciled,
     microbatch_accounts:histogram("native_microbatch_accounts_"; $bins),
     staged_updates:histogram("native_staged_updates_"; $bins),
-    staged_workers:histogram("native_staged_workers_"; $tiers)
+    staged_workers:histogram("native_staged_workers_"; $tiers),
+    small_populations:native_small_staged_histograms($rows)
   };
 
 # Native checkpoint groups are committed transactionally.  Counters below are
@@ -1735,6 +1760,95 @@ def validator_pool_cleanup_acceptance($reconciliation_after; $pending_after):
   {
     valid:(($reasons | length) == 0),
     invalid_reasons:$reasons
+  };
+
+# These additive diagnostics never alter acceptance gates. Old images or failed
+# captures remain explicitly unavailable; missing counters are not zero samples.
+def native_admission_diagnostic_counter_fields:
+  ["finished_batches", "aborted_batches", "not_ready_total",
+   "not_ready_snapshot_changed", "not_ready_account_changed_verification",
+   "not_ready_account_changed_insertion", "not_ready_account_changed_commit",
+   "not_ready_canonical_watermark_lag", "not_ready_masterchain_unavailable",
+   "not_ready_shard_unavailable", "not_ready_mempool_full",
+   "not_ready_per_address_limit", "not_ready_other"];
+
+def native_admission_diagnostic_timing_fields:
+  ["residence", "aborted_residence", "shard_wait", "verification",
+   "snapshot_age", "changed_snapshot_age"];
+
+def native_admission_diagnostics_summary($before; $after):
+  native_admission_diagnostic_counter_fields as $counters |
+  native_admission_diagnostic_timing_fields as $timings |
+  ($counters + ["active_batches", "peak_active_batches"] +
+   [$timings[] + "_samples"]) as $integer_fields |
+  ($integer_fields + [$timings[] | . + "_sum_s", . + "_max_s"]) as $fields |
+  ($counters + [$timings[] | . + "_samples", . + "_sum_s"]) as $monotonic_fields |
+  def nonnegative_number:
+    if type != "number" then false else isfinite and . >= 0 end;
+  def field($snapshot; $key):
+    if ($snapshot | type) != "object" then null
+    elif ($snapshot[$key] | nonnegative_number) then $snapshot[$key]
+    else null end;
+  def missing_or_invalid($snapshot):
+    [$fields[] as $key |
+      if field($snapshot; $key) == null then $key
+      elif ($integer_fields | index($key)) != null and
+           ($snapshot[$key] != ($snapshot[$key] | floor)) then $key
+      else empty end];
+  missing_or_invalid($before) as $missing_before |
+  missing_or_invalid($after) as $missing_after |
+  (($missing_before | length) == 0 and ($missing_after | length) == 0) as $complete |
+  (if $complete then
+    [$monotonic_fields[] as $key | select($after[$key] < $before[$key]) | $key]
+   else [] end) as $decreased |
+  (if $complete then
+    ([$counters[] | select(startswith("not_ready_") and . != "not_ready_total")] as $causes |
+     all([$before,$after][]; . as $snapshot |
+       ([$causes[] | $snapshot[.]] | add) == $snapshot.not_ready_total))
+   else null end) as $causes_reconciled |
+  ($complete and ($decreased | length) == 0 and $causes_reconciled == true) as $delta_valid |
+  {
+    semantics:(
+      "ExtMessagePool cumulative final physical input outcomes and wall times " +
+      "sampled before and after the full generator run, including ramp, warmup " +
+      "and drain; code-651 causes include capacity errors, duplicate input slots " +
+      "count separately, and completed pool results do not imply RPC delivery. " +
+      "Missing old-image telemetry or failed captures remain null; this object " +
+      "is diagnostic only and does not change acceptance gates"
+    ),
+    capture_complete:$complete,
+    availability:(if $complete then "complete"
+      elif ($before == {} and $after == {})
+      then "missing_in_both_snapshots_old_image_or_failed_capture"
+      else "incomplete_or_invalid_snapshot" end),
+    missing_or_invalid_before:$missing_before,
+    missing_or_invalid_after:$missing_after,
+    counter_deltas_valid:$delta_valid,
+    decreased_counter_fields:$decreased,
+    cause_counts_reconciled:$causes_reconciled,
+    before:$before,
+    after:$after,
+    counters_delta:(if $delta_valid then
+      reduce $counters[] as $key ({}; .[$key] = $after[$key] - $before[$key])
+      else null end),
+    active_batches:{before:field($before; "active_batches"),after:field($after; "active_batches")},
+    cumulative_maxima_scope:(
+      "validator-lifetime cumulative observations at full-run boundaries, " +
+      "including work before this run; maxima are not subtracted and are not " +
+      "measurement-window maxima"
+    ),
+    peak_active_batches:{before:field($before; "peak_active_batches"),after:field($after; "peak_active_batches")},
+    timings:(reduce $timings[] as $key ({};
+      .[$key] = {
+        samples_delta:(if $delta_valid then $after[$key + "_samples"] - $before[$key + "_samples"] else null end),
+        sum_s_delta:(if $delta_valid then $after[$key + "_sum_s"] - $before[$key + "_sum_s"] else null end),
+        mean_s:(if $delta_valid and $after[$key + "_samples"] > $before[$key + "_samples"]
+          then ($after[$key + "_sum_s"] - $before[$key + "_sum_s"]) /
+               ($after[$key + "_samples"] - $before[$key + "_samples"])
+          else null end),
+        cumulative_max_s_before:field($before; $key + "_max_s"),
+        cumulative_max_s_after:field($after; $key + "_max_s")
+      }))
   };
 
 # Preserve every native transport field for forensic use, emit arithmetic

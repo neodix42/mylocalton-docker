@@ -26,6 +26,53 @@ command -v jq >/dev/null 2>&1 || {
 
 "$wrapper" --self-test-strict-genesis-reuse
 
+# Admission diagnostics are additive: unavailable old-image fields never become
+# plausible zeroes, and cumulative maxima/gauges never become counter deltas.
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  ((reduce native_admission_diagnostic_counter_fields[] as $key ({}; .[$key] = 0)) +
+   (reduce native_admission_diagnostic_timing_fields[] as $key ({};
+      .[$key + "_samples"] = 0 | .[$key + "_sum_s"] = 0 | .[$key + "_max_s"] = 0)) +
+   {finished_batches:10,not_ready_total:2,not_ready_snapshot_changed:2,
+    active_batches:1,peak_active_batches:2,residence_samples:10,
+    residence_sum_s:3.5,residence_max_s:1.0}) as $before |
+  ($before + {finished_batches:12,not_ready_total:5,not_ready_snapshot_changed:5,
+    active_batches:0,peak_active_batches:4,residence_samples:12,
+    residence_sum_s:5.0,residence_max_s:2.0}) as $after |
+  native_admission_diagnostics_summary($before;$after) as $good |
+  $good.capture_complete and $good.counter_deltas_valid and $good.cause_counts_reconciled and
+  $good.counters_delta.finished_batches == 2 and
+  $good.counters_delta.not_ready_snapshot_changed == 3 and
+  $good.timings.residence.samples_delta == 2 and
+  $good.timings.residence.sum_s_delta == 1.5 and
+  $good.timings.residence.mean_s == 0.75 and
+  $good.timings.residence.cumulative_max_s_before == 1 and
+  $good.timings.residence.cumulative_max_s_after == 2 and
+  $good.active_batches == {before:1,after:0} and
+  $good.peak_active_batches == {before:2,after:4} and
+  ($good.counters_delta | has("active_batches") or has("peak_active_batches") | not) and
+  (native_admission_diagnostics_summary($before;$before) |
+    .counter_deltas_valid and .timings.residence.samples_delta == 0 and
+    .timings.residence.sum_s_delta == 0 and .timings.residence.mean_s == null) and
+  (native_admission_diagnostics_summary({};{}) |
+    .capture_complete == false and .counter_deltas_valid == false and
+    .availability == "missing_in_both_snapshots_old_image_or_failed_capture" and
+    .counters_delta == null and .timings.residence.samples_delta == null and
+    .timings.residence.cumulative_max_s_after == null) and
+  ([{}, null, [], "invalid", ($after | del(.not_ready_account_changed_commit)),
+      ($after | .residence_sum_s = "5"), ($after | .residence_samples = 1.5)] |
+    all(.[]; native_admission_diagnostics_summary($before;.) |
+      .capture_complete == false and .counter_deltas_valid == false and .counters_delta == null)) and
+  (native_admission_diagnostics_summary({};$after) |
+    .capture_complete == false and .counters_delta == null) and
+  (native_admission_diagnostics_summary($before;($after | .finished_batches = 9)) |
+    .capture_complete and .counter_deltas_valid == false and
+    .decreased_counter_fields == ["finished_batches"] and .counters_delta == null) and
+  (native_admission_diagnostics_summary($before;($after | .not_ready_total = 6)) |
+    .capture_complete and .cause_counts_reconciled == false and
+    .counter_deltas_valid == false and .counters_delta == null)
+' >/dev/null
+
 jq -n -e -L "$jq_dir" '
   include "native-benchmark-lib";
   def histogram_row($overrides; $dropped):
@@ -1609,5 +1656,80 @@ grep -Fq 'config --services' "$wrapper" &&
     echo "benchmark wrapper must hash each resolved Compose service explicitly" >&2
     exit 1
   }
+
+# Fine histograms reconcile independently and never turn old missing fields into
+# zeros or discard still-valid legacy totals. Bind fixtures before assertions so
+# an as-binding cannot capture an accumulated boolean expression.
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  ["native_microbatch_accounts_", "native_staged_updates_"] as $prefixes |
+  ["le8", "9_16", "17_32", "33_64"] as $fine |
+  ["le64", "65_80", "81_128", "129_256", "257_511", "512", "gt512"] as $coarse |
+  [$prefixes[] as $prefix | $fine[] | $prefix + .] as $fine_fields |
+  (reduce $prefixes[] as $prefix ({};
+     reduce ($fine + $coarse)[] as $bin (.; .[$prefix + $bin] = 0)) +
+   {native_microbatches:4,native_microbatch_accounts_le64:4,
+    native_microbatch_accounts_le8:1,native_microbatch_accounts_9_16:1,
+    native_microbatch_accounts_17_32:1,native_microbatch_accounts_33_64:1,
+    native_staged_updates_le64:10,native_staged_updates_le8:1,
+    native_staged_updates_9_16:2,native_staged_updates_17_32:3,native_staged_updates_33_64:4,
+    native_staged_workers_1:10,native_staged_workers_2:0,native_staged_workers_4:0,
+    native_staged_workers_8:0,native_staged_workers_other:0}) as $fields |
+  def row($fields):
+    {work_time_real_stats:($fields | to_entries | map(.key + "=" + (.value | tostring)) | join(" "))};
+  row($fields) as $row |
+  row($fields | with_entries(.key as $key | select(($fine_fields | index($key)) == null))) as $old |
+  row($fields | map_values(0)) as $zero |
+  native_staged_worker_histograms([$row]) as $single |
+  native_staged_worker_histograms([$row,$row]) as $double |
+  native_staged_worker_histograms([$old]) as $legacy |
+  native_staged_worker_histograms([$old,$row]) as $mixed |
+  ($double.capture_complete and $double.reconciled and
+   $double.small_populations.capture_complete and $double.small_populations.reconciled and
+   $double.small_populations.microbatch_accounts == {le8:2,"9_16":2,"17_32":2,"33_64":2} and
+   $double.small_populations.staged_updates == {le8:2,"9_16":4,"17_32":6,"33_64":8}) and
+  ([$fine_fields[] as $field |
+      row($fields | del(.[$field])),
+      row($fields | .[$field] = -1),
+      row($fields | .[$field] = 0.5),
+      row($fields | .[$field] = "bad"),
+      row($fields | .[$field] = "1garbage"),
+      row($fields | .[$field] = true),
+      ($row | .work_time_real_stats += (" " + $field + "=" + ($fields[$field] | tostring)))] |
+    all(.[]; native_staged_worker_histograms([.]) |
+      .capture_complete and .reconciled and
+      (del(.small_populations) == ($single | del(.small_populations))) and
+      .small_populations.capture_complete == false and .small_populations.reconciled == false and
+      .small_populations.microbatch_accounts == null and .small_populations.staged_updates == null)) and
+  ([$fine_fields[] as $field | row($fields | .[$field] += 1)] |
+    all(.[]; native_staged_worker_histograms([.]) |
+      .capture_complete and .reconciled and .small_populations.capture_complete and
+      .small_populations.reconciled == false and
+      .small_populations.microbatch_accounts == null and .small_populations.staged_updates == null)) and
+  (native_staged_worker_histograms([
+      row($fields | .native_staged_updates_le8 = 0),
+      row($fields | .native_staged_updates_le8 = 2)]) |
+    .capture_complete and .reconciled and .small_populations.capture_complete and
+    .small_populations.reconciled == false and .small_populations.staged_updates == null) and
+  ($legacy.capture_complete and $legacy.reconciled and
+   $legacy.small_populations.capture_complete == false and $legacy.small_populations.reconciled == false and
+   $legacy.small_populations.microbatch_accounts == null and $legacy.small_populations.staged_updates == null and
+   ($legacy | del(.small_populations)) == ($single | del(.small_populations))) and
+  ($mixed.capture_complete and $mixed.reconciled and
+   $mixed.small_populations.capture_complete == false and $mixed.small_populations.reconciled == false and
+   $mixed.small_populations.microbatch_accounts == null and $mixed.small_populations.staged_updates == null and
+   ($mixed | del(.small_populations)) == ($double | del(.small_populations))) and
+  (native_staged_worker_histograms([$zero]) |
+    .capture_complete and .reconciled and .small_populations.capture_complete and .small_populations.reconciled and
+    .small_populations.microbatch_accounts == {le8:0,"9_16":0,"17_32":0,"33_64":0} and
+    .small_populations.staged_updates == {le8:0,"9_16":0,"17_32":0,"33_64":0}) and
+  (["native_microbatch_accounts_le64", "native_staged_updates_le64"] |
+    all(.[]; . as $field | native_small_staged_histograms([row($fields | del(.[$field]))]) |
+      .capture_complete == false and .reconciled == false and
+      .microbatch_accounts == null and .staged_updates == null)) and
+  (native_small_staged_histograms([]) |
+    .capture_complete == false and .reconciled == false and
+    .microbatch_accounts == null and .staged_updates == null)
+' >/dev/null
 
 echo "native benchmark reporting tests passed"

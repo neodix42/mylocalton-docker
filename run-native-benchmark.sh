@@ -2531,6 +2531,8 @@ scheduler_before=$(parse_validator_stat "$validator_stats_before_file" "total.ex
 scheduler_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_scheduler")
 batch_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_batch_admission")
 batch_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_batch_admission")
+batch_diagnostics_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_batch_diagnostics")
+batch_diagnostics_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_batch_diagnostics")
 transport_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_transport")
 transport_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_transport")
 reconciliation_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_reconciliation")
@@ -2542,6 +2544,8 @@ jq -L "$benchmark_jq_dir" -n \
   --argjson scheduler_after "$scheduler_after" \
   --argjson batch_before "$batch_before" \
   --argjson batch_after "$batch_after" \
+  --argjson batch_diagnostics_before "$batch_diagnostics_before" \
+  --argjson batch_diagnostics_after "$batch_diagnostics_after" \
   --argjson transport_before "$transport_before" \
   --argjson transport_after "$transport_after" \
   --argjson reconciliation_before "$reconciliation_before" \
@@ -2572,6 +2576,7 @@ jq -L "$benchmark_jq_dir" -n \
       delta:delta($batch_before; $batch_after; []),
       shard_state_cache:native_admission_shard_cache_summary($batch_before; $batch_after)
     },
+    batch_diagnostics:native_admission_diagnostics_summary($batch_diagnostics_before; $batch_diagnostics_after),
     native_transport:$native_transport,
     canonical_reconciliation:{
       semantics:"local candidate acceptance only tracks source/nonce hints; irreversible native prefix cleanup is authorized by shard-client-confirmed masterchain-referenced account state",
