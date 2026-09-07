@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
 REMOTE = ROOT / 'benchmark' / 'remote'
 IMAGE_ID = 'sha256:' + 'a' * 64
 IMAGE_REF = 'native-client:offline-fixture'
+CONFIGURED_IMAGE_REF = 'native-client:compose-fixture'
+BUILT_IMAGE_ID = 'sha256:' + 'e' * 64
 SOURCE_OFFSET, SOURCES, ALL_SOURCES = 4, 12, 24
 
 FAKE_DOCKER = r'''#!/usr/bin/env python3
@@ -30,13 +32,24 @@ root = pathlib.Path(os.environ['FAKE_DOCKER_ROOT'])
 args = sys.argv[1:]
 with (root/'calls.jsonl').open('a') as out: out.write(json.dumps(args)+'\n')
 scenario = json.loads((root/'scenario.json').read_text())
-image_id = 'sha256:' + ('b' if scenario.get('wrong_image') else 'a')*64
+image_id = 'sha256:' + ('b' if scenario.get('wrong_image') else ('e' if scenario.get('build_new_id') and (root/'built').exists() else 'a'))*64
+configured_image='native-client:compose-fixture'
+if args[:1]==['compose']:
+ with (root/'compose-environment.jsonl').open('a') as out:out.write(json.dumps({'command':args,'TON_BUILD_PULL':os.environ.get('TON_BUILD_PULL')})+'\n')
+ if 'config' in args:
+  print(json.dumps({'services':{'genesis':{'image':'validator:do-not-build'},'native-load-generator':{'image':configured_image}}}));sys.exit()
+ if 'build' in args:
+  if scenario.get('build_fails'):raise SystemExit('synthetic generator build failure')
+  (root/'built').touch();print('offline generator build complete');sys.exit()
+ raise SystemExit('unexpected Compose action: '+repr(args))
 image = {'Id':image_id,'Architecture':'amd64','Os':'linux','Config':{'Labels':{'org.opencontainers.image.revision':'c'*40}}}
 if args[:2] == ['image','inspect'] or args[:1] == ['inspect']:
  if args[:2] == ['image','inspect']:
-  if scenario.get('missing_image') or (scenario.get('image_missing_before_load') and not (root/'loaded').exists()): sys.exit(1)
+  if scenario.get('image_inspect_error'):raise SystemExit('permission denied accessing Docker daemon')
+  if scenario.get('missing_image') or (scenario.get('image_missing_before_load') and not (root/'loaded').exists()):raise SystemExit('Error response from daemon: No such image: '+args[-1])
+  if args[-1]==configured_image and scenario.get('missing_configured_image') and not (root/'built').exists():raise SystemExit('Error response from daemon: No such image: '+args[-1])
   print(json.dumps([image])); sys.exit()
- container = {'Id':'d'*64,'Name':'/fixture-genesis','Image':image_id,'RestartCount':0,
+ container = {'Id':'d'*64,'Name':'/fixture-genesis','Image':'sha256:'+'a'*64,'RestartCount':0,
   'State':{'Running':True,'ExitCode':0,'StartedAt':'2026-09-07T00:00:00Z'},
   'Config':{'Image':'native-client:offline-fixture','Env':['NATIVE_PAYMENT_LANE_DEPTH=2']}}
  runs = json.loads((root/'runs.json').read_text()) if (root/'runs.json').exists() else []
@@ -164,6 +177,14 @@ class RemoteTests(unittest.TestCase):
         (self.wallets/'private-unrelated.key').write_text('must never export')
         self.bundle=self.root/'bundle'
         self.client=self.root/'client'
+        self.fixture_repo=self.root/'repository'
+        self.fixture_remote=self.fixture_repo/'benchmark/remote'
+        self.fixture_remote.mkdir(parents=True)
+        for name in ['export-native-client.sh','import-native-client.sh','run-remote-load.sh','native-remote-load.env']:
+            shutil.copy2(REMOTE/name,self.fixture_remote/name)
+        (self.fixture_repo/'docker-compose.yaml').write_text('services:\n  native-load-generator:\n    image: '+CONFIGURED_IMAGE_REF+'\n')
+        (self.fixture_repo/'.env.physical').write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\n')
+        (self.fixture_repo/'.env').write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\n')
 
     def scenario(self, **settings):
         (self.fake/'scenario.json').write_text(json.dumps(settings))
@@ -237,6 +258,30 @@ class RemoteTests(unittest.TestCase):
              '--port','41004','--container','fixture-genesis','--sources',SOURCES,
              '--source-offset',SOURCE_OFFSET,'--output',self.bundle,'--image',IMAGE_REF,*args,success=success)
 
+    def export_detected_image(self, *args, success=True):
+        return self.invoke(self.fixture_remote/'export-native-client.sh','--non-interactive',
+                           '--server-ip','203.0.113.7','--port','41004','--container','fixture-genesis',
+                           '--sources',SOURCES,'--source-offset',SOURCE_OFFSET,'--output',self.bundle,
+                           '--no-image',*args,success=success)
+
+    def compose_calls(self, action):
+        return [call for call in self.calls() if call[:1]==['compose'] and action in call]
+
+    def assert_only_generator_builds(self):
+        builds=self.compose_calls('build')
+        self.assertEqual(len(builds),1)
+        self.assertEqual(builds[0][-1],'native-load-generator')
+        environments=[json.loads(line) for line in (self.fake/'compose-environment.jsonl').read_text().splitlines()]
+        self.assertTrue(environments)
+        self.assertTrue(all(row['TON_BUILD_PULL']=='false' for row in environments))
+        for call in self.calls():
+            self.assertFalse(any(token in call for token in ['up','restart','start','run','stop','kill','pull']))
+            if call[:1]==['compose']:
+                self.assertEqual(call[call.index('--project-directory')+1],str(self.fixture_repo))
+                self.assertEqual(call[call.index('-f')+1],str(self.fixture_repo/'docker-compose.yaml'))
+                self.assertEqual(call[call.index('--profile')+1],'native-load-generator')
+                self.assertNotIn('genesis',call)
+
     def import_bundle(self, *args, success=True):
         return self.invoke('import-native-client.sh','--non-interactive','--bundle',self.bundle,
                            '--output',self.client,*args,success=success)
@@ -247,14 +292,99 @@ class RemoteTests(unittest.TestCase):
         manifest['files'][name]={'sha256':sha(data),'size':len(data)}
         path.write_text(json.dumps(manifest))
 
+    def test_detected_configured_image_is_reused_without_build(self):
+        self.export_detected_image()
+        manifest=json.loads((self.bundle/'export-manifest.json').read_text())
+        self.assertEqual(manifest['image']['reference'],CONFIGURED_IMAGE_REF)
+        self.assertEqual(manifest['image']['id'],IMAGE_ID)
+        configs=self.compose_calls('config')
+        self.assertTrue(configs)
+        for call in configs:
+            self.assertEqual(call[call.index('--project-directory')+1],str(self.fixture_repo))
+            self.assertEqual(call[call.index('-f')+1],str(self.fixture_repo/'docker-compose.yaml'))
+            self.assertEqual(call[call.index('--profile')+1],'native-load-generator')
+            self.assertEqual(call[call.index('--format')+1],'json')
+            self.assertTrue(Path(call[call.index('--env-file')+1]).is_absolute())
+        self.assertEqual(self.compose_calls('build'),[])
+        self.assertFalse(any(call[:1] in (['run'],['pull'],['build']) for call in self.calls()))
+
+    def test_missing_configured_image_builds_generator_only_and_exports_new_identity(self):
+        self.scenario(missing_configured_image=True,build_new_id=True)
+        self.export_detected_image()
+        self.assert_only_generator_builds()
+        self.assertEqual(json.loads((self.bundle/'export-manifest.json').read_text())['image']['id'],BUILT_IMAGE_ID)
+        self.assertTrue((self.fake/'built').exists())
+
+    def test_force_build_rebuilds_existing_configured_image(self):
+        self.env['TON_BUILD_PULL']='true'
+        self.scenario(build_new_id=True)
+        self.export_detected_image('--build-image')
+        self.assert_only_generator_builds()
+        self.assertEqual(json.loads((self.bundle/'export-manifest.json').read_text())['image']['id'],BUILT_IMAGE_ID)
+
+    def test_strict_no_build_rejects_missing_configured_image_without_partial_export(self):
+        self.scenario(missing_configured_image=True)
+        self.export_detected_image('--no-build-image',success=False)
+        self.assertEqual(self.compose_calls('build'),[])
+        self.assertFalse(self.bundle.exists())
+        self.assertEqual(list(self.root.glob('.bundle*')),[])
+
+    def test_failed_generator_build_cleans_up_without_export(self):
+        self.scenario(missing_configured_image=True,build_fails=True)
+        self.export_detected_image(success=False)
+        self.assert_only_generator_builds()
+        self.assertFalse(self.bundle.exists())
+        self.assertEqual(list(self.root.glob('.bundle*')),[])
+        self.assertFalse((self.fake/'built').exists())
+
+    def test_custom_env_file_is_preserved_for_config_and_build(self):
+        custom=self.root/'custom config'/'client.env'
+        custom.parent.mkdir();custom.write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\n')
+        self.scenario(missing_configured_image=True)
+        self.export_detected_image('--env-file',custom)
+        self.assert_only_generator_builds()
+        calls=self.compose_calls('config')+self.compose_calls('build')
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertEqual(call[call.index('--env-file')+1],str(custom.resolve()))
+
+    def test_explicit_missing_image_never_falls_back_to_compose_or_build(self):
+        self.scenario(missing_image=True)
+        self.export('--no-image',success=False)
+        self.assertFalse(any(call[:1]==['compose'] for call in self.calls()))
+        self.assertFalse(self.bundle.exists())
+
+    def test_image_inspection_permission_error_never_triggers_a_build(self):
+        self.scenario(image_inspect_error=True)
+        self.export_detected_image(success=False)
+        self.assertEqual(self.compose_calls('build'),[])
+        self.assertFalse(self.bundle.exists())
+
+    def test_explicit_existing_image_does_not_require_a_compose_env_file(self):
+        self.export('--no-image','--env-file',self.root/'does-not-exist.env')
+        self.assertFalse(any(call[:1]==['compose'] for call in self.calls()))
+        self.assertEqual(json.loads((self.bundle/'export-manifest.json').read_text())['image']['reference'],IMAGE_REF)
+
+    def test_explicit_image_and_force_build_are_rejected_without_compose(self):
+        self.export('--no-image','--build-image',success=False)
+        self.assertFalse(any(call[:1]==['compose'] for call in self.calls()))
+        self.assertFalse(self.bundle.exists())
+
+    def test_remote_docker_context_prevents_automatic_generator_build(self):
+        self.scenario(missing_configured_image=True,remote_context=True)
+        self.env['DOCKER_CONTEXT']='remote-context-fixture'
+        self.export_detected_image(success=False)
+        self.assertEqual(self.compose_calls('build'),[])
+        self.assertFalse(self.bundle.exists())
+        self.assertFalse(any(call[:1] in (['run'],['pull']) for call in self.calls()))
+
     def test_no_argument_exporter_prompts_on_controlling_terminal(self):
-        transcript = self.interact_no_args(REMOTE/'export-native-client.sh', [
+        transcript = self.interact_no_args(self.fixture_remote/'export-native-client.sh', [
             ('Server A IPv4 address reachable from B', '203.0.113.7'),
             ('Liteserver TCP port', '41004'),
             ('Source validator container', 'fixture-genesis'),
             ('Number of source accounts', str(SOURCES)),
             ('First source index', str(SOURCE_OFFSET)),
-            ('Existing local generator image', IMAGE_REF),
             ('New export directory', str(self.bundle)),
             ('Include the prebuilt generator image? yes/no', 'no'),
         ])
@@ -264,6 +394,8 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(manifest['wallets']['sources'], SOURCES)
         self.assertEqual(manifest['image']['id'], IMAGE_ID)
         self.assertFalse(manifest['image']['included'])
+        self.assertEqual(manifest['image']['reference'],CONFIGURED_IMAGE_REF)
+        self.assertNotIn('Existing local generator image',transcript)
         self.assertFalse((self.bundle/'generator-image.tar').exists())
         for name in ('import-native-client.sh','run-remote-load.sh'):
             self.assertEqual((self.bundle/name).stat().st_mode & 0o777, 0o700)

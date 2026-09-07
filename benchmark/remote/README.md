@@ -10,7 +10,19 @@ From the MyLocalTonDocker checkout:
 bash benchmark/remote/export-native-client.sh
 ```
 
-The prompts collect A's reachable IPv4/port, the existing validator container, source count/offset, a locally available generator image, a new output directory and whether to include the image archive. Defaults are genesis, port 40004, 24,576 sources starting at zero, and the tested `cycle-clients-ed666c9a-h2` generator. The image archive is included by default. The validator must already have native runs and its fixed-depth lane topology initialized.
+The prompts collect A's reachable IPv4/port, the existing validator container, source count/offset, a new output directory and whether to include the image archive. Defaults are genesis, port 40004 and 24,576 sources starting at zero. The image archive is included by default. The validator must already have native runs and its fixed-depth lane topology initialized.
+
+The exporter automatically selects Compose's resolved `native-load-generator` image from this checkout's `.env`: `NATIVE_LOAD_IMAGE`, falling back to `mylocalton-native-load-generator:${TON_BRANCH:-latest}`. It builds that service locally if its image is missing and reuses an existing image. This is the client image, separate from the genesis image; both builds use `TON_IMAGE:TON_BRANCH`. The Git branch selects scripts, while `TON_BRANCH` selects the TON image tag. Keep those settings consistent with the running chain.
+
+For a fresh A, configure `.env` from the physical profile, make the matching TON base available, then prepare images **before** starting genesis:
+
+```sh
+TON_BUILD_PULL=false docker compose --env-file .env \
+  --profile native-load-generator build genesis native-load-generator
+docker compose --env-file .env --profile session-stats pull session-stats
+```
+
+These commands build/download images without starting containers. The derived Dockerfiles copy wrappers; they do not compile TON binaries. The recorded `cycle-clients-ed666c9a` TON base was local: if unpublished, load its archive or build the matching sidechain source first. Docker can fetch a missing base even with `TON_BUILD_PULL=false`. Once prepared, use `up -d --no-build --pull never genesis`, wait for healthy/advancing blocks, then `--profile session-stats up -d --no-deps --no-build --pull never session-stats`, both with `docker compose --env-file .env`. Skip preparation for images already loaded. For an already-running genesis, build only `native-load-generator` if necessary; no genesis recreation is needed.
 
 For automation, replace the example IP:
 
@@ -18,7 +30,6 @@ For automation, replace the example IP:
 bash benchmark/remote/export-native-client.sh \
   --non-interactive --server-ip 203.0.113.10 --port 40004 \
   --container genesis --sources 24576 --source-offset 0 \
-  --image mylocalton-native-load-generator:cycle-clients-ed666c9a-h2 \
   --include-image --output "$HOME/native-client-export"
 ```
 
@@ -28,11 +39,13 @@ The private output directory contains `external.global.config.json`, `test-walle
 scp -r "$HOME/native-client-export" user@SERVER_B:~/
 ```
 
-`--no-image` omits the large image archive when B already has the exact image. A still needs that image locally so the exporter can pin its immutable ID. No image is built or pulled. Only the exported config's liteserver IP/port changes; its key and zero-state hashes are preserved. The wallet archive contains only the selected source signing keys, source/destination public keys and addresses, and the public lane manifest. It contains no destination signing keys or validator/control keys. The export directory contains private test-account keys; keep it outside Git and transfer it privately.
+Use `--env-file /path/to/deployment.env` for another Compose environment. `--build-image` forces a local client build after wrapper changes; `--no-build-image` requires the configured image already present. `--image PREBUILT_IMAGE` bypasses automatic selection and requires that explicit image locally. Automatic builds set `TON_BUILD_PULL=false` and build only the client service, before export and timing. The resulting image is frozen by immutable ID across B's sweep.
+
+`--no-image` omits the large image archive when B already has the exact image. A still needs the selected image locally so the exporter can pin its immutable ID. Only the exported config's liteserver IP/port changes; its key and zero-state hashes are preserved. The wallet archive contains only the selected source signing keys, source/destination public keys and addresses, and the public lane manifest. It contains no destination signing keys or validator/control keys. The export directory contains private test-account keys; keep it outside Git and transfer it privately.
 
 ## Import on B
 
-B needs Linux, Bash, Python 3 and local Docker. The runner also uses standard `flock` and `timeout` commands. Copy a generator image compatible with B's CPU architecture/instruction support.
+B needs Linux, Bash, Python 3 and local Docker. The runner also uses `flock` and `timeout` (typically from `util-linux` and `coreutils`). B may have **no images installed**: with the image archive included, the importer loads it without pulling, building, installing Compose or cloning this repository. Copy a generator image compatible with B's CPU architecture/instruction support.
 
 ```sh
 bash "$HOME/native-client-export/import-native-client.sh"

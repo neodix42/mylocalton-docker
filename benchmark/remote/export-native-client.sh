@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Export client materials only; never provision, restart, build, pull or submit load.
+# Export client materials and prepare the configured generator image; never start services or submit load.
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo 'python3 is required' >&2; exit 2; }
 export NATIVE_EXPORT_SCRIPT_DIR
@@ -24,9 +24,9 @@ import sys
 import tarfile
 import tempfile
 
-DEFAULT_IMAGE = 'mylocalton-native-load-generator:cycle-clients-ed666c9a-h2'
 WALLET_ROOT = '/var/ton-work/db/native-spam/wallets'
 SCRIPT_DIR = Path(os.environ['NATIVE_EXPORT_SCRIPT_DIR'])
+REPO_DIR = SCRIPT_DIR.parents[1]
 MANIFEST_NAME = 'native-payment-lanes.manifest'
 SCHEMA = 'native-remote-client-export-v1'
 
@@ -63,15 +63,23 @@ def ask(label, default=None):
 def parse_args():
     parser = argparse.ArgumentParser(
         prog='export-native-client.sh',
-        description='Export one validator\'s selected funded native client wallets and a prebuilt generator for server B. '
-                    'With no arguments, prompt interactively. No Docker state changes, builds, pulls or traffic.')
+        description='Export one validator\'s selected funded native client wallets and a generator image for server B. '
+                    'With no arguments, prompt interactively. Resolve the image from Compose and build it locally '
+                    'only if missing, unless an image/build option overrides this. Never start services or submit traffic.')
     parser.add_argument('--server-ip', help='IPv4 address reachable from B (a public/LAN address or tunnel endpoint)')
     parser.add_argument('--port', help='published liteserver TCP port (default: 40004)')
     parser.add_argument('--container', help='existing running source container (default: genesis)')
     parser.add_argument('--sources', help='selected source count (default: 24576)')
     parser.add_argument('--source-offset', help='first source index (default: 0)')
     parser.add_argument('--output', help='new private bundle directory; existing destinations are refused')
-    parser.add_argument('--image', help='existing local generator image (default: ' + DEFAULT_IMAGE + ')')
+    parser.add_argument('--image', help='explicit existing local generator image; bypass Compose and never build it')
+    parser.add_argument('--env-file', default=str(REPO_DIR / '.env'),
+                        help='Compose environment file (default: repository/.env; relative paths use the current directory)')
+    build_group = parser.add_mutually_exclusive_group()
+    build_group.add_argument('--build-image', action='store_true',
+                             help='force a local build of the configured generator service; incompatible with --image')
+    build_group.add_argument('--no-build-image', action='store_true',
+                             help='require the configured image to exist locally; never build it')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--include-image', dest='include_image', action='store_true', default=None,
                        help='include generator-image.tar (default)')
@@ -79,15 +87,15 @@ def parse_args():
                        help='omit the image archive; B must already have the exact image')
     parser.add_argument('--non-interactive', action='store_true', help='require explicit server IP/output; use other defaults')
     args = parser.parse_args()
+    if args.image is not None and args.build_image:
+        parser.error('--build-image cannot be combined with --image; omit --image to build the configured service')
     interactive = not args.non_interactive and len(sys.argv) == 1
-    defaults = {'port': '40004', 'container': 'genesis', 'sources': '24576', 'source_offset': '0',
-                'image': DEFAULT_IMAGE}
+    defaults = {'port': '40004', 'container': 'genesis', 'sources': '24576', 'source_offset': '0'}
     if args.server_ip is None and not args.non_interactive:
         args.server_ip = ask('Server A IPv4 address reachable from B')
     if interactive:
         for field, label in [('port', 'Liteserver TCP port'), ('container', 'Source validator container'),
-                             ('sources', 'Number of source accounts'), ('source_offset', 'First source index'),
-                             ('image', 'Existing local generator image')]:
+                             ('sources', 'Number of source accounts'), ('source_offset', 'First source index')]:
             setattr(args, field, ask(label, defaults[field]))
     for field, default in defaults.items():
         if getattr(args, field) is None:
@@ -115,8 +123,9 @@ def parse_args():
     args.source_offset = uint(args.source_offset, 'source-offset')
     require(args.source_offset + args.sources <= 4294967295, 'selected source range exceeds generator uint32 limit')
     require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', args.container) is not None, 'invalid container name or ID')
-    require(args.image and not args.image.startswith('-') and not any(c.isspace() or ord(c) < 32 for c in args.image),
-            'invalid local image reference')
+    if args.image is not None:
+        validate_image_reference(args.image)
+    args.env_file = Path(args.env_file).expanduser().resolve()
     # Resolve the parent, not the final component: a dangling destination symlink
     # is still an existing destination and must not be overwritten.
     output = Path(args.output).expanduser().absolute()
@@ -140,13 +149,114 @@ def docker_json(arguments):
     return value[0]
 
 
-def image_metadata(reference):
-    raw = docker_json(['image', 'inspect', reference])
+def validate_image_reference(reference):
+    require(isinstance(reference, str) and reference and not reference.startswith('-') and
+            not any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in reference),
+            'invalid local image reference')
+
+
+def image_metadata(reference, allow_missing=False):
+    try:
+        result = subprocess.run(['docker', 'image', 'inspect', reference], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ExportError('cannot inspect the local generator image; confirm Docker is available') from exc
+    if result.returncode != 0:
+        missing = b'No such image:' in result.stderr or b'No such object:' in result.stderr
+        if allow_missing and missing:
+            return None
+        raise ExportError('generator image is unavailable locally; confirm its exact reference and Docker access')
+    try:
+        value = json.loads(result.stdout)
+    except ValueError as exc:
+        raise ExportError('invalid generator image inspection response') from exc
+    require(isinstance(value, list) and len(value) == 1 and isinstance(value[0], dict),
+            'generator image inspection must return exactly one object')
+    raw = value[0]
     require(re.fullmatch(r'sha256:[0-9a-f]{64}', str(raw.get('Id', ''))) is not None,
             'image has no immutable SHA256 ID')
     require(isinstance(raw.get('Architecture'), str) and raw['Architecture'] and raw.get('Os') == 'linux',
             'generator image must identify its Linux OS and architecture')
     return {'reference': reference, 'id': raw['Id'], 'architecture': raw['Architecture'], 'os': raw['Os']}
+
+
+def compose_configuration(args):
+    require(args.env_file.is_file(), 'Compose environment file is missing: ' + str(args.env_file) +
+            '; provide --env-file PATH or an explicit existing --image')
+    compose_file = REPO_DIR / 'docker-compose.yaml'
+    require(compose_file.is_file(), 'repository docker-compose.yaml is missing; use an explicit existing --image')
+    command = ['docker', 'compose', '--project-directory', str(REPO_DIR), '--env-file', str(args.env_file),
+               '-f', str(compose_file), '--profile', 'native-load-generator']
+    environment = os.environ.copy()
+    # Preserve normal Compose interpolation, but prefer a cached TON base when
+    # building. Docker may still obtain a base that is absent.
+    environment['TON_BUILD_PULL'] = 'false'
+    try:
+        result = subprocess.run([*command, 'config', '--format', 'json'], env=environment,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=True)
+        config = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raise ExportError('cannot resolve the generator image from Compose; check --env-file and Docker Compose '
+                          'configuration locally (resolved environment is intentionally not printed)') from exc
+    services = config.get('services') if isinstance(config, dict) else None
+    service = services.get('native-load-generator') if isinstance(services, dict) else None
+    require(isinstance(service, dict), 'Compose has no native-load-generator service')
+    reference = service.get('image')
+    validate_image_reference(reference)
+    print('Configured generator image: ' + reference, flush=True)
+    build = service.get('build')
+    build_args = build.get('args') if isinstance(build, dict) else None
+    if isinstance(build_args, dict):
+        base_image, base_branch = build_args.get('TON_IMAGE'), build_args.get('TON_BRANCH')
+        if all(isinstance(value, str) and value and
+               all(32 < ord(char) < 127 for char in value) for value in (base_image, base_branch)):
+            print('Configured TON base: ' + base_image + ':' + base_branch, flush=True)
+    return reference, command, environment
+
+
+def require_local_docker():
+    # DOCKER_CONTEXT takes precedence over DOCKER_HOST. A local host variable
+    # must not disguise a remote selected context before a build.
+    host = os.environ.get('DOCKER_HOST')
+    if os.environ.get('DOCKER_CONTEXT') or not host:
+        try:
+            result = subprocess.run(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=True)
+            host = result.stdout.decode('utf-8').strip()
+        except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
+            raise ExportError('cannot establish the selected Docker endpoint; use a local Unix Docker context to build') from exc
+    require(host.startswith('unix://') and len(host) > len('unix://'),
+            'image builds require a local Unix Docker endpoint; select a local context or use --image with a prebuilt image')
+
+
+def prepare_image(args):
+    if args.image is not None:
+        image = image_metadata(args.image, allow_missing=True)
+        require(image is not None, 'explicit --image is missing locally; build or load that exact image separately, '
+                'or omit --image to prepare the generator image configured in --env-file')
+        print('Using explicit local generator image: ' + args.image, flush=True)
+        return image
+    reference, command, environment = compose_configuration(args)
+    image = image_metadata(reference, allow_missing=True)
+    if args.no_build_image:
+        require(image is not None, 'configured generator image is missing locally and --no-build-image forbids building; '
+                'load the exact image or rerun without --no-build-image')
+    if args.build_image or (image is None and not args.no_build_image):
+        require_local_docker()
+        print('Building only native-load-generator with TON_BUILD_PULL=false; no services will be started. '
+              'Docker may obtain a missing TON base image.', flush=True)
+        try:
+            # Inherit build output for operator diagnostics, without printing
+            # the resolved Compose JSON or unrelated environment values.
+            subprocess.run([*command, 'build', 'native-load-generator'], env=environment, check=True, timeout=3600)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ExportError('generator image build failed; inspect the build output and verify the configured TON base '
+                              'is cached locally or accessible from its registry, then rerun. '
+                              'Alternatively, load a compatible prebuilt generator and select --image.') from exc
+        image = image_metadata(reference)
+    require(image is not None, 'configured generator image was not prepared')
+    print('Frozen generator image ID: ' + image['id'], flush=True)
+    return image
 
 
 def container_identity(name):
@@ -356,13 +466,17 @@ def main():
     os.umask(0o077)
     args = parse_args()
     require(shutil.which('docker') is not None, 'docker is required on the exporting server')
-    # Resolve first, even for --no-image. No fallback pull/build is permitted.
-    image = image_metadata(args.image)
+    # Bind server A before image preparation, which may take time but must not
+    # restart/recreate its container or change the exported chain configuration.
     before = container_identity(args.container)
     config, original_config_hash = read_global_config(args.container)
     required = {name: SCRIPT_DIR / name for name in ('native-remote-load.env', 'import-native-client.sh', 'run-remote-load.sh')}
     for name, path in required.items():
         require(path.is_file() and not path.is_symlink(), 'export helper/preset is missing: ' + name)
+    image = prepare_image(args)
+    require(container_identity(args.container) == before, 'source container changed during image preparation; retry after it is stable')
+    _, prepared_config_hash = read_global_config(args.container)
+    require(prepared_config_hash == original_config_hash, 'source global config changed during image preparation')
     original_public_key = config['liteservers'][0]['id']
     original_zero_state = config['validator']['zero_state']
     number = int(ipaddress.IPv4Address(args.server_ip))
@@ -381,7 +495,7 @@ def main():
         for name in ('import-native-client.sh', 'run-remote-load.sh'):
             shutil.copyfile(required[name], staging / name)
         if args.include_image:
-            print('Saving the existing generator image by immutable ID; no build or pull.', flush=True)
+            print('Saving the prepared generator image by immutable ID.', flush=True)
             try:
                 subprocess.run(['docker', 'image', 'save', '--output', str(staging / 'generator-image.tar'), image['id']],
                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3600, check=True)
@@ -390,7 +504,7 @@ def main():
             require((staging / 'generator-image.tar').is_file() and (staging / 'generator-image.tar').stat().st_size > 0,
                     'saved generator image archive is missing or empty')
         require(container_identity(args.container) == before, 'source container changed while exporting; retry after it is stable')
-        require(image_metadata(args.image) == image, 'generator image reference changed while exporting')
+        require(image_metadata(image['reference']) == image, 'generator image reference changed while exporting')
         _, current_config_hash = read_global_config(args.container)
         require(current_config_hash == original_config_hash, 'source global config changed while exporting')
         for path in staging.iterdir():
