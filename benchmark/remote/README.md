@@ -157,3 +157,9 @@ python3 benchmark/tests/native-remote-client-test.py
 ```
 
 The suites exercise registry preparation/startup, export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset extends measurement to 600 seconds and uses eight workers/24 signers for the 48-CPU client. It retains the recorded 2026-09-06 admission/backlog limits, before export-specific path/range/image adjustments. The standalone runner applies its selected resource profile to old and new exports and records the original and effective environment separately.
+
+## September 7 drain failure
+
+The [saved failure observation](reports/native-drain-failure-20260907.json) records a complete ten-minute measurement followed by an unresolved 32-transfer drain tail (exit 2, no OOM/watchdog kill). The native client fix is in TON commit `a1e4c988`: an admission deadline that says "expired" now retries the original signed parent instead of replacing its hash. This requires a new generator image; updating the host script only changes resource/progress defaults.
+
+Use the [image upgrade procedure](https://github.com/corton-nommander/ton/blob/master/doc/native-remote-client-guide.md#upgrade-the-image-for-the-admission-timeout-drain-fix) after its image workflow publishes the fix. Preserve the existing chain and failed artifacts, import the new client into a new directory, then obtain one valid ten-minute arm before a sweep. The public dashboard's nine wholly contained minutes ranged from 59,649 to 65,739 canonical TPS; those observations do not make the incompletely drained run valid.

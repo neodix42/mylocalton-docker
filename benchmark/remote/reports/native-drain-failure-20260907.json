@@ -1,0 +1,211 @@
+{
+  "schema": "native-remote-failure-observation-v1",
+  "run": "20260907T160249Z-298611/01-10-connections",
+  "source": "User-supplied progress and execution.json plus read-only public Session Stats samples",
+  "image_id": "sha256:e016826b0bb5c4e11d01dd7b31cf5aae3843c9066720f2ad5affecfdcc59b731",
+  "valid_run": false,
+  "reported_measurement": {
+    "offer_duration_s": 600,
+    "canonical_bucket_duration_s": 599,
+    "canonical_tps_at_drain": 63831.50584307178,
+    "unresolved_logical_transfers": 32,
+    "drain_limit_s": 180
+  },
+  "execution": {
+    "ExitCode": 2,
+    "OOMKilled": false,
+    "RestartCount": 0,
+    "watchdog_expired": false
+  },
+  "nonfinal_sample": {
+    "timeouts": 39,
+    "expiry_errors": 39,
+    "resigned": 39,
+    "congestion_window": 8174.46644846817,
+    "adaptive_max_cwnd": 65536,
+    "cwnd_cap_limited_acks": 0,
+    "query_credit_stalls": 0
+  },
+  "fix_commit": "a1e4c988",
+  "image_build_revision": "3288fa8d4e55c30c3ddb0ef2814a5a174dc717e8",
+  "image_workflow_run": 34144714798,
+  "exact_tail_attribution_confirmed": false,
+  "dashboard_whole_minutes": {
+    "source": "public Session Stats BLOCK_APPLIED_transactions, 60-second rate buckets",
+    "start_inclusive": "2026-09-07T16:07:00Z",
+    "end_exclusive": "2026-09-07T16:16:00Z",
+    "whole_minutes": 9,
+    "minimum_minute_tps": 59649.066666666666,
+    "maximum_minute_tps": 65739.46666666666,
+    "whole_minute_average_tps": 61869.21481481482,
+    "valid_benchmark": false,
+    "reason": "Reported generator drain remained incomplete with 32 logical transfers; minute buckets differ from the exact generator window."
+  },
+  "dashboard_minute_samples": [
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:05:00Z",
+      "wc": 41015.46666666667,
+      "wc_max": 18432.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:06:00Z",
+      "wc": 95781.33333333333,
+      "wc_max": 12592.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:07:00Z",
+      "wc": 65739.46666666666,
+      "wc_max": 13456.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:08:00Z",
+      "wc": 64146.13333333333,
+      "wc_max": 13600.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:09:00Z",
+      "wc": 63716.53333333333,
+      "wc_max": 16160.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:10:00Z",
+      "wc": 60193.066666666666,
+      "wc_max": 11312.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:11:00Z",
+      "wc": 61164.8,
+      "wc_max": 11776.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:12:00Z",
+      "wc": 61516.8,
+      "wc_max": 11984.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:13:00Z",
+      "wc": 60361.86666666667,
+      "wc_max": 13200.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:14:00Z",
+      "wc": 60335.2,
+      "wc_max": 11376.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:15:00Z",
+      "wc": 59649.066666666666,
+      "wc_max": 14704.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:16:00Z",
+      "wc": 38259.46666666667,
+      "wc_max": 13056.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.033333333333333,
+      "mc_max": 5.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:17:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:18:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:19:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T16:20:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    }
+  ],
+  "dashboard_limitation": "Only minute aggregates are available from this endpoint. A window_size=1 query does not reconstruct per-second data or reconcile exact partial-minute boundaries.",
+  "validation": {
+    "native_policy_tests_passed": 61,
+    "remote_integration_tests_passed": 46,
+    "production_callback_fixture": {
+      "returncode": 0,
+      "stdout": "single_16_logical: PASS exact parent bytes/signature/hash/valid_until retained; timeout retried without admission/proof credit\nbatch_32_logical: PASS exact parent bytes/signature/hash/valid_until retained; timeout retried without admission/proof credit\n",
+      "stderr": ""
+    },
+    "old_classifier_negative_control": "Identical fixture with only old expiry expression restored takes erroneous signing path and aborts without actor context.",
+    "fixture_scope": "Temporary production source with test visibility and renamed main; real single/batch response callbacks; no network, validator, private keys, or new TPS measurement."
+  },
+  "new_defaults": {
+    "profile": "server48",
+    "cpus": 32,
+    "memory": "32g",
+    "workers": 8,
+    "signers": 24,
+    "initial_cwnd": 32768,
+    "max_cwnd": 65536
+  }
+}
