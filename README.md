@@ -96,6 +96,15 @@ blocks anchored by the masterchain; valid candidates that lose consensus are exc
 The dashboard also exposes accepted-block size, native transfers per block, external
 message outcomes, and collation/validation timings and throughput.
 
+### Native load from a separate server
+
+Use the [remote client scripts](benchmark/remote/README.md) to export the public
+liteserver config, selected funded test accounts, client preset and prebuilt
+generator from server A. The export includes `import-native-client.sh` and
+`run-remote-load.sh`; copy the whole directory to B, import it, then run
+`bash run-remote-load.sh --connections 10 50 100`. The scripts preserve image
+identity and retain per-arm evidence without starting a validator on B.
+
 ### Native high-rate load
 
 Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested source/destination accounts exist in the zero state, then start the load container against the already-running network:
