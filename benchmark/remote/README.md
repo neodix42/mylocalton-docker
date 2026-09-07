@@ -87,20 +87,54 @@ Use `--no-load-image` to require a preloaded image. Neither importer nor runner 
 
 ```sh
 cd "$HOME/native-remote-client"
-bash run-remote-load.sh --connections 10 50 100
+bash run-remote-load.sh --connections 10 50 100 --duration 600
 ```
 
-The default sequence is also 10/50/100. For an independent single-count run:
+The default sequence is also 10/50/100. Each setup defaults to **at least 600 measured seconds**, even if an older installed `remote-load.env` still specifies 180. A longer environment duration is preserved; an explicit `--duration` selects an exact duration, including shorter diagnostic runs. For one uninterrupted ten-minute measurement after resolving any previous failed arm:
 
 ```sh
-bash run-remote-load.sh --connections 50 --duration 300
+bash run-remote-load.sh --connections 10 --duration 600
 ```
 
-`--help` lists directory, duration/warm-up/drain, CPU/memory, output and prebuilt-image overrides. The reference preset uses 60 seconds warm-up, 180 seconds measurement, up to 180 seconds drain, six workers/signers, 16 logical transfers per parent, and 4 CPU equivalents / 8 GiB memory. Connection counts must be at least the exported worker count and at most 256. Small source exports reduce workers/signers when needed; they are not the reference capacity workload.
+`--help` lists directory, duration/warm-up/drain, CPU/memory, output and prebuilt-image overrides. The reference preset uses 60 seconds warm-up, 600 seconds measurement, up to 180 seconds drain, six workers/signers, 16 logical transfers per parent, and 4 CPU equivalents / 8 GiB memory. Connection counts must be at least the exported worker count and at most 256. Small source exports reduce workers/signers when needed; they are not the reference capacity workload.
 
-Each run creates a new `remote-results/` directory with an overall `summary.json`, effective settings and per-arm logs, final counters and container inspection. Images are frozen by ID and exited containers are retained. SIGINT/SIGTERM stops only the runner-owned container and preserves partial evidence. Incorrect/incomplete runs stop the sequence; capacity-only failures remain `observation_only`. `generator_capacity_eligible` refers to the generator's gates: remote validator identity, resources and pool cleanup are not independently collected by this B-only runner.
+Each run creates a new `remote-results/` directory with an overall `summary.json`, effective settings, a copy of the actual runner and its SHA-256, and per-arm logs, final counters and container inspection. Progress appears every 30 seconds and is saved in `progress.jsonl`; live rates remain provisional. Each arm also saves `execution.json` with Docker exit/OOM/error and watchdog information. A final generator record, when present, is retained even on a nonzero exit so drain/proof failure reasons are visible. The watchdog scales with the selected measurement duration and other time budgets. Images are frozen by ID and exited containers are retained. SIGINT/SIGTERM stops only the runner-owned container and preserves partial evidence. Incorrect/incomplete runs stop the sequence; capacity-only failures remain `observation_only`. `generator_capacity_eligible` refers to the generator's gates: remote validator identity, resources and pool cleanup are not independently collected by this B-only runner.
 
 Do not run independent generators against the same source keys. The directory lock prevents overlap within one installed client dataset; it cannot coordinate separately copied wallets or another server. Synchronize A/B clocks, keep unrelated native traffic off A, and require offered load above canonical throughput for a capacity claim.
+
+A full default sweep has 30 measured minutes plus three warm-ups, readiness checks and drains. Expect separate load periods with gaps between setups. Ten minutes of measurement does not by itself certify stable throughput: inspect the final proof-checked result and the chart over that interval. The generator budget remains 4 CPU equivalents / 8 GiB unless explicitly overridden; an unexplained exit is not evidence that either limit was reached.
+
+The earlier generic `container did not exit cleanly` can be diagnosed from the existing arm directory on B:
+
+```sh
+cd "$HOME/native-remote-client/remote-results/RUN/02-50-connections"
+python3 -c 'import json; d=json.load(open("container.json"))[0]; print(json.dumps({"State":d.get("State"),"RestartCount":d.get("RestartCount")},indent=2))'
+cat wait.log
+tail -n 60 generator.stderr.log
+```
+
+Exit 2 can mean unsettled drain; exit 3 can mean canonical follower/proof/correctness failure. Read the final generator reasons and stderr for the actual cause. Exit 137 alone is not proof of OOM; inspect `State.OOMKilled`. A failed 50-connection arm stops before 100 so incomplete source nonces are not silently reused.
+
+### Update an already imported runner on B
+
+After the previous runner has exited, replace only the installed host script. Keep the original export directory unchanged: its manifest checksums describe the original bundle. The existing image ID, client configuration and wallets are reused. No A-side export, image rebuild/pull, or validator restart is needed for this host-script update.
+
+Run on B (set `runner_ref` to a reviewed commit for a fixed update, or use the maintained branch shown):
+
+```sh
+bash -s <<'SH'
+set -eu
+umask 077
+runner_ref=native-payment-lanes-step6
+client_dir="$HOME/native-remote-client"
+runner_download=$(mktemp)
+trap 'rm -f "$runner_download"' EXIT
+curl --fail --location "https://raw.githubusercontent.com/neodix42/mylocalton-docker/$runner_ref/benchmark/remote/run-remote-load.sh" --output "$runner_download"
+bash -n "$runner_download"
+cp -p "$client_dir/run-remote-load.sh" "$client_dir/run-remote-load.sh.before-update-$(date -u +%Y%m%dT%H%M%SZ)"
+install -m 700 "$runner_download" "$client_dir/run-remote-load.sh"
+SH
+```
 
 For the deployed Session Stats image, use **Canonical transactions per second → Workchain**, window **1m**, refreshing after import delay. The separate native-specific chart has an NTRN counting bug; collation/validation service-rate charts are not chain TPS. Keep A's TCP liteserver port reachable from B and A's management/file-server endpoints private.
 
@@ -111,4 +145,4 @@ python3 benchmark/tests/native-registry-images-test.py
 python3 benchmark/tests/native-remote-client-test.py
 ```
 
-The suites exercise registry preparation/startup, export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset matches the recorded 2026-09-06 client run before export-specific path/range/image adjustments.
+The suites exercise registry preparation/startup, export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset retains the recorded 2026-09-06 client workload settings with measurement duration extended to 600 seconds, before export-specific path/range/image adjustments.

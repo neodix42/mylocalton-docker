@@ -80,7 +80,10 @@ if args[:2] == ['image','inspect'] or args[:1] == ['inspect']:
   if args[-1] in (run['name'],run['id']):
    container = run['inspect']
    container['State']['Running'] = False
-   container['State']['ExitCode'] = scenario.get('container_exit',0)
+   failed = scenario.get('failed_connections') in (None, int(run['env']['NATIVE_LOAD_CONNECTIONS']))
+   container['State']['ExitCode'] = scenario.get('container_exit',0) if failed else 0
+   container['State']['OOMKilled'] = scenario.get('oom_killed',False) if failed else False
+   container['State']['Error'] = scenario.get('container_error','') if failed else ''
  if '--format' in args or '-f' in args:
   form = args[(args.index('--format') if '--format' in args else args.index('-f'))+1]
   if 'Running' in form: print('true' if container['State']['Running'] else 'false')
@@ -135,7 +138,10 @@ if args[:1] == ['wait']:
  if scenario.get('wait_for_stop'):
   end=time.monotonic()+20
   while not (root/'stopped').exists() and time.monotonic()<end:time.sleep(.02)
- print(scenario.get('container_exit',0));sys.exit()
+ if scenario.get('wait_command_exit'):sys.exit(scenario['wait_command_exit'])
+ runs=json.loads((root/'runs.json').read_text());run=next(x for x in runs if args[-1] in (x['name'],x['id']))
+ failed=scenario.get('failed_connections') in (None,int(run['env']['NATIVE_LOAD_CONNECTIONS']))
+ print(scenario.get('container_exit',0) if failed else 0);sys.exit()
 if args[:1] in (['stop'],['kill']):
  (root/'stopped').touch();print(args[-1]);sys.exit()
 if args[:1] == ['logs']:
@@ -143,6 +149,15 @@ if args[:1] == ['logs']:
  fixture=root/'final.json'
  if not fixture.exists():raise SystemExit('runner final fixture not installed')
  final=json.loads(fixture.read_text());env=run['env']
+ duration=int(env['NATIVE_LOAD_DURATION_SECONDS'])
+ final.update(measure_elapsed_s=duration,canonical_gen_utime_bucket_duration_s=duration,
+              offered=192*duration,steady_offered=160*duration,steady_mempool_accepted=160*duration,
+              canonical_total_after_drain=192*duration,canonical_measured_offers_after_drain=160*duration,
+              canonical_chain_measure_transfers=144*duration)
+ for category in ['', 'normal_']:
+  final['native_signed_run_'+category+'messages']=12*duration
+  final['native_signed_run_'+category+'logical_transfers']=192*duration
+ final['native_signed_run_proof_resolutions']=12*duration
  for field,key in {'configured_connections':'NATIVE_LOAD_CONNECTIONS','configured_workers':'NATIVE_LOAD_WORKERS',
    'configured_signers':'NATIVE_LOAD_SIGNERS','configured_sources':'NATIVE_LOAD_SOURCES',
    'adaptive_initial_cwnd':'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND'}.items():final[field]=int(env[key])
@@ -644,6 +659,50 @@ class RemoteTests(unittest.TestCase):
             self.assertIsNone(arm['remote_validator_cleanup_valid'])
         self.assertFalse(any(c[:1] in (['build'],['pull'],['compose'],['rm']) for c in self.calls()))
 
+    def test_runner_defaults_upgrade_old_bundle_to_ten_minutes_and_scale_watchdog(self):
+        self.prepare_runner()
+        self.scenario(final_overrides={'phase':'measure','offered_tps':160,'mempool_accept_tps':160})
+        envfile=self.client/'remote-load.env'
+        old=envfile.read_text()
+        import re
+        envfile.write_text(re.sub(r'NATIVE_LOAD_DURATION_SECONDS=[0-9]+', 'NATIVE_LOAD_DURATION_SECONDS=180', old))
+        result=self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,'--connections',10)
+        settings=json.loads((self.results/'settings.json').read_text())
+        self.assertEqual(settings['duration'],600)
+        self.assertEqual(settings['environment']['NATIVE_LOAD_DURATION_SECONDS'],'600')
+        self.assertEqual(settings['runner_sha256'],sha((REMOTE/'run-remote-load.sh').read_bytes()))
+        self.assertEqual((self.results/'run-remote-load.sh').read_bytes(),(REMOTE/'run-remote-load.sh').read_bytes())
+        self.assertEqual(settings['warmup'],60)
+        self.assertEqual(settings['watchdog_seconds'],600+60+180+900+600)
+        self.assertIn('measurement=600s, warmup=60s',result.stdout)
+        arm=json.loads((self.results/'01-10-connections/summary.json').read_text())
+        self.assertTrue(arm['valid_run'])
+        self.assertEqual(arm['measured']['offer_duration_s'],600)
+        progress=[json.loads(line) for line in (self.results/'01-10-connections/progress.jsonl').read_text().splitlines()]
+        self.assertTrue(progress)
+        self.assertEqual(progress[-1]['measurement_target_s'],600)
+        self.assertEqual(progress[-1]['phase'],'measure')
+        self.assertEqual(progress[-1]['offered_tps'],160)
+        self.assertEqual(progress[-1]['mempool_accept_tps'],160)
+        self.assertTrue(progress[-1]['provisional'])
+
+    def test_runner_preserves_longer_preset_and_explicit_short_or_long_duration(self):
+        self.prepare_runner()
+        import re
+        envfile=self.client/'remote-load.env'
+        envfile.write_text(re.sub(r'NATIVE_LOAD_DURATION_SECONDS=[0-9]+', 'NATIVE_LOAD_DURATION_SECONDS=900', envfile.read_text()))
+        for explicit,expected in [(None,900),(600,600),(10,10)]:
+            with self.subTest(explicit=explicit):
+                self.results=self.root/('duration-'+str(expected))
+                args=[] if explicit is None else ['--duration',explicit]
+                self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,
+                            '--connections',10,'--warmup',3,'--drain',7,*args)
+                settings=json.loads((self.results/'settings.json').read_text())
+                self.assertEqual(settings['duration'],expected)
+                self.assertEqual(settings['watchdog_seconds'],expected+3+7+900+600)
+                final=json.loads((self.results/'01-10-connections/generator-final.json').read_text())
+                self.assertEqual(final['measure_elapsed_s'],expected)
+
     def test_runner_capacity_rejection_retains_all_observations(self):
         self.prepare_runner();self.scenario(capacity_rejected=True)
         self.run_load('--connections',10,50,100)
@@ -697,14 +756,60 @@ class RemoteTests(unittest.TestCase):
         self.assertFalse(self.client.exists())
         self.assertEqual(list(self.root.glob('.client.import-*')),[])
 
-    def test_runner_nonzero_container_exit_stops_sequence(self):
-        self.prepare_runner();self.scenario(container_exit=137)
-        self.run_load('--connections',10,50,success=False)
-        self.assertEqual(len([c for c in self.calls() if c[:1]==['run']]),1)
+    def test_runner_oom_exit_reports_evidence_and_stops_before_next_setup(self):
+        self.prepare_runner();self.scenario(container_exit=137,oom_killed=True,failed_connections=50)
+        result=self.run_load('--connections',10,50,100,success=False)
+        self.assertEqual(len([c for c in self.calls() if c[:1]==['run']]),2)
         summary=json.loads((self.results/'summary.json').read_text())
         self.assertFalse(summary['completed'])
-        self.assertFalse(summary['arms'][0]['valid_run'])
-        self.assertTrue((self.results/'01-10-connections/container.json').is_file())
+        self.assertTrue(summary['arms'][0]['valid_run'])
+        failed=summary['arms'][1]
+        self.assertFalse(failed['valid_run'])
+        self.assertEqual(failed['execution']['ExitCode'],137)
+        self.assertTrue(failed['execution']['OOMKilled'])
+        self.assertEqual(failed['execution']['docker_wait_status'],0)
+        self.assertEqual(failed['execution']['docker_wait_output'],'137')
+        self.assertFalse(failed['execution']['watchdog_expired'])
+        self.assertTrue((self.results/'02-50-connections/execution.json').is_file())
+        self.assertFalse((self.results/'03-100-connections').exists())
+        self.assertIn('"OOMKilled": true',result.stdout)
+        self.assertIn('Stopped before reusing source accounts',result.stderr)
+
+    def test_runner_nonzero_exit_preserves_generator_diagnosis_without_inventing_oom(self):
+        self.prepare_runner()
+        for code,reason_field,reason in [(2,'run_incomplete_reasons','canonical_backlog_after_drain'),
+                                        (3,'correctness_invalid_reasons','canonical_hash_conflicts')]:
+            with self.subTest(exit_code=code):
+                self.results=self.root/('exit-'+str(code))
+                self.scenario(container_exit=code,container_error='fixture runtime error',final_overrides={reason_field:[reason]})
+                result=self.run_load('--connections',10,50,100,success=False)
+                summary=json.loads((self.results/'01-10-connections/summary.json').read_text())
+                self.assertFalse(summary['valid_run'])
+                self.assertEqual(summary['execution']['ExitCode'],code)
+                self.assertFalse(summary['execution']['OOMKilled'])
+                self.assertEqual(summary['execution']['Error'],'fixture runtime error')
+                self.assertEqual(summary['generator_failure_reasons'][reason_field],[reason])
+                final=json.loads((self.results/'01-10-connections/generator-final.json').read_text())
+                self.assertEqual(final[reason_field],[reason])
+                self.assertIn(reason,result.stdout)
+                self.assertFalse((self.results/'02-50-connections').exists())
+
+    def test_runner_distinguishes_watchdog_from_docker_wait_failure(self):
+        self.prepare_runner()
+        for status,expired,reason in [(124,True,'watchdog_expired_after_'),(1,False,'docker_wait_command_failed_exit_1'),
+                                      (137,None,'docker_wait_or_watchdog_killed_exit_137')]:
+            with self.subTest(wait_status=status):
+                self.results=self.root/('wait-'+str(status))
+                self.scenario(wait_command_exit=status)
+                self.run_load('--connections',10,50,100,success=False)
+                summary=json.loads((self.results/'01-10-connections/summary.json').read_text())
+                self.assertFalse(summary['valid_run'])
+                self.assertEqual(summary['execution']['docker_wait_status'],status)
+                self.assertEqual(summary['execution']['watchdog_expired'],expired)
+                self.assertIn(reason,summary['execution']['runner_failure'])
+                self.assertFalse(summary['execution']['OOMKilled'])
+                self.assertFalse((self.results/'02-50-connections').exists())
+                self.assertTrue(any(c[:1]==['stop'] for c in self.calls()))
 
     def test_runner_existing_output_is_never_overwritten(self):
         self.prepare_runner()

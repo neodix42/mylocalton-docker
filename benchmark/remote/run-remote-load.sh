@@ -13,7 +13,9 @@ CLIENT_ROOT defaults to this script's directory. It must contain remote-load.env
 client-data/global.config.json and client-data/wallets. The inspected local image
 is fixed across every arm; this script never pulls/builds images or starts a
 validator. Linux host networking is required. Exited workload containers and all
-artifacts are retained. Capacity-only rejections are reported and do not abort;
+artifacts are retained. The default measurement lasts at least 600 seconds,
+in addition to warmup/readiness/drain; --duration explicitly permits shorter runs.
+Progress is printed every 30 seconds. Capacity-only rejections are reported and do not abort;
 incorrect/incomplete runs stop the sequence before those keys are reused.
 EOF
 }
@@ -159,6 +161,11 @@ try:
         directory, data, output, duration, warmup, drain, cpus, memory, image_arg = sys.argv[2:11]
         directory, data, output = Path(directory), Path(data), Path(output)
         env = environment(directory / 'remote-load.env')
+        if not duration:
+            # Upgrade previously exported 180-second presets without requiring keys
+            # or the pinned image to be exported/imported again. Explicit CLI
+            # durations retain their exact meaning, including short smoke tests.
+            duration = str(max(600, uint(env.get('NATIVE_LOAD_DURATION_SECONDS', '600'), 'duration', 1, 86400)))
         for key, value in [('NATIVE_LOAD_DURATION_SECONDS', duration), ('NATIVE_LOAD_WARMUP_SECONDS', warmup),
                            ('NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS', drain)]:
             if value: env[key] = value
@@ -167,7 +174,8 @@ try:
         signers = uint(env.get('NATIVE_LOAD_SIGNERS', ''), 'NATIVE_LOAD_SIGNERS', 1, sources)
         offset = uint(env.get('NATIVE_LOAD_SOURCE_OFFSET', '0'), 'NATIVE_LOAD_SOURCE_OFFSET')
         check(offset + sources <= 2**32-1, 'source interval overflows supported uint32 range')
-        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[11:]]
+        runner_path = Path(sys.argv[11])
+        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[12:]]
         check(len(counts) == len(set(counts)), 'duplicate connection count')
         check(counts, 'empty connection list')
         duration = uint(env.get('NATIVE_LOAD_DURATION_SECONDS', ''), 'duration', 1, 86400)
@@ -224,8 +232,10 @@ try:
                     'lane_depth': depth, 'quantum': quantum, 'cpus': cpus, 'memory': memory, 'duration': duration,
                     'warmup': warmup, 'ramp': ramp, 'drain': drain, 'watchdog_seconds': watchdog,
                     'requested_image': image, 'environment': env, 'config_sha256': digest(config_path),
-                    'wallet_manifest_sha256': digest(manifest), 'created_unix_s': time.time(),
+                    'wallet_manifest_sha256': digest(manifest), 'runner_sha256': digest(runner_path),
+                    'runner_path': str(runner_path), 'created_unix_s': time.time(),
                     'semantics': 'Only generator containers run here. Remote validator cleanup/resources and strict validator-process identity are not independently observed.'}
+        (output / 'run-remote-load.sh').write_bytes(runner_path.read_bytes())
         save(output / 'settings.json', settings)
         write_env(output / 'runtime.env', env)
         (output / 'remote-load.env').write_bytes((directory / 'remote-load.env').read_bytes())
@@ -250,6 +260,31 @@ try:
         settings['environment']['NATIVE_LOAD_CONNECTIONS'] = connections
         save(Path(arm) / 'runtime-settings.json', settings)
         write_env(Path(arm) / 'runtime.env', settings['environment'])
+    elif mode == 'progress':
+        arm = Path(sys.argv[2]); elapsed = int(sys.argv[3])
+        settings = read(arm / 'runtime-settings.json')
+        row = None
+        for line in (arm / 'progress-tail.log').read_text(errors='replace').splitlines():
+            if not line.lstrip().startswith('{'): continue
+            try:
+                value = finite(json.loads(line, object_pairs_hook=pairs))
+                if isinstance(value, dict) and ('phase' in value or 'offered_tps' in value): row = value
+            except (ValueError, TypeError):
+                pass
+        sample = {'event': 'progress', 'connections': settings['connections'], 'wall_elapsed_s': elapsed,
+                  'measurement_target_s': settings['duration'], 'phase': 'waiting_for_generator_report',
+                  'provisional': True, 'observed_unix_s': time.time()}
+        if row is not None:
+            for key in ['phase', 'elapsed_s', 'measure_elapsed_s', 'offered_tps', 'mempool_accept_tps',
+                        'canonical_chain_measure_avg_tps', 'canonical_backlog', 'canonical_follower_errors']:
+                if key in row: sample[key] = row[key]
+        with (arm / 'progress.jsonl').open('a') as handle:
+            handle.write(json.dumps(sample, allow_nan=False) + '\n')
+        print(json.dumps(sample, allow_nan=False))
+    elif mode == 'announce':
+        settings = read(Path(sys.argv[2]) / 'settings.json')
+        print('Each setup: measurement={duration}s, warmup={warmup}s, ramp={ramp}s, drain limit={drain}s; '
+              'generator budget={cpus} CPUs/{memory}; watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
     elif mode == 'owns':
         arm = Path(sys.argv[2]); settings = read(arm / 'runtime-settings.json')
         inspected = read(arm / 'ownership-inspect.json')
@@ -269,19 +304,40 @@ try:
             inspected = read(arm / 'container.json')
             check(isinstance(inspected, list) and len(inspected) == 1, 'missing/ambiguous container inspection')
             container = inspected[0]; state = container.get('State', {})
+            wait_status_path = arm / 'wait-status.txt'
+            execution = {key: state.get(key) for key in ['Status', 'Running', 'ExitCode', 'OOMKilled', 'Error', 'StartedAt', 'FinishedAt']}
+            execution['RestartCount'] = container.get('RestartCount')
+            execution['docker_wait_status'] = int(wait_status_path.read_text().strip()) if wait_status_path.is_file() else None
+            execution['docker_wait_output'] = (arm / 'wait.log').read_text(errors='replace').strip() if (arm / 'wait.log').is_file() else None
+            execution['watchdog_expired'] = None if forced == 'docker_wait_or_watchdog_killed_exit_137' else forced.startswith('watchdog_expired_')
+            execution['runner_failure'] = forced or None
+            summary['execution'] = execution
+            save(arm / 'execution.json', execution)
+            # Preserve the generator's own diagnosis even on exit 2 (incomplete),
+            # exit 3 (correctness), OOM, signal, or an interrupted docker wait.
+            rows = []
+            parse_error = None
+            for line in (arm / 'generator.log').read_text(errors='replace').splitlines():
+                if line.lstrip().startswith('{'):
+                    try:
+                        row = finite(json.loads(line, object_pairs_hook=pairs))
+                        if isinstance(row, dict) and row.get('final') is True: rows.append(row)
+                    except (ValueError, TypeError) as error:
+                        parse_error = str(error)
+            final = rows[0] if len(rows) == 1 else None
+            if final is not None:
+                save(arm / 'generator-final.json', final)
+                summary['final'] = final
+                summary['generator_failure_reasons'] = {key: final.get(key) for key in
+                    ['run_incomplete_reasons', 'correctness_invalid_reasons', 'invalid_reasons'] if final.get(key)}
             check(container.get('Image') == settings['image_id'], 'container image differs from frozen image')
             check(container.get('Id') == (arm / 'container-id.txt').read_text().strip(), 'container identity changed')
             check(container.get('RestartCount') == 0 and state.get('Running') is False
-                  and state.get('OOMKilled') is False and state.get('ExitCode') == 0, 'container did not exit cleanly')
+                  and state.get('OOMKilled') is False and state.get('ExitCode') == 0,
+                  'container did not exit cleanly: ' + json.dumps(execution, allow_nan=False))
             check(container.get('HostConfig', {}).get('NetworkMode') == 'host', 'container does not use host networking')
-            rows = []
-            for line in (arm / 'generator.log').read_text(errors='replace').splitlines():
-                if line.lstrip().startswith('{'):
-                    row = finite(json.loads(line, object_pairs_hook=pairs))
-                    if isinstance(row, dict) and row.get('final') is True: rows.append(row)
-            check(len(rows) == 1, 'missing or ambiguous final generator record')
-            final = rows[0]; save(arm / 'generator-final.json', final)
-            summary['final'] = final
+            check(parse_error is None, 'invalid generator JSON record: ' + str(parse_error))
+            check(final is not None, 'missing or ambiguous final generator record')
             for key in ['benchmark_result_valid', 'canonical_result_valid', 'chain_correctness_valid',
                         'canonical_follower_enabled', 'canonical_follower_final_catchup_complete']:
                 check(final.get(key) is True, key + ' is not true')
@@ -337,7 +393,9 @@ try:
             errors.append(str(error))
         summary['finished_unix_s'] = time.time()
         save(arm / 'summary.json', summary)
-        print(json.dumps({key: summary.get(key) for key in ['connections', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons']}))
+        print(json.dumps({key: summary.get(key) for key in ['connections', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons']}))
+        if errors:
+            print('Stopped before reusing source accounts. Inspect ' + str(arm / 'execution.json') + ', ' + str(arm / 'generator.log') + ' and ' + str(arm / 'generator.stderr.log') + '.', file=sys.stderr)
         sys.exit(0 if summary['valid_run'] else 1)
     elif mode == 'suite':
         output = Path(sys.argv[2]); exit_code = int(sys.argv[3])
@@ -398,7 +456,7 @@ trap cleanup EXIT
 trap 'interrupt_reason=interrupted_SIGINT; exit 130' INT
 trap 'interrupt_reason=interrupted_SIGTERM; exit 143' TERM
 
-watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
+watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
   cat "$output/preflight.stderr.log" >&2; exit 2;
 }
 # A remote Docker context would run the generator on the wrong server.
@@ -412,6 +470,7 @@ fi
 IFS= read -r image_reference <"$output/image-reference.txt"
 timeout 20 docker image inspect "$image_reference" >"$output/image-inspect.json" 2>"$output/image-inspect.stderr.log"
 image_id=$(helper image "$output")
+helper announce "$output"
 run_token="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 index=0
 for count in "${connections[@]}"; do
@@ -432,10 +491,25 @@ for count in "${connections[@]}"; do
   timeout --kill-after=5 "$watchdog" docker wait "$active_container" >"$active_arm/wait.log" 2>"$active_arm/wait.stderr.log" &
   wait_pid=$!
   wait_status=0
+  arm_started=$SECONDS
+  next_progress=$SECONDS
+  while kill -0 "$wait_pid" 2>/dev/null; do
+    if ((SECONDS >= next_progress)); then
+      timeout 10 docker logs --tail 200 "$active_container" >"$active_arm/progress-tail.log" 2>"$active_arm/progress.stderr.log" || true
+      helper progress "$active_arm" "$((SECONDS - arm_started))" || true
+      next_progress=$((SECONDS + 30))
+    fi
+    sleep 1
+  done
   wait "$wait_pid" || wait_status=$?
+  printf '%s\n' "$wait_status" >"$active_arm/wait-status.txt"
   wait_pid=
   if ((wait_status != 0)); then
-    interrupt_reason="docker_wait_failed_or_watchdog_expired_${wait_status}"
+    case "$wait_status" in
+      124) interrupt_reason="watchdog_expired_after_${watchdog}s" ;;
+      137) interrupt_reason="docker_wait_or_watchdog_killed_exit_137" ;;
+      *) interrupt_reason="docker_wait_command_failed_exit_${wait_status}" ;;
+    esac
     exit 1
   fi
   capture_active

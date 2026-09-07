@@ -119,8 +119,11 @@ client preset and generator from A. Export refreshes the client from the
 registry by default and requires its TON revision to match running genesis.
 The export includes `import-native-client.sh` and `run-remote-load.sh`; copy
 the whole directory to B, import it, then run
-`bash run-remote-load.sh --connections 10 50 100`. B loads the included image
-and keeps one immutable ID across the sweep. It needs no validator, repository
+`bash run-remote-load.sh --connections 10 50 100 --duration 600`. Each setup
+has ten measured minutes plus warm-up/readiness/drain; the full sweep has
+30 measured minutes. B loads the included image and keeps one immutable ID
+across the sweep. The remote guide also covers updating only the installed
+runner on B and diagnosing a failed arm before its source keys are reused. It needs no validator, repository
 clone or registry pull. Portable CI images need new measurements on A/B;
 historical desktop TPS does not establish this deployment's throughput.
 
