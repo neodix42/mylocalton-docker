@@ -1,0 +1,621 @@
+{
+  "schema": "native-remote-retry-followup-v1",
+  "run": "20260907T181133Z-2854810/02-50-connections",
+  "source": "User-provided final summary plus read-only public Session Stats minute buckets",
+  "valid_run": false,
+  "connections": 50,
+  "measurement_seconds": 600,
+  "canonical_bucket_seconds": 599,
+  "canonical_logical_tps": 50752.9081803005,
+  "canonical_logical_transfers": 30400992,
+  "unresolved_logical_transfers": 128,
+  "execution": {
+    "ExitCode": 2,
+    "OOMKilled": false,
+    "RestartCount": 0,
+    "watchdog_expired": false
+  },
+  "diagnostics": {
+    "resigned": 0,
+    "expired": 0,
+    "retry_exhausted_sources": 1,
+    "canonical_follower_final_catchup_complete": true,
+    "canonical_follower_errors": 0,
+    "canonical_hash_conflicts": 0,
+    "not_ready_retry_schedules": 1466011,
+    "timeout_retry_schedules": 799,
+    "canonical_state_lag_retry_schedules": 435,
+    "native_signed_run_proof_resolutions": 2156653,
+    "native_signed_run_messages": 2156661,
+    "active_tasks": 0,
+    "ready": 0,
+    "retry_wait": 0,
+    "inflight": 0
+  },
+  "dashboard_source": "http://2.59.170.242:18000/api/stats_single?stat=BLOCK_APPLIED_transactions&mode=rate&window_size=60&start=2026-09-07T17:45:00Z&end=2026-09-07T18:50:00Z",
+  "dashboard_minute_summary": {
+    "interval_start_inclusive": "2026-09-07T18:30:00Z",
+    "interval_end_exclusive": "2026-09-07T18:39:00Z",
+    "whole_minutes": 9,
+    "mean_tps": 50090.666666666664,
+    "min_tps": 45917.333333333336,
+    "max_tps": 58651.73333333333,
+    "canonical_benchmark_valid": false,
+    "reason": "50-connection run finished with128 unresolved logical transfers; minute aggregate windows differ from599-second generator measurement."
+  },
+  "dashboard_minute_samples": [
+    {
+      "mc": 8.466666666666667,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:45:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:46:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:47:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:48:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:49:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:50:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:51:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:52:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:53:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:54:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:55:00Z",
+      "wc": 3379.2,
+      "wc_max": 18432.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:56:00Z",
+      "wc": 73162.4,
+      "wc_max": 18432.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:57:00Z",
+      "wc": 69802.4,
+      "wc_max": 13664.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:58:00Z",
+      "wc": 55630.933333333334,
+      "wc_max": 15568.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T17:59:00Z",
+      "wc": 53094.933333333334,
+      "wc_max": 10768.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:00:00Z",
+      "wc": 50250.666666666664,
+      "wc_max": 9808.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:01:00Z",
+      "wc": 50457.86666666667,
+      "wc_max": 13984.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:02:00Z",
+      "wc": 47626.4,
+      "wc_max": 14464.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:03:00Z",
+      "wc": 49163.2,
+      "wc_max": 9472.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:04:00Z",
+      "wc": 48803.46666666667,
+      "wc_max": 10544.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:05:00Z",
+      "wc": 48171.2,
+      "wc_max": 9104.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:06:00Z",
+      "wc": 46344.0,
+      "wc_max": 8656.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:07:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:08:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:09:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:10:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:11:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:12:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:13:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 9.55,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:14:00Z",
+      "wc": 37878.666666666664,
+      "wc_max": 16176.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:15:00Z",
+      "wc": 75851.73333333334,
+      "wc_max": 14432.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:16:00Z",
+      "wc": 57916.26666666667,
+      "wc_max": 15280.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:17:00Z",
+      "wc": 51486.4,
+      "wc_max": 10064.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:18:00Z",
+      "wc": 50555.46666666667,
+      "wc_max": 10032.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:19:00Z",
+      "wc": 49628.0,
+      "wc_max": 9440.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:20:00Z",
+      "wc": 47858.666666666664,
+      "wc_max": 13056.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:21:00Z",
+      "wc": 50120.26666666667,
+      "wc_max": 9632.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:22:00Z",
+      "wc": 46446.13333333333,
+      "wc_max": 10096.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:23:00Z",
+      "wc": 47542.666666666664,
+      "wc_max": 12016.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:24:00Z",
+      "wc": 47853.066666666666,
+      "wc_max": 12176.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:25:00Z",
+      "wc": 20608.0,
+      "wc_max": 9296.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:26:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.1,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:27:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 9.9,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:28:00Z",
+      "wc": 35871.73333333333,
+      "wc_max": 18432.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.45,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:29:00Z",
+      "wc": 72414.13333333333,
+      "wc_max": 18432.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:30:00Z",
+      "wc": 58651.73333333333,
+      "wc_max": 11584.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:31:00Z",
+      "wc": 51307.46666666667,
+      "wc_max": 10176.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:32:00Z",
+      "wc": 50617.066666666666,
+      "wc_max": 11088.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:33:00Z",
+      "wc": 48326.4,
+      "wc_max": 10128.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:34:00Z",
+      "wc": 47992.0,
+      "wc_max": 11536.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 9.95,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:35:00Z",
+      "wc": 50294.4,
+      "wc_max": 9968.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:36:00Z",
+      "wc": 48459.73333333333,
+      "wc_max": 9296.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:37:00Z",
+      "wc": 45917.333333333336,
+      "wc_max": 9136.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:38:00Z",
+      "wc": 49249.86666666667,
+      "wc_max": 12208.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:39:00Z",
+      "wc": 16003.733333333334,
+      "wc_max": 10944.0,
+      "wc_min": 16.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:40:00Z",
+      "wc": 1.8666666666666667,
+      "wc_max": 64.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:41:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.05,
+      "mc_max": 6.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:42:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 10.0,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:43:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    },
+    {
+      "mc": 4.7,
+      "mc_max": 3.0,
+      "mc_min": 3.0,
+      "timestamp": "2026-09-07T18:44:00Z",
+      "wc": 0.0,
+      "wc_max": 0.0,
+      "wc_min": 0.0
+    }
+  ],
+  "new_remote_tps_measured": false,
+  "validation": {
+    "native_policy_tests_passed": 64,
+    "connection_cli_accepted": [
+      10,
+      50,
+      100,
+      256,
+      300,
+      500,
+      1024
+    ],
+    "connection_cli_rejected": [
+      0,
+      1025
+    ],
+    "insufficient_inflight_rejected_before_startup": true,
+    "initial_production_worker_fixture_scenarios_passed": 4,
+    "durable_expanded_worker_fixture": {
+      "scenarios_passed": 8,
+      "command": "python3 lite-client/tests/native-load-worker-regression.py --build-dir build",
+      "result": {
+        "returncode": 0,
+        "stdout": "single_16_logical: PASS exact parent bytes/signature/hash/valid_until retained; timeout retried without admission/proof credit\nbatch_32_logical: PASS exact parent bytes/signature/hash/valid_until retained; timeout retried without admission/proof credit\nbounded_revision_retry: PASS 250/500/1000/2000ms cap, independent streak, typed counters, exact parent retained\nsuffix_head_clock: PASS 185s behind predecessor does not exhaust newly promoted head\nscalar_repair_and_conflict: PASS suffix clock, earlier exact repair, idempotent repeated admission, one exhaustion count, hard conflict quarantine\ndue_retry_pump: PASS expired head retry remains ready with exact parent and unchanged drain deadline\nquarantine_128_logical_recovery: PASS retains8parents, stops new offers, retries in order, requires all128 exact canonical children, keeps capacity invalid\nunresolved_deadline: PASS retains invalid timed-out verdict; no deadline extension or invented proof\n",
+        "stderr": "\u001b[1;31m[ 1][t 0][2026-09-07 19:10:41.590655779][fixture.cpp:4828]\tworker 0 quarantined native source 0000000000000000000000000000000000000000000000000000000000000000 after source-head retry horizon elapsed at nonce 101: head_elapsed_s=185.000001 total_retry_elapsed_s=185.000003 canonical_state_lag=false last_error_code=651 last_error=validator not ready retained_active_parents=1 retained_admitted_parents=1; new offers stopped; exact-parent reconciliation continues until the existing drain deadline\u001b[0m\n\u001b[1;31m[ 1][t 0][2026-09-07 19:10:41.590897532][fixture.cpp:4895]\tworker 0 disabled native source 0000000000000000000000000000000000000000000000000000000000000000 after canonical attribution conflict: fixture conflicting canonical parent\u001b[0m\n\u001b[1;31m[ 1][t 0][2026-09-07 19:10:41.590911223][fixture.cpp:4828]\tworker 0 quarantined native source 0000000000000000000000000000000000000000000000000000000000000000 after source-head retry horizon elapsed at nonce 100: head_elapsed_s=185.000001 total_retry_elapsed_s=185.000001 canonical_state_lag=false last_error_code=651 last_error=fixture previously observed not-ready response retained_active_parents=1 retained_admitted_parents=0; new offers stopped; exact-parent reconciliation continues until the existing drain deadline\u001b[0m\n\u001b[1;31m[ 1][t 0][2026-09-07 19:10:41.590997574][fixture.cpp:4828]\tworker 0 quarantined native source 0000000000000000000000000000000000000000000000000000000000000000 after source-head retry horizon elapsed at nonce 100: head_elapsed_s=185.000002 total_retry_elapsed_s=185.000002 canonical_state_lag=false last_error_code=651 last_error=native transfer run admission snapshot changed; retry retained_active_parents=8 retained_admitted_parents=0; new offers stopped; exact-parent reconciliation continues until the existing drain deadline\u001b[0m\n\u001b[1;31m[ 1][t 0][2026-09-07 19:10:41.591112665][fixture.cpp:1123][!fixture-unstarted-coordinator]\tnative load worker 0 failed: [Error : 0 : Unexpected string end]\u001b[0m\n\u001b[1;31m[ 1][t 0][2026-09-07 19:10:41.591131216][fixture.cpp:4828]\tworker 0 quarantined native source 0000000000000000000000000000000000000000000000000000000000000000 after source-head retry horizon elapsed at nonce 100: head_elapsed_s=185.000002 total_retry_elapsed_s=185.000002 canonical_state_lag=false last_error_code=651 last_error=native transfer run admission snapshot changed; retry retained_active_parents=1 retained_admitted_parents=0; new offers stopped; exact-parent reconciliation continues until the existing drain deadline\u001b[0m\n",
+        "source_sha256": "4b88e17520d85120a968c5806d7e9a5a5b8700befa6f571b360c3e88c12852fa",
+        "fixture_sha256": "faac15051c6f28bc308ca6ee7a62cc47b79d43a65157b2a3a5762e3264ea7a70"
+      }
+    },
+    "remote_tps_measured": false,
+    "remote_runner_integration_tests_passed": 55
+  },
+  "companion_runner_commit": "2cb6989"
+}

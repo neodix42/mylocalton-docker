@@ -1,0 +1,356 @@
+{
+  "schema": "native-published-image-verification-v1",
+  "verified_at_utc": "2026-09-07T19:58:11.329606+00:00",
+  "repository": "corton-nommander/ton",
+  "source_revision": "9a587bc1bee09158e4fa34cb5a877d933dae7841",
+  "current_master_revision": "9a587bc1bee09158e4fa34cb5a877d933dae7841",
+  "run": {
+    "conclusion": "success",
+    "createdAt": "2026-09-07T19:13:31Z",
+    "headSha": "9a587bc1bee09158e4fa34cb5a877d933dae7841",
+    "jobs": [
+      {
+        "completedAt": "2026-09-07T19:13:35Z",
+        "conclusion": "success",
+        "databaseId": 101844140323,
+        "name": "registry-access",
+        "startedAt": "2026-09-07T19:13:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Verify package write access before compiling",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/corton-nommander/ton/actions/runs/34154748668/job/101844140323"
+      },
+      {
+        "completedAt": "2026-09-07T19:53:24Z",
+        "conclusion": "success",
+        "databaseId": 101844153936,
+        "name": "build-arm64",
+        "startedAt": "2026-09-07T19:13:40Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Check out repository",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Record source timestamp",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up QEMU",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Docker Buildx",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Login to GitHub Container Registry",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Build and push revision image",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Verify revision and native binaries on arm64",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Build and push revision image",
+            "number": 12,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Login to GitHub Container Registry",
+            "number": 13,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Docker Buildx",
+            "number": 14,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up QEMU",
+            "number": 15,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Check out repository",
+            "number": 16,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/corton-nommander/ton/actions/runs/34154748668/job/101844153936"
+      },
+      {
+        "completedAt": "2026-09-07T19:55:36Z",
+        "conclusion": "success",
+        "databaseId": 101844154052,
+        "name": "build-amd64",
+        "startedAt": "2026-09-07T19:13:38Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Check out repository",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Record source timestamp",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up QEMU",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Docker Buildx",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Login to GitHub Container Registry",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Build and push revision image",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Verify revision and native binaries on amd64",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Build and push revision image",
+            "number": 12,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Login to GitHub Container Registry",
+            "number": 13,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Docker Buildx",
+            "number": 14,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up QEMU",
+            "number": 15,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Check out repository",
+            "number": 16,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/corton-nommander/ton/actions/runs/34154748668/job/101844154052"
+      },
+      {
+        "completedAt": "2026-09-07T19:56:07Z",
+        "conclusion": "success",
+        "databaseId": 101852046203,
+        "name": "merge",
+        "startedAt": "2026-09-07T19:55:40Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Login to GitHub Container Registry",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Docker Buildx",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Publish verified multiarchitecture revision",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Promote current branch after both architectures pass",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Docker Buildx",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Login to GitHub Container Registry",
+            "number": 10,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 11,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/corton-nommander/ton/actions/runs/34154748668/job/101852046203"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-09-07T19:56:08Z",
+    "url": "https://github.com/corton-nommander/ton/actions/runs/34154748668"
+  },
+  "native_smoke": {
+    "arm64": {
+      "job_id": 101844153936,
+      "job_url": "https://github.com/corton-nommander/ton/actions/runs/34154748668/job/101844153936",
+      "native_connections_help_lines": [
+        "build-arm64\tVerify revision and native binaries on arm64\t2026-09-07T19:53:14.9515757Z   -c, --connections<arg>                          persistent ADNL/TCP connections (1..1024)"
+      ],
+      "version_lines": [
+        "build-arm64\tVerify revision and native binaries on arm64\t2026-09-07T19:53:14.7513057Z validator-engine build information: [ Commit: 9a587bc1bee09158e4fa34cb5a877d933dae7841, Date: 2026-09-07T23:13:18+04:00]",
+        "build-arm64\tVerify revision and native binaries on arm64\t2026-09-07T19:53:14.8466116Z lite-client build information: [ Commit: 9a587bc1bee09158e4fa34cb5a877d933dae7841, Date: 2026-09-07T23:13:18+04:00]"
+      ]
+    },
+    "amd64": {
+      "job_id": 101844154052,
+      "job_url": "https://github.com/corton-nommander/ton/actions/runs/34154748668/job/101844154052",
+      "native_connections_help_lines": [
+        "build-amd64\tVerify revision and native binaries on amd64\t2026-09-07T19:55:23.3862104Z   -c, --connections<arg>                          persistent ADNL/TCP connections (1..1024)"
+      ],
+      "version_lines": [
+        "build-amd64\tVerify revision and native binaries on amd64\t2026-09-07T19:55:23.0827863Z validator-engine build information: [ Commit: 9a587bc1bee09158e4fa34cb5a877d933dae7841, Date: 2026-09-07T23:13:18+04:00]",
+        "build-amd64\tVerify revision and native binaries on amd64\t2026-09-07T19:55:23.2350102Z lite-client build information: [ Commit: 9a587bc1bee09158e4fa34cb5a877d933dae7841, Date: 2026-09-07T23:13:18+04:00]"
+      ]
+    }
+  },
+  "anonymous_ghcr_metadata_verified": true,
+  "tags_equal": true,
+  "tags": {
+    "sha-9a587bc1bee09158e4fa34cb5a877d933dae7841": {
+      "digest": "sha256:863bc4bd429a1ed8a92ed0417ace902bd4d9eb59212aed5043bd646c86ca9985",
+      "media_type": "application/vnd.oci.image.index.v1+json"
+    },
+    "master": {
+      "digest": "sha256:863bc4bd429a1ed8a92ed0417ace902bd4d9eb59212aed5043bd646c86ca9985",
+      "media_type": "application/vnd.oci.image.index.v1+json"
+    },
+    "latest": {
+      "digest": "sha256:863bc4bd429a1ed8a92ed0417ace902bd4d9eb59212aed5043bd646c86ca9985",
+      "media_type": "application/vnd.oci.image.index.v1+json"
+    }
+  },
+  "platforms": [
+    {
+      "os": "linux",
+      "architecture": "arm64",
+      "manifest_digest": "sha256:3bf9f1c34e5aca935870e4601cb6d3a31ad4318dc35b0b5d7c9862c5c2f181ca",
+      "config_digest": "sha256:a85327badeb9e687ed94f4c2b214ae2fd9d4f725f935387dc8bbf852cb988deb",
+      "revision_label": "9a587bc1bee09158e4fa34cb5a877d933dae7841",
+      "created": "2026-09-07T19:51:21.970174203Z"
+    },
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "manifest_digest": "sha256:5a69cd0eb43900fa53709c1ef7158e1b5d15fc91df4f7d71c307d1405fd16e6e",
+      "config_digest": "sha256:42540272434287157f70dfa9847a3a6fd074e393a56b879b576f51781e3603dd",
+      "revision_label": "9a587bc1bee09158e4fa34cb5a877d933dae7841",
+      "created": "2026-09-07T19:53:31.510138413Z"
+    }
+  ],
+  "immutable_image": "ghcr.io/corton-nommander/ton@sha256:863bc4bd429a1ed8a92ed0417ace902bd4d9eb59212aed5043bd646c86ca9985",
+  "revision_tag": "ghcr.io/corton-nommander/ton:sha-9a587bc1bee09158e4fa34cb5a877d933dae7841",
+  "verification_scope": "Read-only GitHub job/step/log checks and anonymous GHCR manifest/config metadata; no Docker pull, container start, or load submission."
+}

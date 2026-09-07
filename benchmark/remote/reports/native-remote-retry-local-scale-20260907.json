@@ -1,0 +1,186 @@
+{
+  "scope": "Short local desktop screen;4 client CPU equivalents,18 validator CPU equivalents,4096 sources;not remote48CPU capacity evidence",
+  "run_directory": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/remote-retry-20260907/scale-20260907T191343Z",
+  "validator_and_client_images": {
+    "images": {
+      "baseline": "sha256:8c74e28e240b46f2dd17a57915c572f2a1bc5c0bf812b03574b72dc0f0e69a91",
+      "candidate": "sha256:82eb01c27c009a4aa4b6794c7f9650d50b99696e21b02a9fbe7af7c9c0016434"
+    },
+    "validator": {
+      "Id": "22fa35704e789c3de0cc0017e6c63e99667780e59ac35f5b1721f38fe11be68a",
+      "Image": "sha256:8d8030a6d82b912ca2fd7ab089f402299c9a7bc2cbc8c207c08820dd6e989edb",
+      "RestartCount": 0,
+      "StartedAt": "2026-09-06T16:44:25.437156726Z"
+    }
+  },
+  "settings": {
+    "connections_comparison": 10,
+    "workers": 10,
+    "signers": 32,
+    "sources": 4096,
+    "client_cpus": 4,
+    "client_cpuset": "9-11,21-23",
+    "client_memory": "8g",
+    "validator_cpus": 18,
+    "validator_cpuset": "0-8,12-20",
+    "warmup_s": 15,
+    "measurement_s": 60,
+    "drain_limit_s": 120,
+    "initial_cwnd": 32768,
+    "max_cwnd": 65536,
+    "global_inflight": 262144,
+    "source_backlog_limit": 128,
+    "connections_tested": [
+      300,
+      500
+    ]
+  },
+  "runs": [
+    {
+      "variant": "candidate",
+      "connections": 300,
+      "image": "sha256:82eb01c27c009a4aa4b6794c7f9650d50b99696e21b02a9fbe7af7c9c0016434",
+      "artifact": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/remote-retry-20260907/scale-20260907T191343Z/01-candidate-300",
+      "exit_code": 0,
+      "OOMKilled": false,
+      "watchdog": false,
+      "validator_unchanged": true,
+      "cohorts_complete": true,
+      "metrics": {
+        "steady_offered_avg_tps": 56593.86666666667,
+        "steady_mempool_accept_avg_tps": 56593.86666666667,
+        "canonical_chain_measure_avg_tps": 56494.91525423729,
+        "canonical_gen_utime_bucket_duration_s": 59,
+        "canonical_chain_measure_transfers": 3333200,
+        "benchmark_result_valid": true,
+        "chain_capacity_valid": true,
+        "ingress_capacity_valid": true,
+        "retry_exhausted": 0,
+        "not_ready_by_reason": {
+          "snapshot_revision": 175750,
+          "other": 0
+        },
+        "task_errors_by_reason": {
+          "timeout": 1173,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 175750,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "native_signed_run_messages": 287139,
+        "native_signed_run_proof_resolutions": 287139,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_final_catchup_complete": true,
+        "resigned": 0
+      },
+      "offered_above_canonical": true,
+      "capacity_claim": false,
+      "measurement_resource_snapshots": {
+        "generator": {
+          "samples": 3,
+          "mean_cpu_percent_of_one_core": 105.12,
+          "min": 99.18,
+          "max": 114.99
+        },
+        "validator": {
+          "samples": 3,
+          "mean_cpu_percent_of_one_core": 1066.88,
+          "min": 991.76,
+          "max": 1175.7
+        }
+      },
+      "artifact_sha256": {
+        "runtime.env": "58ac23c36b53a6ad1cb4437280be710549a5877d59c6375f8d04fff598ea0ed1",
+        "generator.log": "eba17497d698947b076162a9a90fca35ccec5d961b9d5756d36c7b452b56b9c7",
+        "generator.stderr.log": "ccecb6a561a81921309750ce7fc6c8f8a62dc9a84f2e650b989c0bb69b79853e",
+        "generator-final.json": "88aab279afa3513ab56aee0507d608a5d84ee1dbb96f17f50beaaa35343fa8f1",
+        "resources.jsonl": "99986760ddce0b4fb5a9f31487a629fc7133c44799745957d5e8333415868fcd",
+        "command.json": "6cb08a7213b4a29347a9cdd8f7bd443eb8035026904652ff4eb866ec030bdd74"
+      }
+    },
+    {
+      "variant": "candidate",
+      "connections": 500,
+      "image": "sha256:82eb01c27c009a4aa4b6794c7f9650d50b99696e21b02a9fbe7af7c9c0016434",
+      "artifact": "/home/neodix/gitProjects/corton-nommander-ton-sidechain/build/benchmarks/remote-retry-20260907/scale-20260907T191343Z/02-candidate-500",
+      "exit_code": 0,
+      "OOMKilled": false,
+      "watchdog": false,
+      "validator_unchanged": true,
+      "cohorts_complete": true,
+      "metrics": {
+        "steady_offered_avg_tps": 50875.73333333333,
+        "steady_mempool_accept_avg_tps": 50875.73333333333,
+        "canonical_chain_measure_avg_tps": 54223.186440677964,
+        "canonical_gen_utime_bucket_duration_s": 59,
+        "canonical_chain_measure_transfers": 3199168,
+        "benchmark_result_valid": true,
+        "chain_capacity_valid": true,
+        "ingress_capacity_valid": true,
+        "retry_exhausted": 0,
+        "not_ready_by_reason": {
+          "snapshot_revision": 131552,
+          "other": 0
+        },
+        "task_errors_by_reason": {
+          "timeout": 3110,
+          "transport": 0,
+          "parse": 0,
+          "full": 0,
+          "rate_limit": 0,
+          "duplicate": 0,
+          "too_old": 0,
+          "too_new": 0,
+          "expired": 0,
+          "canonical_state_lag": 0,
+          "not_ready": 131552,
+          "balance": 0,
+          "invalid": 0,
+          "signing": 0,
+          "server_other": 0
+        },
+        "native_signed_run_messages": 262485,
+        "native_signed_run_proof_resolutions": 262485,
+        "canonical_total_backlog_after_drain": 0,
+        "canonical_follower_errors": 0,
+        "canonical_follower_final_catchup_complete": true,
+        "resigned": 0
+      },
+      "offered_above_canonical": false,
+      "capacity_claim": false,
+      "measurement_resource_snapshots": {
+        "generator": {
+          "samples": 4,
+          "mean_cpu_percent_of_one_core": 110.59,
+          "min": 74.52,
+          "max": 157.91
+        },
+        "validator": {
+          "samples": 4,
+          "mean_cpu_percent_of_one_core": 893.0074999999999,
+          "min": 369.01,
+          "max": 1215.31
+        }
+      },
+      "artifact_sha256": {
+        "runtime.env": "667947b9fe42d173fabab0d8f05dadc33deac502c5c29f64b4d1847cf49b7966",
+        "generator.log": "7a6897bff2bfc427ec70466ad5e0045d64f93fd03626c8de89f2d1da6dd3adc2",
+        "generator.stderr.log": "87fce8035f501d01eef8c379aa1de67805c7cba044d83b5062af5e646e56e575",
+        "generator-final.json": "d063a5b62f0fb4d9e925212e17c262feb761a8bf50a65b58cb0cffdb51abafec",
+        "resources.jsonl": "59d42a031196c4053fa0000eecd08d4123b3e2e9d8207d472b9612bf7788dfd9",
+        "command.json": "be948995a39f0585380caff6dde2c4383055568b1a3081e3b4f9379a7732e6a9"
+      }
+    }
+  ]
+}
