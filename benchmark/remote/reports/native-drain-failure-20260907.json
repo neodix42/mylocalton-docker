@@ -207,5 +207,23 @@
     "signers": 24,
     "initial_cwnd": 32768,
     "max_cwnd": 65536
+  },
+  "image_publication": {
+    "workflow_url": "https://github.com/corton-nommander/ton/actions/runs/34144714798",
+    "conclusion": "success",
+    "completed_at": "2026-09-07T17:29:19Z",
+    "revision": "3288fa8d4e55c30c3ddb0ef2814a5a174dc717e8",
+    "immutable_image": "ghcr.io/corton-nommander/ton@sha256:b6daac2a597b7ce55c22d650e2f95728405ddf6a37f86940d21431a05b9e8a42",
+    "verified_tags": [
+      "master",
+      "latest",
+      "sha-3288fa8d4e55c30c3ddb0ef2814a5a174dc717e8"
+    ],
+    "anonymous_registry_access_verified": true,
+    "platform_revision_and_native_binary_smoke_passed": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "remote_fixed_image_tps_measured": false
   }
 }
