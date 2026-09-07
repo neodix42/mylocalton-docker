@@ -7,7 +7,8 @@ usage() {
   cat <<'EOF'
 Usage: run-remote-load.sh [--connections 10 50 100] [--directory CLIENT_ROOT]
        [--duration SECONDS] [--warmup SECONDS] [--drain SECONDS]
-       [--cpus 4] [--memory 8g] [--workers COUNT] [--signers COUNT]
+       [--profile server48|preset] [--cpus COUNT] [--memory LIMIT]
+       [--workers COUNT] [--signers COUNT]
        [--initial-cwnd LOGICAL_TRANSFERS] [--max-cwnd LOGICAL_TRANSFERS]
        [--output NEW_DIRECTORY] [--image LOCAL_IMAGE]
 
@@ -20,18 +21,24 @@ in addition to warmup/readiness/drain; --duration explicitly permits shorter run
 Progress is printed every 30 seconds. Capacity-only rejections are reported and do not abort;
 incorrect/incomplete runs stop the sequence before those keys are reused.
 
-Worker/signer/window overrides apply to every setup and leave remote-load.env
-unchanged. Connections remain limited to 256 by the published native binary.
+The default server48 profile uses 32 CPUs/32g, eight workers and 24 signers on
+a dedicated 48-CPU server B, including older imported presets. Small source
+exports cap workers/signers to the source count. --profile preset retains the
+imported worker/signer values and uses the earlier 4 CPUs/8g resource defaults.
+Explicit CPU/memory/worker/signer/window overrides always win; remote-load.env
+remains unchanged. Both profiles preserve the preset admission/backlog limits.
+Connections remain limited to 256 by the published native binary.
 Windows count logical transfers globally and are shared across workers/clients;
 more connections do not increase that budget. Explicit window values must be
 positive, fit the existing inflight limit, and permit complete signed runs.
 
-Examples (choose a CPU budget that server B can spare; these do not raise it):
+Examples (server48 is the default; select preset for smaller client hosts):
   bash run-remote-load.sh --connections 50 100 --duration 600
   bash run-remote-load.sh --connections 50 100 --duration 600 \
     --initial-cwnd 65536 --max-cwnd 131072
-  # With enough server-B CPUs available, add --cpus CPU_COUNT and optionally
-  # --workers 12 --signers 12; each connection count must cover all workers.
+  # Historical six-worker control, including with a newly exported preset:
+  bash run-remote-load.sh --profile preset --workers 6 --signers 6
+  # Each connection count must cover all effective workers.
 EOF
 }
 fail() { printf 'remote-load: %s\n' "$*" >&2; exit 2; }
@@ -46,8 +53,9 @@ workers_override=
 signers_override=
 initial_cwnd_override=
 max_cwnd_override=
-cpus=4
-memory=8g
+profile=server48
+cpus=
+memory=
 connections=(10 50 100)
 connections_seen=0
 declare -A options_seen=()
@@ -63,13 +71,14 @@ while (($#)); do
       while (($#)) && [[ $1 != --* ]]; do connections+=("$1"); shift; done
       ((${#connections[@]})) || fail '--connections requires at least one count'
       ;;
-    --directory|--duration|--warmup|--drain|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd)
+    --directory|--duration|--warmup|--drain|--profile|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd)
       [[ ! ${options_seen[$option]+yes} ]] || fail "duplicate $option"
       options_seen[$option]=1
       (($#)) && [[ $1 != --* && -n $1 ]] || fail "$option requires a value"
       case "$option" in
         --directory) directory=$1 ;; --duration) duration_override=$1 ;;
         --warmup) warmup_override=$1 ;; --drain) drain_override=$1 ;;
+        --profile) profile=$1 ;;
         --cpus) cpus=$1 ;; --memory) memory=$1 ;;
         --output) output=$1 ;; --image) image_override=$1 ;;
         --workers) workers_override=$1 ;; --signers) signers_override=$1 ;;
@@ -80,6 +89,11 @@ while (($#)); do
     *) fail "unknown argument: $option" ;;
   esac
 done
+case "$profile" in
+  server48) cpus=${cpus:-32}; memory=${memory:-32g} ;;
+  preset) cpus=${cpus:-4}; memory=${memory:-8g} ;;
+  *) fail '--profile must be server48 or preset' ;;
+esac
 [[ $(uname -s) == Linux ]] || fail 'Linux is required for --network host'
 for command in docker python3 flock timeout; do command -v "$command" >/dev/null || fail "missing command: $command"; done
 [[ -d $directory ]] || fail "client directory does not exist: $directory"
@@ -182,9 +196,18 @@ try:
         directory, data, output, duration, warmup, drain, cpus, memory, image_arg = sys.argv[2:11]
         directory, data, output = Path(directory), Path(data), Path(output)
         env = environment(directory / 'remote-load.env')
+        profile = sys.argv[12]
+        check(profile in ('server48', 'preset'), 'invalid resource profile')
+        if profile == 'server48':
+            # The profile is a visible treatment, recorded per arm. Upgrading the
+            # host runner upgrades old bundles without rewriting keys/pinned images
+            # or silently inheriting their six-worker small-host signing budget.
+            available_sources = uint(env.get('NATIVE_LOAD_SOURCES', ''), 'NATIVE_LOAD_SOURCES', 1, 1000000)
+            env['NATIVE_LOAD_WORKERS'] = str(min(8, available_sources))
+            env['NATIVE_LOAD_SIGNERS'] = str(min(24, available_sources))
         for key, value in zip(['NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS',
                                'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND', 'NATIVE_LOAD_ADAPTIVE_MAX_CWND'],
-                              sys.argv[12:16]):
+                              sys.argv[13:17]):
             if value:
                 uint(value, key + ' override', 1, 256 if key in ('NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS') else 2**32-1)
                 env[key] = value
@@ -202,7 +225,7 @@ try:
         offset = uint(env.get('NATIVE_LOAD_SOURCE_OFFSET', '0'), 'NATIVE_LOAD_SOURCE_OFFSET')
         check(offset + sources <= 2**32-1, 'source interval overflows supported uint32 range')
         runner_path = Path(sys.argv[11])
-        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[16:]]
+        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[17:]]
         check(len(counts) == len(set(counts)), 'duplicate connection count')
         check(counts, 'empty connection list')
         duration = uint(env.get('NATIVE_LOAD_DURATION_SECONDS', ''), 'duration', 1, 86400)
@@ -282,7 +305,7 @@ try:
         check(isinstance(image, str) and image and '\n' not in image and '\x00' not in image and not image.startswith('-'), 'local image reference is missing/invalid')
         watchdog = duration + warmup + ramp + drain + uint(env.get('NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS', '900'), 'ready timeout', 1, 86400) + 600
         settings = {'schema': 'native-remote-run-v1', 'client_directory': str(directory), 'client_data': str(data),
-                    'connections': counts, 'workers': workers, 'signers': signers, 'sources': sources, 'source_offset': offset,
+                    'profile': profile, 'connections': counts, 'workers': workers, 'signers': signers, 'sources': sources, 'source_offset': offset,
                     'lane_depth': depth, 'quantum': quantum, 'cpus': cpus, 'memory': memory, 'duration': duration,
                     'warmup': warmup, 'ramp': ramp, 'drain': drain, 'watchdog_seconds': watchdog,
                     'initial_cwnd': initial_cwnd, 'max_cwnd': max_cwnd, 'inflight': inflight,
@@ -330,18 +353,24 @@ try:
                   'measurement_target_s': settings['duration'], 'phase': 'waiting_for_generator_report',
                   'provisional': True, 'observed_unix_s': time.time(),
                   'load_settings': {key: settings[key] for key in
-                      ['workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}}
+                      ['profile', 'workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}}
         if row is not None:
             for key in ['phase', 'elapsed_s', 'measure_elapsed_s', 'offered_tps', 'mempool_accept_tps',
-                        'canonical_chain_measure_avg_tps', 'canonical_backlog', 'canonical_follower_errors']:
+                        'canonical_chain_measure_transfers', 'canonical_gen_utime_bucket_duration_s',
+                        'canonical_backlog', 'canonical_follower_errors']:
                 if key in row: sample[key] = row[key]
+            if 'canonical_chain_measure_avg_tps' in row:
+                # The native field divides by the entire planned block-time
+                # measurement window even while only its first seconds exist.
+                # Label that denominator honestly; it is not a live TPS ramp.
+                sample['canonical_chain_measure_planned_window_avg_tps'] = row['canonical_chain_measure_avg_tps']
         with (arm / 'progress.jsonl').open('a') as handle:
             handle.write(json.dumps(sample, allow_nan=False) + '\n')
         print(json.dumps(sample, allow_nan=False))
     elif mode == 'announce':
         settings = read(Path(sys.argv[2]) / 'settings.json')
         print('Each setup: measurement={duration}s, warmup={warmup}s, ramp={ramp}s, drain limit={drain}s; '
-              'generator budget={cpus} CPUs/{memory}, workers={workers}, signers={signers}; '
+              'profile={profile}, generator budget={cpus} CPUs/{memory}, workers={workers}, signers={signers}; '
               'global logical windows: initial={initial_cwnd}, max={max_cwnd}, inflight={inflight}; '
               'watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
     elif mode == 'owns':
@@ -360,7 +389,7 @@ try:
             settings = read(arm / 'runtime-settings.json'); summary['connections'] = settings['connections']
             summary['image_id'] = settings['image_id']
             summary['load_settings'] = {key: settings[key] for key in
-                ['workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}
+                ['profile', 'workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}
             if forced: errors.append(forced)
             inspected = read(arm / 'container.json')
             check(isinstance(inspected, list) and len(inspected) == 1, 'missing/ambiguous container inspection')
@@ -453,9 +482,20 @@ try:
             summary['full_independent_capacity_claim_allowed'] = False
         except (ValueError, OSError, KeyError, TypeError, ArithmeticError, AttributeError) as error:
             errors.append(str(error))
+        if errors and summary.get('final') is not None:
+            final = summary['final']
+            summary['generator_diagnostics'] = {key: final[key] for key in [
+                'phase', 'drain_timed_out', 'canonical_backlog', 'canonical_backlog_after_drain',
+                'canonical_total_backlog_after_drain', 'canonical_follower_final_catchup_complete',
+                'canonical_follower_errors', 'canonical_hash_conflicts', 'retry_exhausted',
+                'retry_exhausted_sources', 'task_errors_by_reason', 'retries_by_reason', 'resigned',
+                'native_signed_run_repair_messages', 'native_signed_run_repair_logical_transfers',
+                'native_signed_run_proof_resolutions', 'native_signed_run_messages',
+                'repair_offered', 'repair_accepted', 'active_tasks', 'ready', 'retry_wait', 'inflight']
+                if key in final}
         summary['finished_unix_s'] = time.time()
         save(arm / 'summary.json', summary)
-        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons']}))
+        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons', 'generator_diagnostics']}))
         if errors:
             print('Stopped before reusing source accounts. Inspect ' + str(arm / 'execution.json') + ', ' + str(arm / 'generator.log') + ' and ' + str(arm / 'generator.stderr.log') + '.', file=sys.stderr)
         sys.exit(0 if summary['valid_run'] else 1)
@@ -518,7 +558,7 @@ trap cleanup EXIT
 trap 'interrupt_reason=interrupted_SIGINT; exit 130' INT
 trap 'interrupt_reason=interrupted_SIGTERM; exit 143' TERM
 
-watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
+watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$profile" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
   cat "$output/preflight.stderr.log" >&2; exit 2;
 }
 # A remote Docker context would run the generator on the wrong server.

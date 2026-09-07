@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import shutil
 import signal
@@ -28,7 +29,7 @@ BASE_REFERENCE = 'ghcr.io/corton-nommander/ton:master'
 BASE_DIGEST = 'ghcr.io/corton-nommander/ton@sha256:' + '9' * 64
 BASE_IMAGE_ID = 'sha256:' + '8' * 64
 SOURCE_REVISION = 'c' * 40
-SOURCE_OFFSET, SOURCES, ALL_SOURCES = 4, 12, 24
+SOURCE_OFFSET, SOURCES, ALL_SOURCES = 4, 32, 40
 
 FAKE_DOCKER = r'''#!/usr/bin/env python3
 import json, os, pathlib, subprocess, sys, time
@@ -595,6 +596,11 @@ class RemoteTests(unittest.TestCase):
     def prepare_runner(self):
         self.export('--no-image')
         self.import_bundle('--no-load-image')
+        # Model an already imported six-worker bundle. The default profile must
+        # upgrade it without rewriting this original environment file.
+        envfile = self.client/'remote-load.env'
+        envfile.write_text(re.sub(r'NATIVE_LOAD_(WORKERS|SIGNERS)=[0-9]+',
+                                 lambda match: 'NATIVE_LOAD_'+match[1]+'=6', envfile.read_text()))
         final = {'final':True, 'offered':1920, 'steady_offered':1600, 'steady_mempool_accepted':1600,
                  'canonical_total_after_drain':1920, 'canonical_measured_offers_after_drain':1600,
                  'measure_elapsed_s':10, 'canonical_gen_utime_bucket_duration_s':10,
@@ -627,7 +633,7 @@ class RemoteTests(unittest.TestCase):
 
     def run_load(self,*args,success=True):
         return self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,
-                           '--duration',10,'--warmup',1,'--drain',1,*args,success=success)
+                           '--profile','preset','--duration',10,'--warmup',1,'--drain',1,*args,success=success)
 
     def test_runner_order_fixed_budgets_and_immutable_local_image(self):
         self.prepare_runner()
@@ -667,7 +673,7 @@ class RemoteTests(unittest.TestCase):
         result=self.run_load('--connections',50,100,'--workers',12,'--signers',12,
                              '--initial-cwnd',65536,'--max-cwnd',131072,'--cpus',12)
         self.assertEqual((self.client/'remote-load.env').read_bytes(),original)
-        expected={'workers':12,'signers':12,'initial_cwnd':65536,'max_cwnd':131072,
+        expected={'profile':'preset','workers':12,'signers':12,'initial_cwnd':65536,'max_cwnd':131072,
                   'inflight':262144,'cpus':'12','memory':'8g'}
         settings=json.loads((self.results/'settings.json').read_text())
         for key,value in expected.items():self.assertEqual(settings[key],value)
@@ -693,6 +699,61 @@ class RemoteTests(unittest.TestCase):
         self.assertIn('workers=12, signers=12',result.stdout)
         self.assertIn('initial=65536, max=131072, inflight=262144',result.stdout)
         self.assertFalse(any(c[:1] in (['build'],['pull'],['compose'],['rm']) for c in self.calls()))
+
+    def test_runner_default_server48_upgrades_old_bundle_without_changing_budgets(self):
+        self.prepare_runner()
+        original=(self.client/'remote-load.env').read_bytes()
+        result=self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,
+                           '--duration',10,'--warmup',1,'--drain',1)
+        self.assertEqual((self.client/'remote-load.env').read_bytes(),original)
+        settings=json.loads((self.results/'settings.json').read_text())
+        self.assertEqual(settings['profile'],'server48')
+        self.assertEqual((settings['cpus'],settings['memory']),('32','32g'))
+        self.assertEqual((settings['workers'],settings['signers']),(8,24))
+        self.assertEqual((settings['initial_cwnd'],settings['max_cwnd'],settings['inflight']),
+                         (32768,65536,262144))
+        self.assertEqual(settings['environment']['NATIVE_LOAD_MAX_CANONICAL_BACKLOG'],'2097120')
+        self.assertEqual(settings['environment']['NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG'],'128')
+        runs=json.loads((self.fake/'runs.json').read_text())
+        self.assertEqual([int(run['env']['NATIVE_LOAD_CONNECTIONS']) for run in runs],[10,50,100])
+        for run in runs:
+            self.assertEqual(run['env']['NATIVE_LOAD_WORKERS'],'8')
+            self.assertEqual(run['env']['NATIVE_LOAD_SIGNERS'],'24')
+            self.assertEqual(run['inspect']['Image'],IMAGE_ID)
+        for command in [command for command in self.calls() if command[:1]==['run']]:
+            self.assertEqual(command[command.index('--cpus')+1],'32')
+            self.assertEqual(command[command.index('--memory')+1],'32g')
+        self.assertIn('profile=server48, generator budget=32 CPUs/32g, workers=8, signers=24',result.stdout)
+        self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
+
+    def test_runner_explicit_overrides_win_over_server48_defaults(self):
+        self.prepare_runner()
+        self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,
+                    '--profile','server48','--connections',10,'--duration',10,'--warmup',1,'--drain',1,
+                    '--cpus',16,'--memory','16g','--workers',6,'--signers',16)
+        settings=json.loads((self.results/'settings.json').read_text())
+        self.assertEqual((settings['cpus'],settings['memory'],settings['workers'],settings['signers']),
+                         ('16','16g',6,16))
+        self.assertEqual(settings['profile'],'server48')
+        self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
+
+    def test_runner_server48_caps_actor_counts_for_small_exports(self):
+        self.prepare_runner()
+        envfile=self.client/'remote-load.env'
+        envfile.write_text(re.sub(r'NATIVE_LOAD_SOURCES=[0-9]+','NATIVE_LOAD_SOURCES=4',envfile.read_text()))
+        self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,
+                    '--connections',10,'--duration',10,'--warmup',1,'--drain',1)
+        settings=json.loads((self.results/'settings.json').read_text())
+        self.assertEqual((settings['workers'],settings['signers'],settings['sources']),(4,4,4))
+        self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
+
+    def test_runner_rejects_unknown_or_duplicate_profile_before_launch(self):
+        self.prepare_runner()
+        for index,arguments in enumerate([['--profile','unknown'],['--profile','server48','--profile','preset']]):
+            result=self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.root/('profile-'+str(index)),
+                               *arguments,success=False)
+            self.assertIn('--profile',result.stderr)
+        self.assertFalse(any(command[:1]==['run'] for command in self.calls()))
 
     def test_runner_connection_counts_use_effective_worker_override(self):
         self.prepare_runner()
@@ -790,6 +851,9 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(progress[-1]['phase'],'measure')
         self.assertEqual(progress[-1]['offered_tps'],160)
         self.assertEqual(progress[-1]['mempool_accept_tps'],160)
+        self.assertNotIn('canonical_chain_measure_avg_tps',progress[-1])
+        self.assertEqual(progress[-1]['canonical_chain_measure_planned_window_avg_tps'],144)
+        self.assertEqual(progress[-1]['canonical_gen_utime_bucket_duration_s'],600)
         self.assertTrue(progress[-1]['provisional'])
 
     def test_runner_preserves_longer_preset_and_explicit_short_or_long_duration(self):
@@ -888,7 +952,10 @@ class RemoteTests(unittest.TestCase):
                                         (3,'correctness_invalid_reasons','canonical_hash_conflicts')]:
             with self.subTest(exit_code=code):
                 self.results=self.root/('exit-'+str(code))
-                self.scenario(container_exit=code,container_error='fixture runtime error',final_overrides={reason_field:[reason]})
+                self.scenario(container_exit=code,container_error='fixture runtime error',
+                              final_overrides={reason_field:[reason], 'canonical_backlog_after_drain':32,
+                                               'resigned':39, 'task_errors_by_reason':{'timeout':39},
+                                               'active_tasks':32, 'retry_wait':0})
                 result=self.run_load('--connections',10,50,100,success=False)
                 summary=json.loads((self.results/'01-10-connections/summary.json').read_text())
                 self.assertFalse(summary['valid_run'])
@@ -896,6 +963,13 @@ class RemoteTests(unittest.TestCase):
                 self.assertFalse(summary['execution']['OOMKilled'])
                 self.assertEqual(summary['execution']['Error'],'fixture runtime error')
                 self.assertEqual(summary['generator_failure_reasons'][reason_field],[reason])
+                diagnostics=summary['generator_diagnostics']
+                self.assertEqual(diagnostics['canonical_backlog_after_drain'],32)
+                self.assertEqual(diagnostics['resigned'],39)
+                self.assertEqual(diagnostics['task_errors_by_reason'],{'timeout':39})
+                self.assertEqual(diagnostics['active_tasks'],32)
+                self.assertNotIn('native_signed_run_semantics',diagnostics)
+                self.assertIn('"generator_diagnostics":',result.stdout)
                 final=json.loads((self.results/'01-10-connections/generator-final.json').read_text())
                 self.assertEqual(final[reason_field],[reason])
                 self.assertIn(reason,result.stdout)
