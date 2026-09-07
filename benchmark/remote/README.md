@@ -96,9 +96,9 @@ The default sequence is also 10/50/100. Each setup defaults to **at least 600 me
 bash run-remote-load.sh --connections 10 --duration 600
 ```
 
-The default `server48` profile targets the confirmed dedicated **48-CPU / 256-GB server B**: **32 CPU equivalents, a 32 GiB memory limit, eight workers and 24 signing actors**. It also upgrades older installed six-worker presets without rewriting `remote-load.env`. The native scheduler has 33 threads with these counts. Eight workers allow the default 10/50/100 connection sequence; increasing connections alone does not add signing capacity. This is an unmeasured resource treatment, not a new TPS result.
+The default `server48` profile targets the confirmed dedicated **48-CPU / 256-GB server B**: **40 CPU equivalents, a 48 GiB memory limit, ten workers and 32 signing actors**. It also upgrades older installed six-worker presets without rewriting `remote-load.env`. The native scheduler has 43 threads with these counts. Ten workers divide 10/50/100/300/500 connections evenly; increasing connections alone does not add signing capacity. This is an unmeasured resource treatment, not a new TPS result.
 
-`--help` lists profile, directory, timing, CPU/memory, worker/signer, window, output and prebuilt-image overrides. Explicit arguments always win over profile defaults. The reference preset retains 60 seconds warm-up, 600 seconds measurement, up to 180 seconds drain, 16 logical transfers per parent, initial/max admission windows 32,768/65,536, and the existing inflight/backlog limits. It already sends without a target-TPS rate limit. Connection counts must cover the effective worker count and remain at most 256. Small source exports cap workers/signers to the selected source count; they are not the reference capacity workload.
+`--help` lists profile, directory, timing, CPU/memory, worker/signer, window, output and prebuilt-image overrides. Explicit arguments always win over profile defaults. The reference preset retains 60 seconds warm-up, 600 seconds measurement, up to 180 seconds drain, 16 logical transfers per parent, initial/max admission windows 32,768/65,536, and the existing inflight/backlog limits. It already sends without a target-TPS rate limit. Connection counts must cover the effective worker count and remain at most 1024 in the updated native binary. Counts above 256 require a generator image containing that native change; a host-script update cannot extend an old binary. Before any setup in a sweep containing a count above 256, the runner checks the frozen image’s `--help` in a bounded, no-network container with no mounted accounts or config. It requires the connections option to advertise the requested range and saves `native-load-generator-help.txt` plus `connection-capability.json`; an old image fails before even an earlier 50-connection arm starts. The container open-file limit is 65,536 to leave descriptor headroom for large sweeps. Small source exports cap workers/signers to the selected source count; they are not the reference capacity workload.
 
 On a smaller B, use `--profile preset`: it takes workers/signers from the imported environment and defaults to the earlier 4 CPUs/8g. To reproduce the six-worker resource control with either an old or new preset, use:
 
@@ -109,7 +109,7 @@ bash run-remote-load.sh --profile preset --workers 6 --signers 6 \
 
 Keep the same image, accounts, validator process, admission windows and measurement duration for the comparison. Use the successful treatment with the highest repeatable canonical TPS; do not classify an incomplete drain as a valid throughput result.
 
-Each run creates a new `remote-results/` directory with an overall `summary.json`, effective settings, a copy of the actual runner and its SHA-256, and per-arm logs, final counters and container inspection. Progress appears every 30 seconds and is saved in `progress.jsonl`; live rates remain provisional. `canonical_chain_measure_planned_window_avg_tps` explicitly names the original native metric whose denominator is the entire planned canonical block-time window (normally 599 seconds), even early in measurement. Its rise during measurement is not evidence that actual production TPS is ramping. The observed transfer count and bucket duration accompany it; use the complete final result for measured canonical TPS. Each arm also saves `execution.json` with Docker exit/OOM/error and watchdog information. A final generator record, when present, is retained even on a nonzero exit so drain/proof failure reasons are visible. The compact failure summary also reports unresolved counts, retries, re-signing and repair counters without printing the full JSON semantics. The watchdog scales with the selected measurement duration and other time budgets. Images are frozen by ID and exited containers are retained. SIGINT/SIGTERM stops only the runner-owned container and preserves partial evidence. Incorrect/incomplete runs stop the sequence; capacity-only failures remain `observation_only`. `generator_capacity_eligible` refers to the generator's gates: remote validator identity, resources and pool cleanup are not independently collected by this B-only runner.
+Each run creates a new `remote-results/` directory with an overall `summary.json`, effective settings, a copy of the actual runner and its SHA-256, and per-arm logs, final counters and container inspection. Progress appears every 30 seconds and is saved in `progress.jsonl`; live rates remain provisional. `canonical_chain_measure_planned_window_avg_tps` explicitly names the original native metric whose denominator is the entire planned canonical block-time window (normally 599 seconds), even early in measurement. Its rise during measurement is not evidence that actual production TPS is ramping. The observed transfer count and bucket duration accompany it; use the complete final result for measured canonical TPS. Each arm also saves `execution.json` with Docker exit/OOM/error and watchdog information. A final generator record, when present, is retained even on a nonzero exit so drain/proof failure reasons are visible. The compact failure summary also reports unresolved counts, retries, typed not-ready reasons, re-signing and repair counters without printing the full JSON semantics. The watchdog scales with the selected measurement duration and other time budgets. Images are frozen by ID and exited containers are retained. SIGINT/SIGTERM stops only the runner-owned container and preserves partial evidence. With the default `reuse` source policy, incorrect/incomplete runs stop the sequence; capacity-only failures remain `observation_only`. A source that exhausted its admission retry budget but recovered during drain may complete with an exact proof for every offered parent. Such a clean exit with zero final backlog and valid proof/cohort gates remains an observation and permits the next setup; retry exhaustion itself is not proof of an unresolved nonce. Exit 2 and incomplete cohorts still stop reuse. `generator_capacity_eligible` refers to the generator's gates: remote validator identity, resources and pool cleanup are not independently collected by this B-only runner.
 
 Do not run independent generators against the same source keys. The directory lock prevents overlap within one installed client dataset; it cannot coordinate separately copied wallets or another server. Synchronize A/B clocks, keep unrelated native traffic off A, and require offered load above canonical throughput for a capacity claim.
 
@@ -125,6 +125,29 @@ tail -n 60 generator.stderr.log
 ```
 
 Exit 2 can mean unsettled drain; exit 3 can mean canonical follower/proof/correctness failure. Read the final generator reasons and stderr for the actual cause. Exit 137 alone is not proof of OOM; inspect `State.OOMKilled`. A failed 50-connection arm stops before 100 so incomplete source nonces are not silently reused.
+
+### Larger sweeps and isolated source accounts
+
+After installing a generator image with the 1..1024 connection support, use:
+
+```sh
+bash run-remote-load.sh --connections 100 300 500 --duration 600
+```
+
+More connections share the same fixed global admission windows and signing workers. They may improve request distribution, or add overhead; their count alone does not establish higher CPU use or TPS. Measure before enlarging windows. Normal sweeps use all exported accounts in each setup and only reuse them after the full proof/completion gates pass.
+
+If you need every setup attempted even when a cohort remains unresolved, explicitly isolate the accounts:
+
+```sh
+bash run-remote-load.sh --source-policy isolated \
+  --connections 100 300 500 --duration 600
+```
+
+With 24,576 exported sources and three setups, each setup receives **8,192 distinct source accounts**, balanced across the four lanes. The same number of sources is used in every setup; unused remainder accounts are left unused. The runner verifies the manifest's balanced lane ordering and refuses insufficient or malformed partitions. Effective source offsets/counts are saved and printed with each result. This changes the workload cardinality, so compare it against another isolated run with the same number of setups, not a 24,576-source result.
+
+An invalid arm remains invalid and the sweep exits nonzero, but an exited workload can be followed by a setup using the next disjoint partition. Every later arm becomes `observation_only` while an earlier arm's cohort is unresolved: earlier admitted messages might still appear in the canonical chain TPS metric. `all_setups_attempted` distinguishes attempting the whole sequence from a wholly valid sweep. Interruptions, unverified container identity, and a workload that is not confirmed stopped still abort.
+
+Partition isolation applies within one sweep. It does not erase or reconcile an earlier failed sweep's nonces. Do not start another overlapping sweep until its failed source ranges are reconciled, or import a separate funded source range. Retain the failed artifacts; no flag ignores missing proofs or calls an incomplete run valid.
 
 ### Update an already imported runner on B
 
@@ -156,7 +179,7 @@ python3 benchmark/tests/native-registry-images-test.py
 python3 benchmark/tests/native-remote-client-test.py
 ```
 
-The suites exercise registry preparation/startup, export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset extends measurement to 600 seconds and uses eight workers/24 signers for the 48-CPU client. It retains the recorded 2026-09-06 admission/backlog limits, before export-specific path/range/image adjustments. The standalone runner applies its selected resource profile to old and new exports and records the original and effective environment separately.
+The suites exercise registry preparation/startup, export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset extends measurement to 600 seconds and uses ten workers/32 signers for the 48-CPU client. It retains the recorded 2026-09-06 admission/backlog limits, before export-specific path/range/image adjustments. The standalone runner applies its selected resource profile to old and new exports and records the original and effective environment separately.
 
 ## September 7 drain failure
 

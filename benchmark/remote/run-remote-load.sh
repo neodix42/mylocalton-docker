@@ -7,7 +7,8 @@ usage() {
   cat <<'EOF'
 Usage: run-remote-load.sh [--connections 10 50 100] [--directory CLIENT_ROOT]
        [--duration SECONDS] [--warmup SECONDS] [--drain SECONDS]
-       [--profile server48|preset] [--cpus COUNT] [--memory LIMIT]
+       [--profile server48|preset] [--source-policy reuse|isolated]
+       [--cpus COUNT] [--memory LIMIT]
        [--workers COUNT] [--signers COUNT]
        [--initial-cwnd LOGICAL_TRANSFERS] [--max-cwnd LOGICAL_TRANSFERS]
        [--output NEW_DIRECTORY] [--image LOCAL_IMAGE]
@@ -19,15 +20,21 @@ validator. Linux host networking is required. Exited workload containers and all
 artifacts are retained. The default measurement lasts at least 600 seconds,
 in addition to warmup/readiness/drain; --duration explicitly permits shorter runs.
 Progress is printed every 30 seconds. Capacity-only rejections are reported and do not abort;
-incorrect/incomplete runs stop the sequence before those keys are reused.
+An invalid arm keeps a failing result. Sources are reused only after exact final
+proof/cohort reconciliation; otherwise the default reuse policy stops the sweep.
+Optional isolated policy gives every setup an equal, disjoint source partition
+and can continue after an exited failed arm. Later arms are observation-only
+if an earlier partition remains unresolved; old traffic may still reach the chain.
 
-The default server48 profile uses 32 CPUs/32g, eight workers and 24 signers on
+The default server48 profile uses 40 CPUs/48g, ten workers and 32 signers on
 a dedicated 48-CPU server B, including older imported presets. Small source
 exports cap workers/signers to the source count. --profile preset retains the
 imported worker/signer values and uses the earlier 4 CPUs/8g resource defaults.
 Explicit CPU/memory/worker/signer/window overrides always win; remote-load.env
 remains unchanged. Both profiles preserve the preset admission/backlog limits.
-Connections remain limited to 256 by the published native binary.
+The updated native binary supports 1..1024 connections. Counts above 256 require
+a generator image containing that native change; updating this script alone is
+insufficient. The container gets a 65,536-descriptor open-file limit.
 Windows count logical transfers globally and are shared across workers/clients;
 more connections do not increase that budget. Explicit window values must be
 positive, fit the existing inflight limit, and permit complete signed runs.
@@ -54,6 +61,7 @@ signers_override=
 initial_cwnd_override=
 max_cwnd_override=
 profile=server48
+source_policy=reuse
 cpus=
 memory=
 connections=(10 50 100)
@@ -71,14 +79,14 @@ while (($#)); do
       while (($#)) && [[ $1 != --* ]]; do connections+=("$1"); shift; done
       ((${#connections[@]})) || fail '--connections requires at least one count'
       ;;
-    --directory|--duration|--warmup|--drain|--profile|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd)
+    --directory|--duration|--warmup|--drain|--profile|--source-policy|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd)
       [[ ! ${options_seen[$option]+yes} ]] || fail "duplicate $option"
       options_seen[$option]=1
       (($#)) && [[ $1 != --* && -n $1 ]] || fail "$option requires a value"
       case "$option" in
         --directory) directory=$1 ;; --duration) duration_override=$1 ;;
         --warmup) warmup_override=$1 ;; --drain) drain_override=$1 ;;
-        --profile) profile=$1 ;;
+        --profile) profile=$1 ;; --source-policy) source_policy=$1 ;;
         --cpus) cpus=$1 ;; --memory) memory=$1 ;;
         --output) output=$1 ;; --image) image_override=$1 ;;
         --workers) workers_override=$1 ;; --signers) signers_override=$1 ;;
@@ -90,10 +98,11 @@ while (($#)); do
   esac
 done
 case "$profile" in
-  server48) cpus=${cpus:-32}; memory=${memory:-32g} ;;
+  server48) cpus=${cpus:-40}; memory=${memory:-48g} ;;
   preset) cpus=${cpus:-4}; memory=${memory:-8g} ;;
   *) fail '--profile must be server48 or preset' ;;
 esac
+[[ $source_policy == reuse || $source_policy == isolated ]] || fail '--source-policy must be reuse or isolated'
 [[ $(uname -s) == Linux ]] || fail 'Linux is required for --network host'
 for command in docker python3 flock timeout; do command -v "$command" >/dev/null || fail "missing command: $command"; done
 [[ -d $directory ]] || fail "client directory does not exist: $directory"
@@ -196,18 +205,32 @@ try:
         directory, data, output, duration, warmup, drain, cpus, memory, image_arg = sys.argv[2:11]
         directory, data, output = Path(directory), Path(data), Path(output)
         env = environment(directory / 'remote-load.env')
-        profile = sys.argv[12]
+        profile, source_policy = sys.argv[12:14]
+        check(source_policy in ('reuse', 'isolated'), 'invalid source policy')
+        counts = [uint(x, 'connections', 1, 1024) for x in sys.argv[18:]]
+        check(counts and len(counts) == len(set(counts)), 'empty or duplicate connection count')
+        exported_sources = uint(env.get('NATIVE_LOAD_SOURCES', ''), 'NATIVE_LOAD_SOURCES', 1, 1000000)
+        exported_offset = uint(env.get('NATIVE_LOAD_SOURCE_OFFSET', '0'), 'NATIVE_LOAD_SOURCE_OFFSET')
+        check(exported_offset + exported_sources <= 2**32-1, 'source interval overflows supported uint32 range')
+        partition_sources = exported_sources
+        if source_policy == 'isolated':
+            lanes = 1 << uint(env.get('NATIVE_LOAD_PAYMENT_LANE_DEPTH', ''), 'payment lane depth', 1, 2)
+            partition_sources = exported_sources // len(counts) // lanes * lanes
+            check(partition_sources >= lanes, 'isolated policy needs at least one complete lane set per setup')
+            env['NATIVE_LOAD_SOURCES'] = str(partition_sources)
+        source_partitions = [{'source_offset': exported_offset + (i * partition_sources if source_policy == 'isolated' else 0),
+                              'sources': partition_sources} for i in range(len(counts))]
         check(profile in ('server48', 'preset'), 'invalid resource profile')
         if profile == 'server48':
             # The profile is a visible treatment, recorded per arm. Upgrading the
             # host runner upgrades old bundles without rewriting keys/pinned images
             # or silently inheriting their six-worker small-host signing budget.
             available_sources = uint(env.get('NATIVE_LOAD_SOURCES', ''), 'NATIVE_LOAD_SOURCES', 1, 1000000)
-            env['NATIVE_LOAD_WORKERS'] = str(min(8, available_sources))
-            env['NATIVE_LOAD_SIGNERS'] = str(min(24, available_sources))
+            env['NATIVE_LOAD_WORKERS'] = str(min(10, available_sources))
+            env['NATIVE_LOAD_SIGNERS'] = str(min(32, available_sources))
         for key, value in zip(['NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS',
                                'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND', 'NATIVE_LOAD_ADAPTIVE_MAX_CWND'],
-                              sys.argv[13:17]):
+                              sys.argv[14:18]):
             if value:
                 uint(value, key + ' override', 1, 256 if key in ('NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS') else 2**32-1)
                 env[key] = value
@@ -225,9 +248,7 @@ try:
         offset = uint(env.get('NATIVE_LOAD_SOURCE_OFFSET', '0'), 'NATIVE_LOAD_SOURCE_OFFSET')
         check(offset + sources <= 2**32-1, 'source interval overflows supported uint32 range')
         runner_path = Path(sys.argv[11])
-        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[17:]]
-        check(len(counts) == len(set(counts)), 'duplicate connection count')
-        check(counts, 'empty connection list')
+        check(min(counts) >= workers, 'connections is out of range for effective workers')
         duration = uint(env.get('NATIVE_LOAD_DURATION_SECONDS', ''), 'duration', 1, 86400)
         warmup = uint(env.get('NATIVE_LOAD_WARMUP_SECONDS', '0'), 'warmup', 0, 86400)
         ramp = uint(env.get('NATIVE_LOAD_RAMP_SECONDS', '0'), 'ramp', 0, 86400)
@@ -242,7 +263,7 @@ try:
         check(env.get('NATIVE_PAYMENT_LANE_DEPTH') == str(depth), 'payment lane depth mismatch')
         for key in ['NATIVE_LOAD_INFLIGHT', 'NATIVE_LOAD_MAX_CANONICAL_BACKLOG', 'NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG']:
             uint(env.get(key, ''), key, 1)
-        inflight = uint(env['NATIVE_LOAD_INFLIGHT'], 'NATIVE_LOAD_INFLIGHT', workers)
+        inflight = uint(env['NATIVE_LOAD_INFLIGHT'], 'NATIVE_LOAD_INFLIGHT', max(workers, max(counts)))
         uint(env['NATIVE_LOAD_MAX_CANONICAL_BACKLOG'], 'NATIVE_LOAD_MAX_CANONICAL_BACKLOG', workers)
         initial_cwnd = uint(env.get('NATIVE_LOAD_ADAPTIVE_INITIAL_CWND', '0'), 'initial cwnd')
         max_cwnd = uint(env.get('NATIVE_LOAD_ADAPTIVE_MAX_CWND', '0'), 'max cwnd')
@@ -291,7 +312,31 @@ try:
         wallet_dir = data / 'wallets'
         manifest = wallet_dir / 'native-payment-lanes.manifest'
         check(manifest.is_file() and not manifest.is_symlink() and manifest.stat().st_size > 0, 'lane manifest missing/empty')
-        for index in range(offset, offset + sources):
+        if source_policy == 'isolated':
+            lines = manifest.read_text().splitlines()
+            header = lines[0].split() if lines else []
+            check(len(header) == 4 and header[:3] == ['NATIVE_PAYMENT_LANES_MANIFEST_V1', str(depth), str(1 << depth)],
+                  'isolated source manifest header/depth mismatch')
+            check(uint(header[3], 'manifest sources', 1) >= exported_offset + exported_sources,
+                  'manifest does not cover exported sources')
+            selected_lanes = {}
+            for line in lines[1:]:
+                if not line.strip() or line.lstrip().startswith('#'): continue
+                fields = line.split()
+                check(len(fields) == 4, 'malformed source manifest row')
+                index = uint(fields[0], 'manifest source index')
+                if not exported_offset <= index < exported_offset + exported_sources: continue
+                check(index not in selected_lanes, 'duplicate selected manifest source')
+                lane = uint(fields[1], 'manifest lane', 0, (1 << depth)-1)
+                check(lane == index % (1 << depth), 'manifest sources are not in balanced lane order')
+                selected_lanes[index] = lane
+            check(len(selected_lanes) == exported_sources, 'manifest is missing an exported source')
+            for partition in source_partitions:
+                observed = [0] * (1 << depth)
+                for index in range(partition['source_offset'], partition['source_offset'] + partition['sources']):
+                    observed[selected_lanes[index]] += 1
+                check(len(set(observed)) == 1, 'source partition is not balanced across lanes')
+        for index in range(exported_offset, exported_offset + exported_sources):
             for label, suffix, size in [('source', 'pk', 32), ('source', 'pub', 32), ('source', 'addr', None),
                                          ('dest', 'pub', 32), ('dest', 'addr', None)]:
                 path = wallet_dir / (label + '-' + str(index) + '.' + suffix)
@@ -305,7 +350,9 @@ try:
         check(isinstance(image, str) and image and '\n' not in image and '\x00' not in image and not image.startswith('-'), 'local image reference is missing/invalid')
         watchdog = duration + warmup + ramp + drain + uint(env.get('NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS', '900'), 'ready timeout', 1, 86400) + 600
         settings = {'schema': 'native-remote-run-v1', 'client_directory': str(directory), 'client_data': str(data),
-                    'profile': profile, 'connections': counts, 'workers': workers, 'signers': signers, 'sources': sources, 'source_offset': offset,
+                    'profile': profile, 'source_policy': source_policy, 'source_partitions': source_partitions,
+                    'exported_sources': exported_sources, 'exported_source_offset': exported_offset,
+                    'nofile_limit': 65536, 'connections': counts, 'workers': workers, 'signers': signers, 'sources': sources, 'source_offset': offset,
                     'lane_depth': depth, 'quantum': quantum, 'cpus': cpus, 'memory': memory, 'duration': duration,
                     'warmup': warmup, 'ramp': ramp, 'drain': drain, 'watchdog_seconds': watchdog,
                     'initial_cwnd': initial_cwnd, 'max_cwnd': max_cwnd, 'inflight': inflight,
@@ -331,9 +378,35 @@ try:
         if requested.startswith('sha256:'): check(image_id == requested, 'inspected image differs from requested immutable ID')
         (output / 'image-id.txt').write_text(image_id + '\n')
         print(image_id)
+    elif mode == 'capability':
+        output = Path(sys.argv[2]); image_id = sys.argv[3]
+        status = int(sys.argv[4]); settings = read(output / 'settings.json')
+        help_path = output / 'native-load-generator-help.txt'
+        help_text = help_path.read_text(errors='replace')
+        advertised = re.findall(r'^\s*(?:-[A-Za-z0-9],\s*)?--connections(?:<[^>\n]+>)?\s+[^\n]*\(1\.\.([1-9][0-9]*)\)',
+                               help_text, re.MULTILINE)
+        maximum = int(advertised[0]) if len(advertised) == 1 else None
+        requested = max(settings['connections'])
+        supported = status == 0 and maximum is not None and maximum >= requested
+        capability = {'schema': 'native-remote-connection-capability-v1', 'image_id': image_id,
+                      'requested_max_connections': requested, 'advertised_max_connections': maximum,
+                      'probe_exit_code': status, 'supported': supported, 'help_sha256': digest(help_path),
+                      'entrypoint': '/usr/local/bin/native-load-generator', 'network': 'none',
+                      'wallets_mounted': False}
+        save(output / 'connection-capability.json', capability)
+        check(supported, 'frozen generator image does not advertise support for ' + str(requested)
+              + ' connections (advertised maximum=' + str(maximum) + ', help exit=' + str(status)
+              + '). Install the updated native generator image before this sweep; no load setup was started.')
     elif mode == 'arm':
         output, arm, connections, image_id, name = sys.argv[2:7]
-        settings = read(Path(output) / 'settings.json'); settings['connections'] = int(connections)
+        settings = read(Path(output) / 'settings.json')
+        partition = settings['source_partitions'][settings['connections'].index(int(connections))]
+        settings.update(partition)
+        settings['environment']['NATIVE_LOAD_SOURCES'] = str(partition['sources'])
+        settings['environment']['NATIVE_LOAD_SOURCE_OFFSET'] = str(partition['source_offset'])
+        settings['prior_unresolved_arms'] = [str(path.parent.name) for path in sorted(Path(output).glob('*-connections/summary.json'))
+                                             if read(path).get('source_reuse_safe') is not True]
+        settings['connections'] = int(connections)
         settings['image_id'] = image_id; settings['container_name'] = name
         settings['environment']['NATIVE_LOAD_CONNECTIONS'] = connections
         save(Path(arm) / 'runtime-settings.json', settings)
@@ -370,7 +443,7 @@ try:
     elif mode == 'announce':
         settings = read(Path(sys.argv[2]) / 'settings.json')
         print('Each setup: measurement={duration}s, warmup={warmup}s, ramp={ramp}s, drain limit={drain}s; '
-              'profile={profile}, generator budget={cpus} CPUs/{memory}, workers={workers}, signers={signers}; '
+              'profile={profile}, source policy={source_policy}, sources/setup={sources}; generator budget={cpus} CPUs/{memory}, workers={workers}, signers={signers}; '
               'global logical windows: initial={initial_cwnd}, max={max_cwnd}, inflight={inflight}; '
               'watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
     elif mode == 'owns':
@@ -388,6 +461,8 @@ try:
         try:
             settings = read(arm / 'runtime-settings.json'); summary['connections'] = settings['connections']
             summary['image_id'] = settings['image_id']
+            summary['source_partition'] = {key: settings[key] for key in ['source_policy', 'source_offset', 'sources']}
+            summary['prior_unresolved_arms'] = settings.get('prior_unresolved_arms', [])
             summary['load_settings'] = {key: settings[key] for key in
                 ['profile', 'workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}
             if forced: errors.append(forced)
@@ -433,7 +508,7 @@ try:
                 check(final.get(key) is True, key + ' is not true')
             for key in ['canonical_backlog', 'canonical_backlog_after_drain', 'canonical_total_backlog_after_drain',
                         'canonical_follower_errors', 'canonical_follower_retry_exhausted', 'canonical_hash_conflicts',
-                        'duplicate_nonce_conflicts', 'external_nonce_conflicts', 'retry_exhausted']:
+                        'duplicate_nonce_conflicts', 'external_nonce_conflicts']:
                 check(type(final.get(key)) is int and final[key] == 0, key + ' is not zero')
             for key in ['correctness_invalid_reasons', 'run_incomplete_reasons']:
                 check(final.get(key) == [], key + ' is not empty')
@@ -471,6 +546,7 @@ try:
             for field, counter, elapsed in [('offered_logical_tps', 'steady_offered', duration), ('admission_logical_tps', 'steady_mempool_accepted', duration), ('canonical_logical_tps', 'canonical_chain_measure_transfers', canonical_duration)]:
                 check(type(final.get(counter)) is int and math.isclose(rates[field], final[counter]/elapsed, rel_tol=1e-8, abs_tol=1e-8), 'measured rate/counter mismatch')
             summary['measured'] = dict(rates, offer_duration_s=duration, canonical_bucket_duration_s=canonical_duration)
+            check(type(final.get('retry_exhausted')) is int and final['retry_exhausted'] >= 0, 'invalid retry_exhausted counter')
             for key in ['ingress_capacity_valid', 'chain_capacity_valid']:
                 check(type(final.get(key)) is bool, 'missing capacity gate: ' + key)
             above = rates['offered_logical_tps'] > rates['canonical_logical_tps']
@@ -478,27 +554,50 @@ try:
             summary['offered_above_canonical'] = above
             summary['valid_run'] = not errors
             if summary['valid_run']:
-                summary['capacity_classification'] = 'generator_capacity_eligible' if above and final['ingress_capacity_valid'] and final['chain_capacity_valid'] else 'observation_only'
+                summary['capacity_classification'] = 'generator_capacity_eligible' if above and final['ingress_capacity_valid'] and final['chain_capacity_valid'] and not summary['prior_unresolved_arms'] and final.get('retry_exhausted') == 0 else 'observation_only'
+                observation_reasons = []
+                if summary['prior_unresolved_arms']:
+                    observation_reasons.append('prior_arm_source_cohorts_unresolved')
+                if final['retry_exhausted']:
+                    observation_reasons.append('recovered_retry_exhaustion')
+                if observation_reasons: summary['capacity_observation_reasons'] = observation_reasons
             summary['full_independent_capacity_claim_allowed'] = False
         except (ValueError, OSError, KeyError, TypeError, ArithmeticError, AttributeError) as error:
             errors.append(str(error))
+        # All proof/completion gates and exit code zero remain mandatory before
+        # reusing a source cohort. Retry exhaustion belongs to capacity validity:
+        # successful drain recovery can still produce a complete observation.
+        summary['source_reuse_safe'] = summary['valid_run']
+        summary['source_reuse_invalid_reasons'] = list(errors)
+        summary['container_stopped_verified'] = False
+        try:
+            check(not forced, 'runner was interrupted or failed externally')
+            check(container.get('Image') == settings['image_id']
+                  and container.get('Id') == (arm / 'container-id.txt').read_text().strip(),
+                  'container image/identity was not verified')
+            check(container.get('RestartCount') == 0 and state.get('Running') is False
+                  and container.get('HostConfig', {}).get('NetworkMode') == 'host',
+                  'owned workload is not verified stopped without restart')
+            summary['container_stopped_verified'] = True
+        except (ValueError, OSError, KeyError, TypeError, ArithmeticError, AttributeError, NameError):
+            pass
         if errors and summary.get('final') is not None:
             final = summary['final']
             summary['generator_diagnostics'] = {key: final[key] for key in [
                 'phase', 'drain_timed_out', 'canonical_backlog', 'canonical_backlog_after_drain',
                 'canonical_total_backlog_after_drain', 'canonical_follower_final_catchup_complete',
                 'canonical_follower_errors', 'canonical_hash_conflicts', 'retry_exhausted',
-                'retry_exhausted_sources', 'task_errors_by_reason', 'retries_by_reason', 'resigned',
+                'retry_exhausted_sources', 'task_errors_by_reason', 'not_ready_by_reason', 'retries_by_reason', 'resigned',
                 'native_signed_run_repair_messages', 'native_signed_run_repair_logical_transfers',
                 'native_signed_run_proof_resolutions', 'native_signed_run_messages',
                 'repair_offered', 'repair_accepted', 'active_tasks', 'ready', 'retry_wait', 'inflight']
                 if key in final}
         summary['finished_unix_s'] = time.time()
         save(arm / 'summary.json', summary)
-        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons', 'generator_diagnostics']}))
-        if errors:
+        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'source_partition', 'source_reuse_safe', 'valid_run', 'capacity_classification', 'capacity_observation_reasons', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons', 'generator_diagnostics']}))
+        if errors and not summary['source_reuse_safe']:
             print('Stopped before reusing source accounts. Inspect ' + str(arm / 'execution.json') + ', ' + str(arm / 'generator.log') + ' and ' + str(arm / 'generator.stderr.log') + '.', file=sys.stderr)
-        sys.exit(0 if summary['valid_run'] else 1)
+        sys.exit(0 if summary['valid_run'] else 4 if summary.get('container_stopped_verified') and settings.get('source_policy') == 'isolated' else 1)
     elif mode == 'suite':
         output = Path(sys.argv[2]); exit_code = int(sys.argv[3])
         settings = read(output / 'settings.json') if (output / 'settings.json').is_file() else {}
@@ -506,6 +605,7 @@ try:
         for path in sorted(output.glob('*-connections/summary.json')): arms.append(read(path))
         save(output / 'summary.json', {'schema': 'native-remote-sweep-v1', 'exit_code': exit_code,
              'completed': exit_code == 0 and len(arms) == len(settings.get('connections', [])) and bool(arms) and all(a['valid_run'] for a in arms),
+             'all_setups_attempted': bool(arms) and len(arms) == len(settings.get('connections', [])),
              'requested_connections': settings.get('connections'), 'arms': arms,
              'semantics': 'Capacity-only observation arms are retained. No remote validator cleanup, process identity or resource claims are inferred.'})
     else:
@@ -558,7 +658,7 @@ trap cleanup EXIT
 trap 'interrupt_reason=interrupted_SIGINT; exit 130' INT
 trap 'interrupt_reason=interrupted_SIGTERM; exit 143' TERM
 
-watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$profile" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
+watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$profile" "$source_policy" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
   cat "$output/preflight.stderr.log" >&2; exit 2;
 }
 # A remote Docker context would run the generator on the wrong server.
@@ -572,9 +672,22 @@ fi
 IFS= read -r image_reference <"$output/image-reference.txt"
 timeout 20 docker image inspect "$image_reference" >"$output/image-inspect.json" 2>"$output/image-inspect.stderr.log"
 image_id=$(helper image "$output")
+# Check the frozen binary before even the first low-count arm in a mixed sweep.
+# This short-lived help probe has no network or mounted account/config material.
+for count in "${connections[@]}"; do
+  if ((count > 256)); then
+    capability_status=0
+    timeout --kill-after=5 30 docker run --rm --pull never --network none \
+      --entrypoint /usr/local/bin/native-load-generator "$image_id" --help \
+      >"$output/native-load-generator-help.txt" 2>"$output/capability.stderr.log" || capability_status=$?
+    helper capability "$output" "$image_id" "$capability_status" || exit 2
+    break
+  fi
+done
 helper announce "$output"
 run_token="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 index=0
+suite_status=0
 for count in "${connections[@]}"; do
   ((index += 1))
   printf -v arm_name '%02d-%s-connections' "$index" "$count"
@@ -585,7 +698,7 @@ for count in "${connections[@]}"; do
   printf 'Running %s connections with %s; artifacts: %s\n' "$count" "$image_id" "$active_arm"
   timeout --kill-after=5 60 docker run -d --pull never --name "$active_container" \
     --label "io.ton.native-remote-owner=$active_container" \
-    --network host --cpus "$cpus" --memory "$memory" \
+    --network host --cpus "$cpus" --memory "$memory" --ulimit nofile=65536:65536 \
     --mount "type=bind,src=$client_data,dst=/client,readonly" \
     --env-file "$active_arm/runtime.env" \
     --entrypoint /usr/local/bin/run-native-load-generator \
@@ -616,6 +729,15 @@ for count in "${connections[@]}"; do
   fi
   capture_active
   active_container=
-  helper summarize "$active_arm" '' || exit 1
+  arm_status=0
+  helper summarize "$active_arm" '' || arm_status=$?
+  if ((arm_status != 0)); then
+    suite_status=1
+    case "$arm_status" in
+      4) printf 'Arm remains invalid; the next setup uses disjoint sources and is observation-only while prior cohorts are unresolved.\n' >&2 ;;
+      *) exit 1 ;;
+    esac
+  fi
   active_arm=
 done
+exit "$suite_status"

@@ -115,6 +115,12 @@ if args[:1] == ['exec']:
  if stdin: stdin=stdin.replace(b'/usr/share/data',str(root/'data').encode()).replace(b'/var/ton-work/db/native-spam/wallets',str(root/'data'/'test-wallets').encode())
  proc=subprocess.run([sys.executable,*tail[1:]],input=stdin)
  sys.exit(proc.returncode)
+if args[:1] == ['run'] and '--entrypoint' in args and args[args.index('--entrypoint')+1]=='/usr/local/bin/native-load-generator':
+ with (root/'capability-calls.jsonl').open('a') as out:out.write(json.dumps(args)+'\n')
+ if args[-1]!='--help' or '--mount' in args or '--env-file' in args or args[args.index('--network')+1]!='none':
+  raise SystemExit('unsafe capability probe arguments')
+ if scenario.get('capability_help_exit'):raise SystemExit(scenario['capability_help_exit'])
+ print(scenario.get('capability_help','  -c, --connections<arg>     persistent ADNL/TCP connections (1..1024)'));sys.exit()
 if args[:1] == ['run']:
  if scenario.get('run_name_collision'):sys.exit(125)
  def flag(k,default=None):
@@ -169,6 +175,7 @@ if args[:1] == ['logs']:
   final['chain_capacity_valid']=False
   final['invalid_reasons']=['offered_load_not_above_canonical_throughput']
  final.update(scenario.get('final_overrides',{}))
+ final.update(scenario.get('arm_final_overrides',{}).get(env['NATIVE_LOAD_CONNECTIONS'],{}))
  print(json.dumps(final));sys.exit()
 raise SystemExit('Unexpected fake docker command: '+repr(args))
 '''
@@ -655,6 +662,7 @@ class RemoteTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index('--network')+1],'host')
             self.assertEqual(cmd[cmd.index('--cpus')+1],'4')
             self.assertEqual(cmd[cmd.index('--memory')+1],'8g')
+            self.assertEqual(cmd[cmd.index('--ulimit')+1],'nofile=65536:65536')
             self.assertIn('readonly',cmd[cmd.index('--mount')+1])
         summary=json.loads((self.results/'summary.json').read_text())
         self.assertTrue(summary['completed'])
@@ -708,8 +716,8 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual((self.client/'remote-load.env').read_bytes(),original)
         settings=json.loads((self.results/'settings.json').read_text())
         self.assertEqual(settings['profile'],'server48')
-        self.assertEqual((settings['cpus'],settings['memory']),('32','32g'))
-        self.assertEqual((settings['workers'],settings['signers']),(8,24))
+        self.assertEqual((settings['cpus'],settings['memory']),('40','48g'))
+        self.assertEqual((settings['workers'],settings['signers']),(10,32))
         self.assertEqual((settings['initial_cwnd'],settings['max_cwnd'],settings['inflight']),
                          (32768,65536,262144))
         self.assertEqual(settings['environment']['NATIVE_LOAD_MAX_CANONICAL_BACKLOG'],'2097120')
@@ -717,13 +725,13 @@ class RemoteTests(unittest.TestCase):
         runs=json.loads((self.fake/'runs.json').read_text())
         self.assertEqual([int(run['env']['NATIVE_LOAD_CONNECTIONS']) for run in runs],[10,50,100])
         for run in runs:
-            self.assertEqual(run['env']['NATIVE_LOAD_WORKERS'],'8')
-            self.assertEqual(run['env']['NATIVE_LOAD_SIGNERS'],'24')
+            self.assertEqual(run['env']['NATIVE_LOAD_WORKERS'],'10')
+            self.assertEqual(run['env']['NATIVE_LOAD_SIGNERS'],'32')
             self.assertEqual(run['inspect']['Image'],IMAGE_ID)
         for command in [command for command in self.calls() if command[:1]==['run']]:
-            self.assertEqual(command[command.index('--cpus')+1],'32')
-            self.assertEqual(command[command.index('--memory')+1],'32g')
-        self.assertIn('profile=server48, generator budget=32 CPUs/32g, workers=8, signers=24',result.stdout)
+            self.assertEqual(command[command.index('--cpus')+1],'40')
+            self.assertEqual(command[command.index('--memory')+1],'48g')
+        self.assertIn('profile=server48, source policy=reuse, sources/setup=32; generator budget=40 CPUs/48g, workers=10, signers=32',result.stdout)
         self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
 
     def test_runner_explicit_overrides_win_over_server48_defaults(self):
@@ -785,8 +793,8 @@ class RemoteTests(unittest.TestCase):
                 self.results=self.root/('invalid-tuning-'+str(index))
                 result=self.run_load('--connections',10,*arguments,success=False)
                 self.assertIn(reason,result.stderr)
-        self.results=self.root/'unsupported-500-connections'
-        result=self.run_load('--connections',500,success=False)
+        self.results=self.root/'unsupported-1025-connections'
+        result=self.run_load('--connections',1025,success=False)
         self.assertIn('connections is out of range',result.stderr)
         self.assertFalse(any(c[:1]==['run'] for c in self.calls()))
 
@@ -955,6 +963,7 @@ class RemoteTests(unittest.TestCase):
                 self.scenario(container_exit=code,container_error='fixture runtime error',
                               final_overrides={reason_field:[reason], 'canonical_backlog_after_drain':32,
                                                'resigned':39, 'task_errors_by_reason':{'timeout':39},
+                                               'not_ready_by_reason':{'unspecified':7},
                                                'active_tasks':32, 'retry_wait':0})
                 result=self.run_load('--connections',10,50,100,success=False)
                 summary=json.loads((self.results/'01-10-connections/summary.json').read_text())
@@ -967,6 +976,7 @@ class RemoteTests(unittest.TestCase):
                 self.assertEqual(diagnostics['canonical_backlog_after_drain'],32)
                 self.assertEqual(diagnostics['resigned'],39)
                 self.assertEqual(diagnostics['task_errors_by_reason'],{'timeout':39})
+                self.assertEqual(diagnostics['not_ready_by_reason'],{'unspecified':7})
                 self.assertEqual(diagnostics['active_tasks'],32)
                 self.assertNotIn('native_signed_run_semantics',diagnostics)
                 self.assertIn('"generator_diagnostics":',result.stdout)
@@ -991,6 +1001,150 @@ class RemoteTests(unittest.TestCase):
                 self.assertFalse(summary['execution']['OOMKilled'])
                 self.assertFalse((self.results/'02-50-connections').exists())
                 self.assertTrue(any(c[:1]==['stop'] for c in self.calls()))
+
+    def test_runner_large_sweep_keeps_global_windows_and_file_descriptor_headroom(self):
+        self.prepare_runner()
+        self.run_load('--connections',300,500,1024,'--workers',10,'--signers',10)
+        runs=json.loads((self.fake/'runs.json').read_text())
+        self.assertEqual([int(run['env']['NATIVE_LOAD_CONNECTIONS']) for run in runs],[300,500,1024])
+        for run in runs:
+            self.assertEqual(run['env']['NATIVE_LOAD_INFLIGHT'],'262144')
+            self.assertEqual(run['env']['NATIVE_LOAD_ADAPTIVE_INITIAL_CWND'],'32768')
+            self.assertEqual(run['env']['NATIVE_LOAD_ADAPTIVE_MAX_CWND'],'65536')
+        for command in [command for command in self.calls() if command[:1]==['run'] and '--env-file' in command]:
+            self.assertEqual(command[command.index('--ulimit')+1],'nofile=65536:65536')
+        capability=json.loads((self.results/'connection-capability.json').read_text())
+        self.assertTrue(capability['supported'])
+        self.assertEqual(capability['advertised_max_connections'],1024)
+        self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
+
+    def test_runner_large_sweep_probes_frozen_image_without_network_or_wallets_before_all_arms(self):
+        self.prepare_runner()
+        self.run_load('--connections',50,500)
+        capabilities=[json.loads(line) for line in (self.fake/'capability-calls.jsonl').read_text().splitlines()]
+        self.assertEqual(len(capabilities),1)
+        probe=capabilities[0]
+        self.assertEqual(probe,['run','--rm','--pull','never','--network','none',
+                                '--entrypoint','/usr/local/bin/native-load-generator',IMAGE_ID,'--help'])
+        calls=self.calls()
+        workloads=[call for call in calls if call[:1]==['run'] and '--env-file' in call]
+        self.assertEqual(len(workloads),2)
+        self.assertLess(calls.index(probe),calls.index(workloads[0]))
+        capability=json.loads((self.results/'connection-capability.json').read_text())
+        self.assertEqual(capability['image_id'],IMAGE_ID)
+        self.assertEqual(capability['requested_max_connections'],500)
+        self.assertEqual(capability['probe_exit_code'],0)
+        self.assertEqual(capability['help_sha256'],sha((self.results/'native-load-generator-help.txt').read_bytes()))
+        self.assertTrue(capability['supported'])
+        self.assertFalse(capability['wallets_mounted'])
+
+    def test_runner_old_or_ambiguous_help_refuses_mixed_sweep_before_low_connection_arm(self):
+        self.prepare_runner()
+        cases=['  -c, --connections<arg>     persistent ADNL/TCP connections',
+               '  -c, --connections<arg>     persistent ADNL/TCP connections (1..256)',
+               '  --signed-run-size<arg>     another option (1..1024)',
+               '  --connections<arg>     client count (1..1024)\n  --connections<arg>     duplicate (1..1024)']
+        for index,help_text in enumerate(cases):
+            self.results=self.root/('old-help-'+str(index))
+            self.scenario(capability_help=help_text)
+            result=self.run_load('--connections',50,500,success=False)
+            self.assertIn('no load setup was started',result.stderr)
+            capability=json.loads((self.results/'connection-capability.json').read_text())
+            self.assertFalse(capability['supported'])
+            self.assertEqual(capability['probe_exit_code'],0)
+            self.assertFalse((self.results/'01-50-connections').exists())
+        self.assertFalse((self.fake/'runs.json').exists())
+        self.assertFalse(any(call[:1]==['run'] and '--env-file' in call for call in self.calls()))
+
+    def test_runner_failed_help_probe_is_recorded_and_starts_no_workload(self):
+        self.prepare_runner()
+        self.scenario(capability_help_exit=125)
+        self.run_load('--connections',10,300,success=False)
+        capability=json.loads((self.results/'connection-capability.json').read_text())
+        self.assertFalse(capability['supported'])
+        self.assertEqual(capability['probe_exit_code'],125)
+        self.assertIsNone(capability['advertised_max_connections'])
+        self.assertTrue((self.results/'capability.stderr.log').is_file())
+        self.assertFalse((self.fake/'runs.json').exists())
+
+    def test_runner_inflight_must_cover_every_connection(self):
+        self.prepare_runner()
+        envfile=self.client/'remote-load.env'
+        envfile.write_text(envfile.read_text().replace('NATIVE_LOAD_INFLIGHT=262144','NATIVE_LOAD_INFLIGHT=500'))
+        result=self.run_load('--connections',1024,success=False)
+        self.assertIn('NATIVE_LOAD_INFLIGHT is out of range',result.stderr)
+        self.assertFalse(any(command[:1]==['run'] for command in self.calls()))
+
+    def test_runner_recovered_retry_exhaustion_is_observation_and_continues_same_sources(self):
+        self.prepare_runner()
+        self.scenario(arm_final_overrides={'50':{'retry_exhausted':2,'retry_exhausted_sources':2,
+                      'ingress_capacity_valid':False,'chain_capacity_valid':False,
+                      'ingress_capacity_invalid_reasons':['retry_exhausted'],
+                      'chain_capacity_invalid_reasons':['retry_exhausted']}})
+        self.run_load('--connections',10,50,100)
+        summary=json.loads((self.results/'summary.json').read_text())
+        self.assertTrue(summary['completed'])
+        self.assertTrue(summary['all_setups_attempted'])
+        arm=summary['arms'][1]
+        self.assertTrue(arm['valid_run'])
+        self.assertTrue(arm['source_reuse_safe'])
+        self.assertEqual(arm['capacity_classification'],'observation_only')
+        self.assertEqual(arm['capacity_observation_reasons'],['recovered_retry_exhaustion'])
+        self.assertEqual(summary['arms'][2]['capacity_classification'],'generator_capacity_eligible')
+        self.assertTrue(all(arm['source_partition']['source_offset']==SOURCE_OFFSET for arm in summary['arms']))
+
+    def test_runner_isolated_failure_continues_disjoint_balanced_sources_as_observation(self):
+        self.prepare_runner()
+        self.scenario(container_exit=2,failed_connections=50,arm_final_overrides={'50':{
+            'benchmark_result_valid':False,'canonical_backlog':32,'canonical_backlog_after_drain':32,
+            'canonical_total_backlog_after_drain':32,'run_incomplete_reasons':['canonical_cohorts_incomplete']}})
+        result=self.run_load('--source-policy','isolated','--connections',10,50,100,success=False)
+        summary=json.loads((self.results/'summary.json').read_text())
+        self.assertFalse(summary['completed'])
+        self.assertTrue(summary['all_setups_attempted'])
+        self.assertEqual(summary['exit_code'],1)
+        self.assertEqual(len(summary['arms']),3)
+        ranges=[arm['source_partition'] for arm in summary['arms']]
+        self.assertEqual([partition['source_offset'] for partition in ranges],[SOURCE_OFFSET,SOURCE_OFFSET+8,SOURCE_OFFSET+16])
+        self.assertEqual([partition['sources'] for partition in ranges],[8,8,8])
+        self.assertTrue(all(partition['source_policy']=='isolated' for partition in ranges))
+        self.assertFalse(summary['arms'][1]['source_reuse_safe'])
+        self.assertTrue(summary['arms'][2]['valid_run'])
+        self.assertEqual(summary['arms'][2]['capacity_classification'],'observation_only')
+        self.assertEqual(summary['arms'][2]['prior_unresolved_arms'],['02-50-connections'])
+        self.assertEqual(summary['arms'][2]['capacity_observation_reasons'],['prior_arm_source_cohorts_unresolved'])
+        self.assertIn('next setup uses disjoint sources',result.stderr)
+        runs=json.loads((self.fake/'runs.json').read_text())
+        for run,partition in zip(runs,ranges):
+            self.assertEqual(int(run['env']['NATIVE_LOAD_SOURCE_OFFSET']),partition['source_offset'])
+            self.assertEqual(int(run['env']['NATIVE_LOAD_SOURCES']),partition['sources'])
+        original=(self.results/'remote-load.env').read_text()
+        self.assertIn('NATIVE_LOAD_SOURCES='+str(SOURCES),original)
+
+    def test_runner_isolated_policy_refuses_unbalanced_manifest_before_launch(self):
+        self.prepare_runner()
+        manifest=self.client/'client-data/wallets/native-payment-lanes.manifest'
+        lines=manifest.read_text().splitlines()
+        for index,line in enumerate(lines):
+            fields=line.split()
+            if fields[0]==str(SOURCE_OFFSET):
+                fields[1]=str((int(fields[1])+1)%4)
+                lines[index]=' '.join(fields)
+        manifest.write_text('\n'.join(lines)+'\n')
+        result=self.run_load('--source-policy','isolated','--connections',10,50,100,success=False)
+        self.assertIn('manifest sources are not in balanced lane order',result.stderr)
+        self.assertFalse(any(command[:1]==['run'] for command in self.calls()))
+
+    def test_runner_isolated_policy_requires_enough_sources_for_lanes_and_workers(self):
+        self.prepare_runner()
+        envfile=self.client/'remote-load.env'
+        original=envfile.read_text()
+        for total,error in [(8,'complete lane set'),(12,'NATIVE_LOAD_SOURCES is out of range')]:
+            self.results=self.root/('isolated-small-'+str(total))
+            envfile.write_text(re.sub(r'NATIVE_LOAD_SOURCES=[0-9]+','NATIVE_LOAD_SOURCES='+str(total),original))
+            result=self.run_load('--source-policy','isolated','--connections',10,50,100,success=False)
+            self.assertIn(error,result.stderr)
+        self.assertFalse(any(command[:1]==['run'] for command in self.calls()))
 
     def test_runner_existing_output_is_never_overwritten(self):
         self.prepare_runner()
