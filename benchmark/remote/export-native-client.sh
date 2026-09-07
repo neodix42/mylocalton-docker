@@ -64,8 +64,8 @@ def parse_args():
     parser = argparse.ArgumentParser(
         prog='export-native-client.sh',
         description='Export one validator\'s selected funded native client wallets and a generator image for server B. '
-                    'With no arguments, prompt interactively. Resolve the image from Compose and build it locally '
-                    'only if missing, unless an image/build option overrides this. Never start services or submit traffic.')
+                    'With no arguments, prompt interactively. Pull the current published TON base and build the configured '
+                    'client from its digest; explicit image/reuse options skip preparation. Never start services or submit traffic.')
     parser.add_argument('--server-ip', help='IPv4 address reachable from B (a public/LAN address or tunnel endpoint)')
     parser.add_argument('--port', help='published liteserver TCP port (default: 40004)')
     parser.add_argument('--container', help='existing running source container (default: genesis)')
@@ -77,9 +77,9 @@ def parse_args():
                         help='Compose environment file (default: repository/.env; relative paths use the current directory)')
     build_group = parser.add_mutually_exclusive_group()
     build_group.add_argument('--build-image', action='store_true',
-                             help='force a local build of the configured generator service; incompatible with --image')
+                             help='prepare the configured client from the registry (the default); incompatible with --image')
     build_group.add_argument('--no-build-image', action='store_true',
-                             help='require the configured image to exist locally; never build it')
+                             help='strict reuse of the configured local image; never pull or build')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--include-image', dest='include_image', action='store_true', default=None,
                        help='include generator-image.tar (default)')
@@ -188,9 +188,8 @@ def compose_configuration(args):
     command = ['docker', 'compose', '--project-directory', str(REPO_DIR), '--env-file', str(args.env_file),
                '-f', str(compose_file), '--profile', 'native-load-generator']
     environment = os.environ.copy()
-    # Preserve normal Compose interpolation, but prefer a cached TON base when
-    # building. Docker may still obtain a base that is absent.
-    environment['TON_BUILD_PULL'] = 'false'
+    # Use the same image names as the deployment. Registry preparation below
+    # resolves and pins the TON base before any client build.
     try:
         result = subprocess.run([*command, 'config', '--format', 'json'], env=environment,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=True)
@@ -229,32 +228,48 @@ def require_local_docker():
             'image builds require a local Unix Docker endpoint; select a local context or use --image with a prebuilt image')
 
 
-def prepare_image(args):
+def prepare_image(args, source_image_id):
     if args.image is not None:
         image = image_metadata(args.image, allow_missing=True)
         require(image is not None, 'explicit --image is missing locally; build or load that exact image separately, '
-                'or omit --image to prepare the generator image configured in --env-file')
+                'or omit --image to prepare the generator from the published TON base')
         print('Using explicit local generator image: ' + args.image, flush=True)
         return image
-    reference, command, environment = compose_configuration(args)
+    reference, _, _ = compose_configuration(args)
     image = image_metadata(reference, allow_missing=True)
     if args.no_build_image:
-        require(image is not None, 'configured generator image is missing locally and --no-build-image forbids building; '
-                'load the exact image or rerun without --no-build-image')
-    if args.build_image or (image is None and not args.no_build_image):
-        require_local_docker()
-        print('Building only native-load-generator with TON_BUILD_PULL=false; no services will be started. '
-              'Docker may obtain a missing TON base image.', flush=True)
+        require(image is not None, 'configured generator image is missing locally and --no-build-image forbids preparation; '
+                'rerun without --no-build-image to fetch the published TON base and build the client')
+        print('Strict reuse of generator image ID: ' + image['id'], flush=True)
+        return image
+    require_local_docker()
+    source = docker_json(['image', 'inspect', source_image_id])
+    labels = source.get('Config', {}).get('Labels') or {}
+    revision = labels.get('org.opencontainers.image.revision')
+    require(isinstance(revision, str) and re.fullmatch(r'[0-9a-f]{40}', revision),
+            'running genesis lacks a full TON source revision; use start-native-genesis.sh before exporting')
+    helper = REPO_DIR / 'prepare-native-images.sh'
+    require(helper.is_file() and not helper.is_symlink(), 'prepare-native-images.sh is missing; update the MyLocalTonDocker checkout')
+    print('Preparing the client from the published TON image, matching the running genesis revision.', flush=True)
+    with tempfile.TemporaryDirectory(prefix='native-export-images-') as temporary:
+        receipt_path = Path(temporary) / 'images.json'
         try:
-            # Inherit build output for operator diagnostics, without printing
-            # the resolved Compose JSON or unrelated environment values.
-            subprocess.run([*command, 'build', 'native-load-generator'], env=environment, check=True, timeout=3600)
+            subprocess.run(['bash', str(helper), '--env-file', str(args.env_file),
+                            '--services', 'native-load-generator', '--receipt', str(receipt_path),
+                            '--expected-revision', revision], check=True, timeout=7200)
         except (OSError, subprocess.SubprocessError) as exc:
-            raise ExportError('generator image build failed; inspect the build output and verify the configured TON base '
-                              'is cached locally or accessible from its registry, then rerun. '
-                              'Alternatively, load a compatible prebuilt generator and select --image.') from exc
+            raise ExportError('registry client preparation failed; resolve the error above before exporting. '
+                              'If master advanced, run start-native-genesis.sh before export so both services match.') from exc
+        require(receipt_path.is_file() and receipt_path.stat().st_size <= 1024 * 1024,
+                'client preparation did not produce a valid receipt')
+        receipt = json.loads(receipt_path.read_text())
+        require(receipt.get('schema') == 'native-images-v1', 'unexpected client image receipt schema')
+        prepared = receipt.get('services', {}).get('native-load-generator', {})
+        require(receipt.get('base', {}).get('revision') == revision and prepared.get('revision') == revision,
+                'prepared client source revision differs from the running genesis')
         image = image_metadata(reference)
-    require(image is not None, 'configured generator image was not prepared')
+        require(prepared.get('reference') == reference and prepared.get('id') == image['id'],
+                'prepared client image differs from the configured image')
     print('Frozen generator image ID: ' + image['id'], flush=True)
     return image
 
@@ -473,7 +488,7 @@ def main():
     required = {name: SCRIPT_DIR / name for name in ('native-remote-load.env', 'import-native-client.sh', 'run-remote-load.sh')}
     for name, path in required.items():
         require(path.is_file() and not path.is_symlink(), 'export helper/preset is missing: ' + name)
-    image = prepare_image(args)
+    image = prepare_image(args, before['image_id'])
     require(container_identity(args.container) == before, 'source container changed during image preparation; retry after it is stable')
     _, prepared_config_hash = read_global_config(args.container)
     require(prepared_config_hash == original_config_hash, 'source global config changed during image preparation')

@@ -27,10 +27,10 @@ wget https://raw.githubusercontent.com/neodix42/mylocalton-docker/refs/heads/mai
 
 Modify `.env` file as per your requirements (see below
 and [wiki](https://github.com/neodix42/mylocalton-docker/wiki/Genesis-setup-parameters)).
-By default, MyLocalTon uses official [TON](https://github.com/ton-blockchain/ton) image with the `latest` tag (based on
-`master` branch).
-
-You can change it by setting TON_BRANCH in .env file. For example to `testnet`.
+This native sidechain checkout defaults to `ghcr.io/corton-nommander/ton:master`.
+`TON_BRANCH` selects a published image tag; the downloaded upstream files above
+have their own defaults. For this fork's native validator, use the complete
+checkout and the registry startup flow below.
 
 ```bash
 docker compose up -d
@@ -98,12 +98,31 @@ message outcomes, and collation/validation timings and throughput.
 
 ### Native load from a separate server
 
-Use the [remote client scripts](benchmark/remote/README.md) to export the public
-liteserver config, selected funded test accounts, client preset and prebuilt
-generator from server A. The export includes `import-native-client.sh` and
-`run-remote-load.sh`; copy the whole directory to B, import it, then run
-`bash run-remote-load.sh --connections 10 50 100`. The scripts preserve image
-identity and retain per-arm evidence without starting a validator on B.
+After configuring `.env` for server A, use the registry startup helper:
+
+```bash
+bash start-native-genesis.sh --env-file .env
+```
+
+It pulls the latest successfully published TON `master` image from GHCR, pins
+its digest and source revision, builds both local wrappers, then starts only
+genesis. It may recreate genesis when the prepared image changes and preserves
+its configured database volumes. Run it before measuring TPS. A running or
+failed GitHub build has not advanced the published image. Use
+`bash prepare-native-images.sh --env-file .env` to prepare images without
+starting containers; `.native-images.json` records their identities.
+
+Once genesis is healthy and blocks advance, follow the
+[remote client scripts](benchmark/remote/README.md) to pull/start Session Stats
+and export the public liteserver config, selected funded test accounts,
+client preset and generator from A. Export refreshes the client from the
+registry by default and requires its TON revision to match running genesis.
+The export includes `import-native-client.sh` and `run-remote-load.sh`; copy
+the whole directory to B, import it, then run
+`bash run-remote-load.sh --connections 10 50 100`. B loads the included image
+and keeps one immutable ID across the sweep. It needs no validator, repository
+clone or registry pull. Portable CI images need new measurements on A/B;
+historical desktop TPS does not establish this deployment's throughput.
 
 ### Native high-rate load
 
@@ -427,8 +446,10 @@ capacity.
 For a 24-vCPU/128-GB/2-TB physical desktop, use the tracked `.env.physical`
 profile. It keeps every published management endpoint on loopback, assigns
 whole SMT core pairs to the validator and generator, and leaves native spam
-disabled until its profile is started explicitly. First build the matching TON
-source checkout as the local tag selected by `.env.physical`:
+disabled until its profile is started explicitly. The current profile follows
+the published `master` image through `start-native-genesis.sh`. The following
+optional host-tuned source build describes the separate historical desktop
+benchmark path; it is not required to deploy server A from GHCR:
 
 ```bash
 cd ../corton-nommander-ton-sidechain
@@ -442,12 +463,15 @@ docker build \
   -t ghcr.io/corton-nommander/ton:max-tps-native .
 ```
 
-Then return to this repository and run the controlled benchmark baseline and
-telemetry collection with exactly:
+For that optional local source benchmark, return to this repository and
+explicitly select its local tag. These overrides do not change the tracked
+registry defaults:
 
 ```bash
 cd ../MyLocalTonDocker
-sudo ./run-native-benchmark.sh .env.physical
+sudo env TON_BRANCH=max-tps-native \
+  NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:max-tps-native \
+  TON_BUILD_PULL=false ./run-native-benchmark.sh .env.physical
 ```
 
 Docker Desktop CPU, memory, and virtual-disk allocations are outside Compose;
@@ -676,14 +700,17 @@ timeouts, the native collation queue limit, and native mempool TTL are validator
 runtime settings. The wrapper reconciles the validator container so these
 values take effect, but does not delete or regenerate zero-state volumes.
 
-`.env.physical` selects the `max-tps-native` tag and sets
-`TON_BUILD_PULL=false`, so derived-image builds use that exact local base rather
-than trying to replace it from a registry. The wrapper checks that the local
-base exists, rebuilds the derived genesis image before deciding whether a
-running validator can be reused, and rejects an older image that lacks the
-saturation-generator CLI. For final published numbers, also push and pin an
-immutable digest. Larger build hosts may raise `NINJA_JOBS` from the desktop's
-20-job baseline.
+`.env.physical` now selects `TON_BRANCH=master` and
+`TON_BUILD_PULL=true`. The operator startup helper always refreshes the
+published registry base, pins its digest, and locally builds matching genesis
+and generator wrappers. The standalone preparation helper never starts
+containers. Export normally refreshes only the client and refuses a TON
+revision different from running genesis; explicit `--no-build-image` or
+`--image` export options preserve a previously prepared local benchmark.
+Keep every image fixed during paired measurements and retain the preparation
+receipt and run metadata. The earlier `max-tps-native` examples are explicit
+host-tuned benchmark overrides, not the deployment default. Larger local build
+hosts may raise `NINJA_JOBS` from the historical desktop's 20-job baseline.
 
 `assembly/native/build-ubuntu-shared.sh -t` remains useful for a direct host
 build/test, but the container benchmark consumes the Docker image above.

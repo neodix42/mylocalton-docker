@@ -24,6 +24,10 @@ IMAGE_ID = 'sha256:' + 'a' * 64
 IMAGE_REF = 'native-client:offline-fixture'
 CONFIGURED_IMAGE_REF = 'native-client:compose-fixture'
 BUILT_IMAGE_ID = 'sha256:' + 'e' * 64
+BASE_REFERENCE = 'ghcr.io/corton-nommander/ton:master'
+BASE_DIGEST = 'ghcr.io/corton-nommander/ton@sha256:' + '9' * 64
+BASE_IMAGE_ID = 'sha256:' + '8' * 64
+SOURCE_REVISION = 'c' * 40
 SOURCE_OFFSET, SOURCES, ALL_SOURCES = 4, 12, 24
 
 FAKE_DOCKER = r'''#!/usr/bin/env python3
@@ -34,13 +38,25 @@ with (root/'calls.jsonl').open('a') as out: out.write(json.dumps(args)+'\n')
 scenario = json.loads((root/'scenario.json').read_text())
 image_id = 'sha256:' + ('b' if scenario.get('wrong_image') else ('e' if scenario.get('build_new_id') and (root/'built').exists() else 'a'))*64
 configured_image='native-client:compose-fixture'
+base_reference='ghcr.io/corton-nommander/ton:master'
+base_digest='ghcr.io/corton-nommander/ton@sha256:'+'9'*64
+base_id='sha256:'+'8'*64
+revision='c'*40
+if args[:1]==['pull']:
+ if scenario.get('pull_fails'):raise SystemExit('synthetic registry pull failure')
+ (root/'pulled').touch();print('Digest: '+base_digest.split('@',1)[1]);sys.exit()
 if args[:1]==['compose']:
- with (root/'compose-environment.jsonl').open('a') as out:out.write(json.dumps({'command':args,'TON_BUILD_PULL':os.environ.get('TON_BUILD_PULL')})+'\n')
+ with (root/'compose-environment.jsonl').open('a') as out:out.write(json.dumps({'command':args,'TON_BUILD_PULL':os.environ.get('TON_BUILD_PULL'),'TON_BASE_IMAGE':os.environ.get('TON_BASE_IMAGE')})+'\n')
  if 'config' in args:
-  print(json.dumps({'services':{'genesis':{'image':'validator:do-not-build'},'native-load-generator':{'image':configured_image}}}));sys.exit()
+  build_args={'TON_IMAGE':'ghcr.io/corton-nommander/ton','TON_BRANCH':'master','TON_BASE_IMAGE':os.environ.get('TON_BASE_IMAGE',base_reference)}
+  services={'genesis':{'image':'validator:compose-fixture','build':{'args':dict(build_args)}},'native-load-generator':{'image':configured_image,'build':{'args':dict(build_args)}}}
+  if scenario.get('different_service_base'):services['native-load-generator']['build']['args']['TON_IMAGE']='ghcr.io/other/ton'
+  print(json.dumps({'services':services}));sys.exit()
  if 'build' in args:
   if scenario.get('build_fails'):raise SystemExit('synthetic generator build failure')
-  (root/'built').touch();print('offline generator build complete');sys.exit()
+  (root/'built').touch();(root/'built-services.json').write_text(json.dumps([x for x in args[args.index('build')+1:] if x in ('genesis','native-load-generator')]))
+  print('offline generator build complete');sys.exit()
+ if 'up' in args:print('offline genesis start');sys.exit()
  raise SystemExit('unexpected Compose action: '+repr(args))
 image = {'Id':image_id,'Architecture':'amd64','Os':'linux','Config':{'Labels':{'org.opencontainers.image.revision':'c'*40}}}
 if args[:2] == ['image','inspect'] or args[:1] == ['inspect']:
@@ -48,6 +64,13 @@ if args[:2] == ['image','inspect'] or args[:1] == ['inspect']:
   if scenario.get('image_inspect_error'):raise SystemExit('permission denied accessing Docker daemon')
   if scenario.get('missing_image') or (scenario.get('image_missing_before_load') and not (root/'loaded').exists()):raise SystemExit('Error response from daemon: No such image: '+args[-1])
   if args[-1]==configured_image and scenario.get('missing_configured_image') and not (root/'built').exists():raise SystemExit('Error response from daemon: No such image: '+args[-1])
+  if args[-1].startswith('sha256:') and not scenario.get('wrong_image'):image['Id']=args[-1]
+  if args[-1] in (base_reference,base_digest):
+   image={'Id':base_id,'Architecture':'amd64','Os':'linux','RepoDigests':[base_digest],'Config':{'Labels':{'org.opencontainers.image.revision':scenario.get('base_revision',revision)}}}
+   if scenario.get('missing_base_digest'):image['RepoDigests']=[]
+   if scenario.get('base_digest_identity_mismatch') and args[-1]==base_digest:image['Id']='sha256:'+'7'*64
+  elif args[-1] in (configured_image,'validator:compose-fixture') and (root/'built').exists():
+   image['Config']['Labels']['org.opencontainers.image.revision']=scenario.get('derived_revision',revision)
   print(json.dumps([image])); sys.exit()
  container = {'Id':'d'*64,'Name':'/fixture-genesis','Image':'sha256:'+'a'*64,'RestartCount':0,
   'State':{'Running':True,'ExitCode':0,'StartedAt':'2026-09-07T00:00:00Z'},
@@ -72,6 +95,8 @@ if args[:2] == ['image','load'] or args[:1] == ['load']:
  (root/'loaded').touch();print('Loaded image: native-client:offline-fixture'); sys.exit()
 if args[:1] == ['info']:
  print('linux'); sys.exit()
+if args[:2] == ['context','show']:
+ print('default');sys.exit()
 if args[:2] == ['context','inspect']:
  print('tcp://remote.invalid:2375' if scenario.get('remote_context') else 'unix:///var/run/docker.sock'); sys.exit()
 if args[:1] == ['version']:
@@ -184,7 +209,9 @@ class RemoteTests(unittest.TestCase):
             shutil.copy2(REMOTE/name,self.fixture_remote/name)
         (self.fixture_repo/'docker-compose.yaml').write_text('services:\n  native-load-generator:\n    image: '+CONFIGURED_IMAGE_REF+'\n')
         (self.fixture_repo/'.env.physical').write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\n')
-        (self.fixture_repo/'.env').write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\n')
+        (self.fixture_repo/'.env').write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\nTON_IMAGE=ghcr.io/corton-nommander/ton\nTON_BRANCH=master\n')
+        for name in ['prepare-native-images.sh','start-native-genesis.sh']:
+            if (ROOT/name).is_file():shutil.copy2(ROOT/name,self.fixture_repo/name)
 
     def scenario(self, **settings):
         (self.fake/'scenario.json').write_text(json.dumps(settings))
@@ -273,12 +300,17 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(builds[0][-1],'native-load-generator')
         environments=[json.loads(line) for line in (self.fake/'compose-environment.jsonl').read_text().splitlines()]
         self.assertTrue(environments)
-        self.assertTrue(all(row['TON_BUILD_PULL']=='false' for row in environments))
+        builds_environment=[row for row in environments if 'build' in row['command']]
+        self.assertTrue(all(row['TON_BUILD_PULL']=='true' and row['TON_BASE_IMAGE']==BASE_DIGEST for row in builds_environment))
+        self.assertEqual(builds[0][builds[0].index('--build-arg')+1],'TON_BASE_IMAGE='+BASE_DIGEST)
+        pulls=[call for call in self.calls() if call[:1]==['pull']]
+        self.assertEqual(pulls,[['pull',BASE_REFERENCE]])
+        self.assertLess(self.calls().index(pulls[0]),self.calls().index(builds[0]))
         for call in self.calls():
-            self.assertFalse(any(token in call for token in ['up','restart','start','run','stop','kill','pull']))
+            self.assertFalse(any(token in call for token in ['up','restart','start','run','stop','kill']))
             if call[:1]==['compose']:
                 self.assertEqual(call[call.index('--project-directory')+1],str(self.fixture_repo))
-                self.assertEqual(call[call.index('-f')+1],str(self.fixture_repo/'docker-compose.yaml'))
+                if '-f' in call:self.assertEqual(call[call.index('-f')+1],str(self.fixture_repo/'docker-compose.yaml'))
                 self.assertEqual(call[call.index('--profile')+1],'native-load-generator')
                 self.assertNotIn('genesis',call)
 
@@ -292,21 +324,22 @@ class RemoteTests(unittest.TestCase):
         manifest['files'][name]={'sha256':sha(data),'size':len(data)}
         path.write_text(json.dumps(manifest))
 
-    def test_detected_configured_image_is_reused_without_build(self):
+    def test_detected_existing_image_is_refreshed_from_registry(self):
+        self.scenario(build_new_id=True)
         self.export_detected_image()
         manifest=json.loads((self.bundle/'export-manifest.json').read_text())
         self.assertEqual(manifest['image']['reference'],CONFIGURED_IMAGE_REF)
-        self.assertEqual(manifest['image']['id'],IMAGE_ID)
+        self.assertEqual(manifest['image']['id'],BUILT_IMAGE_ID)
         configs=self.compose_calls('config')
         self.assertTrue(configs)
         for call in configs:
             self.assertEqual(call[call.index('--project-directory')+1],str(self.fixture_repo))
-            self.assertEqual(call[call.index('-f')+1],str(self.fixture_repo/'docker-compose.yaml'))
+            if '-f' in call:self.assertEqual(call[call.index('-f')+1],str(self.fixture_repo/'docker-compose.yaml'))
             self.assertEqual(call[call.index('--profile')+1],'native-load-generator')
             self.assertEqual(call[call.index('--format')+1],'json')
             self.assertTrue(Path(call[call.index('--env-file')+1]).is_absolute())
-        self.assertEqual(self.compose_calls('build'),[])
-        self.assertFalse(any(call[:1] in (['run'],['pull'],['build']) for call in self.calls()))
+        self.assert_only_generator_builds()
+        self.assertFalse(any(call[:1] in (['run'],['build']) for call in self.calls()))
 
     def test_missing_configured_image_builds_generator_only_and_exports_new_identity(self):
         self.scenario(missing_configured_image=True,build_new_id=True)

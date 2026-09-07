@@ -2,6 +2,38 @@
 
 Server A runs the prepared native validator and liteserver. Server B runs only the persistent ADNL/TCP generator. These three Bash scripts package the public config, selected funded test accounts, preset and prebuilt image so B does not need a validator or repository clone.
 
+## Prepare and start A
+
+Use the updated MyLocalTonDocker `native-payment-lanes-step6` checkout. For a fresh deployment, start from `.env.physical` and adjust `.env` for A's CPU layout, database path and public liteserver/dashboard bindings. Preserve an existing deployment's project name, database settings and native genesis configuration. Replace old `cycle-clients-*` image entries with:
+
+```dotenv
+TON_IMAGE=ghcr.io/corton-nommander/ton
+TON_BRANCH=master
+NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:master
+TON_BUILD_PULL=true
+SESSION_STATS_IMAGE=ghcr.io/neodix42/ton-session-stats:side
+```
+
+The Git branch selects MyLocalTonDocker's scripts; `TON_BRANCH` selects the published TON image tag. From this checkout, launch A with:
+
+```sh
+bash start-native-genesis.sh --env-file .env
+```
+
+The launcher pulls `ghcr.io/corton-nommander/ton:master` directly from GHCR, resolves its immutable digest and source revision, builds both local genesis and client wrappers from that digest, then starts only genesis. It writes `.native-images.json` with the base and derived image identities. It stops on pull/build/provenance failures. The wrappers do not compile TON, and no desktop image transfer is needed.
+
+`master` is the latest successfully published master revision, which can lag a running or failed [TON image workflow](https://github.com/corton-nommander/ton/actions/workflows/docker-ubuntu-branch-image.yml). Running the launcher again refreshes this registry version and may recreate genesis through normal Compose startup, preserving existing volumes. Complete startup before a benchmark; do not refresh images during the sweep. The portable CI image must be measured on A/B; historical desktop TPS is not a measurement of this deployment.
+
+To prepare both images without starting containers, use `bash prepare-native-images.sh --env-file .env`. A plain `docker compose up --no-build --pull never genesis` only reuses images already local.
+
+Once genesis is healthy and blocks advance, pull and start the dashboard:
+
+```sh
+docker compose --env-file .env --profile session-stats pull session-stats
+docker compose --env-file .env --profile session-stats \
+  up -d --no-deps --no-build --pull never session-stats
+```
+
 ## Export on A
 
 From the MyLocalTonDocker checkout:
@@ -12,17 +44,7 @@ bash benchmark/remote/export-native-client.sh
 
 The prompts collect A's reachable IPv4/port, the existing validator container, source count/offset, a new output directory and whether to include the image archive. Defaults are genesis, port 40004 and 24,576 sources starting at zero. The image archive is included by default. The validator must already have native runs and its fixed-depth lane topology initialized.
 
-The exporter automatically selects Compose's resolved `native-load-generator` image from this checkout's `.env`: `NATIVE_LOAD_IMAGE`, falling back to `mylocalton-native-load-generator:${TON_BRANCH:-latest}`. It builds that service locally if its image is missing and reuses an existing image. This is the client image, separate from the genesis image; both builds use `TON_IMAGE:TON_BRANCH`. The Git branch selects scripts, while `TON_BRANCH` selects the TON image tag. Keep those settings consistent with the running chain.
-
-For a fresh A, configure `.env` from the physical profile, make the matching TON base available, then prepare images **before** starting genesis:
-
-```sh
-TON_BUILD_PULL=false docker compose --env-file .env \
-  --profile native-load-generator build genesis native-load-generator
-docker compose --env-file .env --profile session-stats pull session-stats
-```
-
-These commands build/download images without starting containers. The derived Dockerfiles copy wrappers; they do not compile TON binaries. The recorded `cycle-clients-ed666c9a` TON base was local: if unpublished, load its archive or build the matching sidechain source first. Docker can fetch a missing base even with `TON_BUILD_PULL=false`. Once prepared, use `up -d --no-build --pull never genesis`, wait for healthy/advancing blocks, then `--profile session-stats up -d --no-deps --no-build --pull never session-stats`, both with `docker compose --env-file .env`. Skip preparation for images already loaded. For an already-running genesis, build only `native-load-generator` if necessary; no genesis recreation is needed.
+The exporter selects Compose's resolved `native-load-generator` image from this checkout's `.env`: `NATIVE_LOAD_IMAGE`, falling back to `mylocalton-native-load-generator:${TON_BRANCH:-master}`. By default it invokes `prepare-native-images.sh` to pull the configured current TON base and build only the client from its immutable digest. The pulled revision must match the running genesis image; if master has advanced, export stops before building and directs you to run `start-native-genesis.sh`, wait for healthy/advancing blocks, then export again. Export never restarts genesis or starts traffic.
 
 For automation, replace the example IP:
 
@@ -39,7 +61,7 @@ The private output directory contains `external.global.config.json`, `test-walle
 scp -r "$HOME/native-client-export" user@SERVER_B:~/
 ```
 
-Use `--env-file /path/to/deployment.env` for another Compose environment. `--build-image` forces a local client build after wrapper changes; `--no-build-image` requires the configured image already present. `--image PREBUILT_IMAGE` bypasses automatic selection and requires that explicit image locally. Automatic builds set `TON_BUILD_PULL=false` and build only the client service, before export and timing. The resulting image is frozen by immutable ID across B's sweep.
+Use `--env-file /path/to/deployment.env` for another Compose environment. `--build-image` explicitly selects the default registry preparation. For an already prepared benchmark, `--no-build-image` opts into strict reuse of the configured local image and skips pulls/builds; `--image PREBUILT_IMAGE` also bypasses preparation and requires that explicit image locally. Ordinary deployment/export refreshes from the registry. Complete preparation before timing, then keep the exported image frozen by immutable ID across B's entire sweep.
 
 `--no-image` omits the large image archive when B already has the exact image. A still needs the selected image locally so the exporter can pin its immutable ID. Only the exported config's liteserver IP/port changes; its key and zero-state hashes are preserved. The wallet archive contains only the selected source signing keys, source/destination public keys and addresses, and the public lane manifest. It contains no destination signing keys or validator/control keys. The export directory contains private test-account keys; keep it outside Git and transfer it privately.
 
@@ -85,7 +107,8 @@ For the deployed Session Stats image, use **Canonical transactions per second â†
 ## Offline checks
 
 ```sh
+python3 benchmark/tests/native-registry-images-test.py
 python3 benchmark/tests/native-remote-client-test.py
 ```
 
-The suite exercises export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset matches the recorded 2026-09-06 client run before export-specific path/range/image adjustments.
+The suites exercise registry preparation/startup, export/import and runner success/failure paths with simulated Docker and temporary synthetic keys. It submits no blockchain messages and does not establish a new TPS result. The public `native-remote-load.env` preset matches the recorded 2026-09-06 client run before export-specific path/range/image adjustments.

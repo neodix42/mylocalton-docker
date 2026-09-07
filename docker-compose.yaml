@@ -9,14 +9,15 @@ x-indexer-environment: &index-common
 services:
   genesis:
     container_name: genesis
-    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-latest}
+    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: Dockerfile
       pull: ${TON_BUILD_PULL:-true}
       args:
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
+        TON_BASE_IMAGE: ${TON_BASE_IMAGE:-${TON_IMAGE:-ghcr.io/corton-nommander/ton}:${TON_BRANCH:-master}}
     restart: unless-stopped
     cpuset: ${GENESIS_CPUSET:-}
     ports:
@@ -187,14 +188,15 @@ services:
   native-load-generator:
     container_name: native-load-generator
     profiles: [native-load-generator]
-    image: ${NATIVE_LOAD_IMAGE:-mylocalton-native-load-generator:${TON_BRANCH:-latest}}
+    image: ${NATIVE_LOAD_IMAGE:-mylocalton-native-load-generator:${TON_BRANCH:-master}}
     build:
       context: .
       dockerfile: ./native-load-generator/Dockerfile
       pull: ${TON_BUILD_PULL:-true}
       args:
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
+        TON_BASE_IMAGE: ${TON_BASE_IMAGE:-${TON_IMAGE:-ghcr.io/corton-nommander/ton}:${TON_BRANCH:-master}}
     restart: "no"
     volumes:
       - shared-data:/usr/share/data:ro
@@ -276,7 +278,7 @@ services:
   blockchain-explorer:
     container_name: blockchain-explorer
     profiles: [blockchain-explorer]
-    image: ${MLT_EXPLORER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-explorer}:${TON_BRANCH:-latest}
+    image: ${MLT_EXPLORER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-explorer}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./explorer/Dockerfile
@@ -284,7 +286,7 @@ services:
       args:
         MLT_EXPLORER_IMAGE: ${MLT_EXPLORER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-explorer}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     restart: unless-stopped
     environment:
       - SERVER_PORT=8080
@@ -309,7 +311,7 @@ services:
   lite-server:
     container_name: lite-server
     profiles: [lite-server]
-    image: ${MLT_LITE_SERVER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-lite-server}:${TON_BRANCH:-latest}
+    image: ${MLT_LITE_SERVER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-lite-server}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./lite-server/Dockerfile
@@ -317,7 +319,7 @@ services:
       args:
         MLT_LITE_SERVER_IMAGE: ${MLT_LITE_SERVER_IMAGE:-ghcr.io/neodix42/mylocalton-docker-lite-server}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     restart: unless-stopped
     environment:
       - LITE_SERVER_PORT=30004
@@ -342,7 +344,7 @@ services:
   faucet:
     container_name: faucet
     profiles: [faucet]
-    image: ${MLT_FAUCET_IMAGE:-ghcr.io/neodix42/mylocalton-docker-faucet}:${TON_BRANCH:-latest}
+    image: ${MLT_FAUCET_IMAGE:-ghcr.io/neodix42/mylocalton-docker-faucet}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./faucet/Dockerfile
@@ -350,7 +352,7 @@ services:
       args:
         MLT_FAUCET_IMAGE: ${MLT_FAUCET_IMAGE:-ghcr.io/neodix42/mylocalton-docker-faucet}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     ports:
       - "${UI_BIND_IP:-0.0.0.0}:88:88"
     volumes:
@@ -376,7 +378,7 @@ services:
   data:
     container_name: data-generator
     profiles: [data]
-    image: ${MLT_DATA_IMAGE:-ghcr.io/neodix42/mylocalton-docker-data}:${TON_BRANCH:-latest}
+    image: ${MLT_DATA_IMAGE:-ghcr.io/neodix42/mylocalton-docker-data}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./data/Dockerfile
@@ -384,7 +386,7 @@ services:
       args:
         MLT_DATA_IMAGE: ${MLT_DATA_IMAGE:-ghcr.io/neodix42/mylocalton-docker-data}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     ports:
       - "${UI_BIND_IP:-0.0.0.0}:99:99"
     volumes:
@@ -405,7 +407,7 @@ services:
   config-update:
     container_name: config-update
     profiles: [config-update]
-    image: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}:${TON_BRANCH:-latest}
+    image: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./config-update/Dockerfile
@@ -413,7 +415,7 @@ services:
       args:
         MLT_CONFIG_UPDATE_IMAGE: ${MLT_CONFIG_UPDATE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-config-update}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     ports:
       - "${UI_BIND_IP:-0.0.0.0}:8084:8084"
     volumes:
@@ -435,7 +437,7 @@ services:
   admin-portal:
     container_name: admin-portal
     profiles: [admin-portal]
-    image: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}:${TON_BRANCH:-latest}
+    image: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./admin-portal/Dockerfile
@@ -443,7 +445,7 @@ services:
       args:
         MLT_ADMIN_PORTAL_IMAGE: ${MLT_ADMIN_PORTAL_IMAGE:-ghcr.io/neodix42/mylocalton-docker-admin-portal}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     ports:
       - "${UI_BIND_IP:-0.0.0.0}:8085:8085"
     volumes:
@@ -466,7 +468,7 @@ services:
   time-machine:
     container_name: time-machine
     profiles: [time-machine]
-    image: ${MLT_TIME_MACHINE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-time-machine}:${TON_BRANCH:-latest}
+    image: ${MLT_TIME_MACHINE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-time-machine}:${TON_BRANCH:-master}
     build:
       context: .
       dockerfile: ./time-machine/Dockerfile
@@ -474,7 +476,7 @@ services:
       args:
         MLT_TIME_MACHINE_IMAGE: ${MLT_TIME_MACHINE_IMAGE:-ghcr.io/neodix42/mylocalton-docker-time-machine}
         TON_IMAGE: ${TON_IMAGE:-ghcr.io/corton-nommander/ton}
-        TON_BRANCH: ${TON_BRANCH:-latest}
+        TON_BRANCH: ${TON_BRANCH:-master}
     ports:
       - "${UI_BIND_IP:-0.0.0.0}:8083:8083"
     volumes:
@@ -585,7 +587,7 @@ services:
   validator-1:
     container_name: validator-1
     profiles: [validators-1, validators-2, validators-3, validators-4, validators-5]
-    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-latest}
+    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     restart: unless-stopped
     volumes:
       - shared-data:/usr/share/data
@@ -621,7 +623,7 @@ services:
   validator-2:
     container_name: validator-2
     profiles: [validators-2, validators-3, validators-4, validators-5]
-    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-latest}
+    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     restart: unless-stopped
     volumes:
       - shared-data:/usr/share/data
@@ -657,7 +659,7 @@ services:
   validator-3:
     container_name: validator-3
     profiles: [validators-3, validators-4, validators-5]
-    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-latest}
+    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     restart: unless-stopped
     volumes:
       - shared-data:/usr/share/data
@@ -693,7 +695,7 @@ services:
   validator-4:
     container_name: validator-4
     profiles: [validators-4, validators-5]
-    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-latest}
+    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     restart: unless-stopped
     volumes:
       - shared-data:/usr/share/data
@@ -729,7 +731,7 @@ services:
   validator-5:
     container_name: validator-5
     profiles: [validators-5]
-    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-latest}
+    image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     restart: unless-stopped
     volumes:
       - shared-data:/usr/share/data

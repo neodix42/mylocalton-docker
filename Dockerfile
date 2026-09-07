@@ -1,6 +1,7 @@
-ARG TON_BRANCH=latest
+ARG TON_BRANCH=master
 ARG TON_IMAGE=ghcr.io/corton-nommander/ton
-FROM ${TON_IMAGE}:${TON_BRANCH}
+ARG TON_BASE_IMAGE=${TON_IMAGE}:${TON_BRANCH}
+FROM ${TON_BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt -y update && apt install --no-install-recommends -y python3 cron xxd

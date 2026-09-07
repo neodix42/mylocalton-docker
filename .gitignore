@@ -12,3 +12,6 @@ Dockerfile.local
 .vscode
 .DS_Store
 /benchmark-results/
+
+# Local public receipt of the registry base and derived image IDs.
+/.native-images.json
