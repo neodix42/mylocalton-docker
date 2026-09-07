@@ -160,7 +160,8 @@ if args[:1] == ['logs']:
  final['native_signed_run_proof_resolutions']=12*duration
  for field,key in {'configured_connections':'NATIVE_LOAD_CONNECTIONS','configured_workers':'NATIVE_LOAD_WORKERS',
    'configured_signers':'NATIVE_LOAD_SIGNERS','configured_sources':'NATIVE_LOAD_SOURCES',
-   'adaptive_initial_cwnd':'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND'}.items():final[field]=int(env[key])
+   'adaptive_initial_cwnd':'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND',
+   'adaptive_max_cwnd':'NATIVE_LOAD_ADAPTIVE_MAX_CWND'}.items():final[field]=int(env[key])
  if scenario.get('incomplete'):
   final['run_incomplete_reasons']=['canonical_backlog_after_drain'];final['canonical_backlog_after_drain']=16
  if scenario.get('capacity_rejected'):
@@ -659,6 +660,111 @@ class RemoteTests(unittest.TestCase):
             self.assertIsNone(arm['remote_validator_cleanup_valid'])
         self.assertFalse(any(c[:1] in (['build'],['pull'],['compose'],['rm']) for c in self.calls()))
 
+    def test_runner_explicit_load_tuning_is_frozen_and_reported_per_setup(self):
+        self.prepare_runner()
+        original=(self.client/'remote-load.env').read_bytes()
+        self.scenario(final_overrides={'phase':'measure','offered_tps':160})
+        result=self.run_load('--connections',50,100,'--workers',12,'--signers',12,
+                             '--initial-cwnd',65536,'--max-cwnd',131072,'--cpus',12)
+        self.assertEqual((self.client/'remote-load.env').read_bytes(),original)
+        expected={'workers':12,'signers':12,'initial_cwnd':65536,'max_cwnd':131072,
+                  'inflight':262144,'cpus':'12','memory':'8g'}
+        settings=json.loads((self.results/'settings.json').read_text())
+        for key,value in expected.items():self.assertEqual(settings[key],value)
+        runs=json.loads((self.fake/'runs.json').read_text())
+        self.assertEqual(len(runs),2)
+        for run in runs:
+            for key,value in {'NATIVE_LOAD_WORKERS':'12','NATIVE_LOAD_SIGNERS':'12',
+                              'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND':'65536',
+                              'NATIVE_LOAD_ADAPTIVE_MAX_CWND':'131072',
+                              'NATIVE_LOAD_INFLIGHT':'262144','NATIVE_LOAD_TARGET_TPS':'0'}.items():
+                self.assertEqual(run['env'][key],value)
+            self.assertEqual(run['inspect']['Image'],IMAGE_ID)
+        summary=json.loads((self.results/'summary.json').read_text())
+        self.assertTrue(summary['completed'])
+        for arm in summary['arms']:self.assertEqual(arm['load_settings'],expected)
+        for arm in self.results.glob('*-connections'):
+            progress=[json.loads(line) for line in (arm/'progress.jsonl').read_text().splitlines()]
+            self.assertTrue(progress)
+            self.assertEqual(progress[-1]['load_settings'],expected)
+            final=json.loads((arm/'generator-final.json').read_text())
+            self.assertEqual(final['adaptive_initial_cwnd'],65536)
+            self.assertEqual(final['adaptive_max_cwnd'],131072)
+        self.assertIn('workers=12, signers=12',result.stdout)
+        self.assertIn('initial=65536, max=131072, inflight=262144',result.stdout)
+        self.assertFalse(any(c[:1] in (['build'],['pull'],['compose'],['rm']) for c in self.calls()))
+
+    def test_runner_connection_counts_use_effective_worker_override(self):
+        self.prepare_runner()
+        self.run_load('--connections',3,'--workers',3)
+        run=json.loads((self.fake/'runs.json').read_text())[0]
+        self.assertEqual(run['env']['NATIVE_LOAD_WORKERS'],'3')
+        self.assertEqual(run['env']['NATIVE_LOAD_SIGNERS'],'6')
+        self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
+
+    def test_runner_invalid_tuning_stops_before_any_container_launch(self):
+        self.prepare_runner()
+        cases=[(['--workers',0], 'override is out of range'),
+               (['--workers',257], 'override is out of range'),
+               (['--signers',257], 'override is out of range'),
+               (['--signers',5], 'NATIVE_LOAD_SIGNERS is out of range'),
+               (['--workers',12,'--signers',12], 'connections is out of range'),
+               (['--initial-cwnd',0], 'override is out of range'),
+               (['--max-cwnd',0], 'override is out of range'),
+               (['--initial-cwnd','1.5'], 'unsigned decimal integer'),
+               (['--initial-cwnd',131072], 'initial cwnd must not exceed'),
+               (['--max-cwnd',262145], 'max cwnd must be zero or between'),
+               (['--max-cwnd',9], 'max cwnd must be zero or between'),
+               # Aggregate 10*16 is sufficient, but two-level 6-worker fanout is not.
+               (['--initial-cwnd',160], 'complete signed run'),
+               (['--initial-cwnd',65536,'--initial-cwnd',65536], 'duplicate --initial-cwnd'),
+               (['--max-cwnd'], '--max-cwnd requires a value')]
+        for index,(arguments,reason) in enumerate(cases):
+            with self.subTest(arguments=arguments):
+                self.results=self.root/('invalid-tuning-'+str(index))
+                result=self.run_load('--connections',10,*arguments,success=False)
+                self.assertIn(reason,result.stderr)
+        self.results=self.root/'unsupported-500-connections'
+        result=self.run_load('--connections',500,success=False)
+        self.assertIn('connections is out of range',result.stderr)
+        self.assertFalse(any(c[:1]==['run'] for c in self.calls()))
+
+    def test_runner_canonical_backlog_must_cover_effective_workers(self):
+        self.prepare_runner()
+        envfile=self.client/'remote-load.env'
+        original=envfile.read_text()
+        self.assertIn('NATIVE_LOAD_MAX_CANONICAL_BACKLOG=2097120',original)
+        envfile.write_text(original.replace('NATIVE_LOAD_MAX_CANONICAL_BACKLOG=2097120',
+                                           'NATIVE_LOAD_MAX_CANONICAL_BACKLOG=6'))
+        result=self.run_load('--connections',50,'--workers',12,'--signers',12,success=False)
+        self.assertIn('NATIVE_LOAD_MAX_CANONICAL_BACKLOG is out of range',result.stderr)
+        self.assertFalse(any(c[:1]==['run'] for c in self.calls()))
+
+    def test_runner_window_partition_boundary_and_native_zero_defaults(self):
+        self.prepare_runner()
+        self.run_load('--connections',10,'--initial-cwnd',192)
+        self.assertTrue(json.loads((self.results/'summary.json').read_text())['completed'])
+        # Zero in an existing env preset retains the native heuristic/hard-limit
+        # semantics, while new CLI overrides intentionally require explicit budgets.
+        envfile=self.client/'remote-load.env'
+        envfile.write_text(envfile.read_text().replace('NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=32768',
+                                                     'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND=0')
+                                             .replace('NATIVE_LOAD_ADAPTIVE_MAX_CWND=65536',
+                                                      'NATIVE_LOAD_ADAPTIVE_MAX_CWND=0'))
+        self.results=self.root/'native-zero-windows'
+        self.run_load('--connections',10)
+        summary=json.loads((self.results/'summary.json').read_text())
+        self.assertTrue(summary['completed'])
+        self.assertEqual(summary['arms'][0]['load_settings']['initial_cwnd'],0)
+        self.assertEqual(summary['arms'][0]['load_settings']['max_cwnd'],0)
+        envfile.write_text(envfile.read_text().replace('NATIVE_LOAD_ADAPTIVE_INFLIGHT=1',
+                                                     'NATIVE_LOAD_ADAPTIVE_INFLIGHT=0'))
+        self.results=self.root/'adaptive-disabled'
+        before=len([c for c in self.calls() if c[:1]==['run']])
+        result=self.run_load('--connections',10,'--initial-cwnd',32768,success=False)
+        self.assertIn('requires NATIVE_LOAD_ADAPTIVE_INFLIGHT=1',result.stderr)
+        self.assertEqual(len([c for c in self.calls() if c[:1]==['run']]),before)
+
     def test_runner_defaults_upgrade_old_bundle_to_ten_minutes_and_scale_watchdog(self):
         self.prepare_runner()
         self.scenario(final_overrides={'phase':'measure','offered_tps':160,'mempool_accept_tps':160})
@@ -727,7 +833,8 @@ class RemoteTests(unittest.TestCase):
 
     def test_runner_rejects_count_proof_density_and_rate_mismatches(self):
         self.prepare_runner()
-        for mutation in [{'configured_connections':11}, {'canonical_hash_conflicts':1},
+        for mutation in [{'configured_connections':11}, {'adaptive_initial_cwnd':32767},
+                         {'adaptive_max_cwnd':65535}, {'canonical_hash_conflicts':1},
                          {'native_signed_run_normal_logical_transfers':1919},
                          {'native_signed_run_proof_resolutions':119}, {'steady_offered_avg_tps':159},
                          {'canonical_follower_final_catchup_complete':False}, {'steady_offered_avg_tps':float('nan')}]:

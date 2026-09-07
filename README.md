@@ -446,13 +446,28 @@ redundant external-message gossip work. Label such results as a local
 single-validator no-gossip diagnostic, not multi-validator or production-network
 capacity.
 
-For a 24-vCPU/128-GB/2-TB physical desktop, use the tracked `.env.physical`
-profile. It keeps every published management endpoint on loopback, assigns
-whole SMT core pairs to the validator and generator, and leaves native spam
-disabled until its profile is started explicitly. The current profile follows
-the published `master` image through `start-native-genesis.sh`. The following
-optional host-tuned source build describes the separate historical desktop
-benchmark path; it is not required to deploy server A from GHCR:
+The tracked `.env.physical` now targets a **48-logical-CPU server A with the
+load generator on server B**: genesis has a 44-CPU quota, 40 scheduler threads,
+and no fixed CPU affinity; Session Stats has a 2-CPU quota. These are CPU time
+ceilings, not dedicated cores. The old desktop masks restricted genesis to 18
+logical CPUs even on a larger host. The eight native executor workers remain
+fixed for this comparison. This scaling profile has not yet been measured on
+A/B; preserve the best valid result until repeated canonical TPS measurements
+show a gain. The historical 24-CPU same-host profile is available at commit
+`41c4107` (`git show 41c4107:.env.physical`).
+
+For an existing deployment, update resource entries in its `.env`; pulling this
+repository does not apply `.env.physical` to a running container. Keep the
+project name, database mounts, chain settings, and image fixed. The
+[remote guide](https://github.com/corton-nommander/ton/blob/master/doc/native-remote-client-guide.md#scale-an-existing-48-cpu-server-a)
+contains the targeted resource update and recreation procedure, plus B's
+independent CPU/signing/admission-window controls. The profile keeps optional
+load services disabled and follows the published `master` image through
+`start-native-genesis.sh` at operator startup.
+
+The following optional host-tuned source build describes the separate
+historical desktop benchmark path; it is not required to deploy server A from
+GHCR:
 
 ```bash
 cd ../corton-nommander-ton-sidechain
@@ -479,29 +494,26 @@ sudo env TON_BRANCH=max-tps-native \
 
 Docker Desktop CPU, memory, and virtual-disk allocations are outside Compose;
 verify that they expose the intended capacity and enough free disk before a
-sustained run. Verify the checked-in SMT sibling pairs with
-`lscpu -e=CPU,NODE,SOCKET,CORE`; remap the CPU sets if the host topology differs.
+sustained run. Check NUMA and sibling topology with
+`lscpu -e=CPU,NODE,SOCKET,CORE` before adding explicit affinity; the current
+server profile allows scheduling across all CPUs exposed to Docker.
 `.env.desktop` may still be used as a local, untracked override, but the
 documented benchmark and its metadata use `.env.physical`.
 
 The profile leaves optional services disabled so an ordinary `up` cannot
-accidentally start load. The configured run has a 60-second ramp, 60-second
-warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile
-(42 minutes of configured phases, plus initial nonce discovery).
+accidentally start load. The conservative local Compose workload retains its 60-second ramp, 60-second
+warm-up, 30-minute measured phase, and up to 10 minutes to drain/reconcile.
+Those local settings do not control the exported remote runner: B defaults to
+unpaced signed runs and at least 600 measured seconds per connection count.
 
-The same-host baseline allocates 18 vCPU (nine complete SMT core pairs) to
-genesis, 4 vCPU to the generator, and caps Session Stats at 1 vCPU on the
-remaining SMT pair. Valid Cycle 1 used about one generator core at 4k TPS, and
-Cycle 3 still peaked below two generator cores while genesis repeatedly reached
-its old 16-vCPU allocation. Moving one physical core pair to the candidate and
-canonical path addresses the measured imbalance without constraining the load
-source. The validator runs 16 scheduler threads, leaving two of its allocated
-CPUs for database and network work. The first 4k
-TPS target is requested offered load, not a claim that 4k was produced.
-Use the reported maximum and sustained `sign_tps`, `offered_tps`, and
-canonical-chain TPS to prove which component reached its ceiling. Larger hosts
-should scale the CPU sets and quotas explicitly after checking NUMA and sibling
-topology.
+The historical same-host desktop baseline allocated 18 vCPU to genesis,
+4 vCPU to the generator, and 1 vCPU to Session Stats. Its validator used 16
+scheduler threads. Valid Cycle 1 used about one generator core at 4k TPS, and
+Cycle 3 still peaked below two generator cores while genesis reached its old
+16-vCPU allocation. Those observations do not establish the best allocation
+for the newer remote signed-run workload. The local 4k target remains requested
+offered load, not a claim of produced throughput. Report signing, offered,
+admission, and proof-checked canonical TPS separately.
 
 Require one valid, fully drained result with no candidate deadline failures at
 each step before increasing offered load. After the fresh checked-in 4k
@@ -528,9 +540,9 @@ chain, generated load wallets, and Session Stats database for
 sudo ./benchmark/run-fresh-native-cycle.sh .env.physical
 ```
 
-The physical profile gives genesis a 30-minute health-check start period because
-sequential generation of 49,152 fresh wallet keys takes about 23 minutes on the
-reference desktop. The wrapper therefore remains attached to the same clean
+The physical profile gives genesis a 60-minute health-check start period.
+Sequential generation of 49,152 fresh wallet keys took about 23 minutes on the
+reference desktop; current key generation uses bounded parallel workers. The wrapper therefore remains attached to the same clean
 cycle until genesis becomes healthy instead of requiring a second invocation.
 The guarded runner prebuilds both derived images before deleting state and marks
 them as prebuilt for the benchmark wrapper, avoiding redundant context hashing
@@ -689,8 +701,9 @@ that offers outran chain inclusion. When it engages, compare follower lag and
 block discovery rate with canonical block rate and backlog before deciding
 whether the observer or the chain set the ceiling.
 
-The physical desktop profile keeps Session Stats, management, optional UIs,
-liteserver, and the file endpoint on `127.0.0.1`. Set
+The physical server profile currently publishes endpoints on `0.0.0.0`, with
+the embedded file HTTP server disabled. The remote guide describes public
+liteserver/Session Stats access and private management bindings. Set
 `TON_DB_VAL0_HOST_DIR` to an existing absolute
 directory on the dedicated NVMe before genesis creation. Leaving it empty
 keeps the portable `ton-db-val0` named volume. When using a host bind with

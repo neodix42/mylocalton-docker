@@ -7,7 +7,9 @@ usage() {
   cat <<'EOF'
 Usage: run-remote-load.sh [--connections 10 50 100] [--directory CLIENT_ROOT]
        [--duration SECONDS] [--warmup SECONDS] [--drain SECONDS]
-       [--cpus 4] [--memory 8g] [--output NEW_DIRECTORY] [--image LOCAL_IMAGE]
+       [--cpus 4] [--memory 8g] [--workers COUNT] [--signers COUNT]
+       [--initial-cwnd LOGICAL_TRANSFERS] [--max-cwnd LOGICAL_TRANSFERS]
+       [--output NEW_DIRECTORY] [--image LOCAL_IMAGE]
 
 CLIENT_ROOT defaults to this script's directory. It must contain remote-load.env,
 client-data/global.config.json and client-data/wallets. The inspected local image
@@ -17,6 +19,19 @@ artifacts are retained. The default measurement lasts at least 600 seconds,
 in addition to warmup/readiness/drain; --duration explicitly permits shorter runs.
 Progress is printed every 30 seconds. Capacity-only rejections are reported and do not abort;
 incorrect/incomplete runs stop the sequence before those keys are reused.
+
+Worker/signer/window overrides apply to every setup and leave remote-load.env
+unchanged. Connections remain limited to 256 by the published native binary.
+Windows count logical transfers globally and are shared across workers/clients;
+more connections do not increase that budget. Explicit window values must be
+positive, fit the existing inflight limit, and permit complete signed runs.
+
+Examples (choose a CPU budget that server B can spare; these do not raise it):
+  bash run-remote-load.sh --connections 50 100 --duration 600
+  bash run-remote-load.sh --connections 50 100 --duration 600 \
+    --initial-cwnd 65536 --max-cwnd 131072
+  # With enough server-B CPUs available, add --cpus CPU_COUNT and optionally
+  # --workers 12 --signers 12; each connection count must cover all workers.
 EOF
 }
 fail() { printf 'remote-load: %s\n' "$*" >&2; exit 2; }
@@ -27,6 +42,10 @@ image_override=
 duration_override=
 warmup_override=
 drain_override=
+workers_override=
+signers_override=
+initial_cwnd_override=
+max_cwnd_override=
 cpus=4
 memory=8g
 connections=(10 50 100)
@@ -44,7 +63,7 @@ while (($#)); do
       while (($#)) && [[ $1 != --* ]]; do connections+=("$1"); shift; done
       ((${#connections[@]})) || fail '--connections requires at least one count'
       ;;
-    --directory|--duration|--warmup|--drain|--cpus|--memory|--output|--image)
+    --directory|--duration|--warmup|--drain|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd)
       [[ ! ${options_seen[$option]+yes} ]] || fail "duplicate $option"
       options_seen[$option]=1
       (($#)) && [[ $1 != --* && -n $1 ]] || fail "$option requires a value"
@@ -53,6 +72,8 @@ while (($#)); do
         --warmup) warmup_override=$1 ;; --drain) drain_override=$1 ;;
         --cpus) cpus=$1 ;; --memory) memory=$1 ;;
         --output) output=$1 ;; --image) image_override=$1 ;;
+        --workers) workers_override=$1 ;; --signers) signers_override=$1 ;;
+        --initial-cwnd) initial_cwnd_override=$1 ;; --max-cwnd) max_cwnd_override=$1 ;;
       esac
       shift
       ;;
@@ -161,6 +182,12 @@ try:
         directory, data, output, duration, warmup, drain, cpus, memory, image_arg = sys.argv[2:11]
         directory, data, output = Path(directory), Path(data), Path(output)
         env = environment(directory / 'remote-load.env')
+        for key, value in zip(['NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS',
+                               'NATIVE_LOAD_ADAPTIVE_INITIAL_CWND', 'NATIVE_LOAD_ADAPTIVE_MAX_CWND'],
+                              sys.argv[12:16]):
+            if value:
+                uint(value, key + ' override', 1, 256 if key in ('NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS') else 2**32-1)
+                env[key] = value
         if not duration:
             # Upgrade previously exported 180-second presets without requiring keys
             # or the pinned image to be exported/imported again. Explicit CLI
@@ -171,11 +198,11 @@ try:
             if value: env[key] = value
         workers = uint(env.get('NATIVE_LOAD_WORKERS', ''), 'NATIVE_LOAD_WORKERS', 1, 256)
         sources = uint(env.get('NATIVE_LOAD_SOURCES', ''), 'NATIVE_LOAD_SOURCES', workers, 1000000)
-        signers = uint(env.get('NATIVE_LOAD_SIGNERS', ''), 'NATIVE_LOAD_SIGNERS', 1, sources)
+        signers = uint(env.get('NATIVE_LOAD_SIGNERS', ''), 'NATIVE_LOAD_SIGNERS', workers, min(sources, 256))
         offset = uint(env.get('NATIVE_LOAD_SOURCE_OFFSET', '0'), 'NATIVE_LOAD_SOURCE_OFFSET')
         check(offset + sources <= 2**32-1, 'source interval overflows supported uint32 range')
         runner_path = Path(sys.argv[11])
-        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[12:]]
+        counts = [uint(x, 'connections', workers, 256) for x in sys.argv[16:]]
         check(len(counts) == len(set(counts)), 'duplicate connection count')
         check(counts, 'empty connection list')
         duration = uint(env.get('NATIVE_LOAD_DURATION_SECONDS', ''), 'duration', 1, 86400)
@@ -192,6 +219,33 @@ try:
         check(env.get('NATIVE_PAYMENT_LANE_DEPTH') == str(depth), 'payment lane depth mismatch')
         for key in ['NATIVE_LOAD_INFLIGHT', 'NATIVE_LOAD_MAX_CANONICAL_BACKLOG', 'NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG']:
             uint(env.get(key, ''), key, 1)
+        inflight = uint(env['NATIVE_LOAD_INFLIGHT'], 'NATIVE_LOAD_INFLIGHT', workers)
+        uint(env['NATIVE_LOAD_MAX_CANONICAL_BACKLOG'], 'NATIVE_LOAD_MAX_CANONICAL_BACKLOG', workers)
+        initial_cwnd = uint(env.get('NATIVE_LOAD_ADAPTIVE_INITIAL_CWND', '0'), 'initial cwnd')
+        max_cwnd = uint(env.get('NATIVE_LOAD_ADAPTIVE_MAX_CWND', '0'), 'max cwnd')
+        check(initial_cwnd == 0 or env.get('NATIVE_LOAD_ADAPTIVE_INFLIGHT') == '1',
+              'positive initial cwnd requires NATIVE_LOAD_ADAPTIVE_INFLIGHT=1')
+        check(max_cwnd == 0 or max(counts) <= max_cwnd <= inflight,
+              'max cwnd must be zero or between every connection count and inflight')
+        check(initial_cwnd <= (max_cwnd or inflight) <= inflight,
+              'initial cwnd must not exceed max cwnd or inflight')
+        # Match the native coordinator/worker's two-stage distribution; a global
+        # initial >= connections * quantum alone misses uneven worker fanout.
+        def share(total, index, count):
+            return total // count + (index < total % count)
+        if initial_cwnd:
+            for count in counts:
+                for worker in range(workers):
+                    clients = share(count, worker, workers)
+                    initial_share = share(initial_cwnd, worker, workers)
+                    hard_share = share(inflight, worker, workers)
+                    cap_share = share(max_cwnd or inflight, worker, workers)
+                    for client in range(clients):
+                        initial = share(initial_share, client, clients)
+                        check(quantum <= initial <= min(share(hard_share, client, clients),
+                                                         share(cap_share, client, clients)),
+                              'initial cwnd cannot fit a complete signed run within each distributed client ceiling '
+                              + '(connections=' + str(count) + ', workers=' + str(workers) + ')')
         check(env.get('NATIVE_LOAD_NATIVE_RUN_BATCHING', '0') in ('0', '1'), 'invalid batching flag')
         expected_paths = {'NATIVE_LOAD_GLOBAL_CONFIG': '/client/global.config.json',
                           'NATIVE_LOAD_WALLET_DIR': '/client/wallets',
@@ -231,6 +285,7 @@ try:
                     'connections': counts, 'workers': workers, 'signers': signers, 'sources': sources, 'source_offset': offset,
                     'lane_depth': depth, 'quantum': quantum, 'cpus': cpus, 'memory': memory, 'duration': duration,
                     'warmup': warmup, 'ramp': ramp, 'drain': drain, 'watchdog_seconds': watchdog,
+                    'initial_cwnd': initial_cwnd, 'max_cwnd': max_cwnd, 'inflight': inflight,
                     'requested_image': image, 'environment': env, 'config_sha256': digest(config_path),
                     'wallet_manifest_sha256': digest(manifest), 'runner_sha256': digest(runner_path),
                     'runner_path': str(runner_path), 'created_unix_s': time.time(),
@@ -273,7 +328,9 @@ try:
                 pass
         sample = {'event': 'progress', 'connections': settings['connections'], 'wall_elapsed_s': elapsed,
                   'measurement_target_s': settings['duration'], 'phase': 'waiting_for_generator_report',
-                  'provisional': True, 'observed_unix_s': time.time()}
+                  'provisional': True, 'observed_unix_s': time.time(),
+                  'load_settings': {key: settings[key] for key in
+                      ['workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}}
         if row is not None:
             for key in ['phase', 'elapsed_s', 'measure_elapsed_s', 'offered_tps', 'mempool_accept_tps',
                         'canonical_chain_measure_avg_tps', 'canonical_backlog', 'canonical_follower_errors']:
@@ -284,7 +341,9 @@ try:
     elif mode == 'announce':
         settings = read(Path(sys.argv[2]) / 'settings.json')
         print('Each setup: measurement={duration}s, warmup={warmup}s, ramp={ramp}s, drain limit={drain}s; '
-              'generator budget={cpus} CPUs/{memory}; watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
+              'generator budget={cpus} CPUs/{memory}, workers={workers}, signers={signers}; '
+              'global logical windows: initial={initial_cwnd}, max={max_cwnd}, inflight={inflight}; '
+              'watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
     elif mode == 'owns':
         arm = Path(sys.argv[2]); settings = read(arm / 'runtime-settings.json')
         inspected = read(arm / 'ownership-inspect.json')
@@ -300,6 +359,8 @@ try:
         try:
             settings = read(arm / 'runtime-settings.json'); summary['connections'] = settings['connections']
             summary['image_id'] = settings['image_id']
+            summary['load_settings'] = {key: settings[key] for key in
+                ['workers', 'signers', 'initial_cwnd', 'max_cwnd', 'inflight', 'cpus', 'memory']}
             if forced: errors.append(forced)
             inspected = read(arm / 'container.json')
             check(isinstance(inspected, list) and len(inspected) == 1, 'missing/ambiguous container inspection')
@@ -348,7 +409,8 @@ try:
             for key in ['correctness_invalid_reasons', 'run_incomplete_reasons']:
                 check(final.get(key) == [], key + ' is not empty')
             for key, expected in [('configured_connections', settings['connections']), ('configured_workers', settings['workers']),
-                                  ('configured_signers', settings['signers']), ('configured_sources', settings['sources'])]:
+                                  ('configured_signers', settings['signers']), ('configured_sources', settings['sources']),
+                                  ('adaptive_initial_cwnd', settings['initial_cwnd']), ('adaptive_max_cwnd', settings['max_cwnd'])]:
                 check(type(final.get(key)) is int and final[key] == expected, key + ' mismatch')
             for cohort, offered in [('canonical_total_after_drain', 'offered'), ('canonical_measured_offers_after_drain', 'steady_offered')]:
                 check(type(final.get(cohort)) is int and type(final.get(offered)) is int and final[cohort] == final[offered], cohort + ' does not reconcile')
@@ -393,7 +455,7 @@ try:
             errors.append(str(error))
         summary['finished_unix_s'] = time.time()
         save(arm / 'summary.json', summary)
-        print(json.dumps({key: summary.get(key) for key in ['connections', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons']}))
+        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'valid_run', 'capacity_classification', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons']}))
         if errors:
             print('Stopped before reusing source accounts. Inspect ' + str(arm / 'execution.json') + ', ' + str(arm / 'generator.log') + ' and ' + str(arm / 'generator.stderr.log') + '.', file=sys.stderr)
         sys.exit(0 if summary['valid_run'] else 1)
@@ -456,7 +518,7 @@ trap cleanup EXIT
 trap 'interrupt_reason=interrupted_SIGINT; exit 130' INT
 trap 'interrupt_reason=interrupted_SIGTERM; exit 143' TERM
 
-watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
+watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
   cat "$output/preflight.stderr.log" >&2; exit 2;
 }
 # A remote Docker context would run the generator on the wrong server.
