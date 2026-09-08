@@ -190,7 +190,7 @@ for field in NATIVE_PAYMENT_LANES_ENABLED NATIVE_PAYMENT_LANE_DEPTH NATIVE_TRANS
   ! native_payment_lanes_existing_genesis_marker_is_valid "$test_dir/depth3-duplicate.env" 3
 done
 
-for env_file in .env .env.desktop .env.devnet .env.laptop; do
+for env_file in .env .env.devnet .env.laptop; do
   grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=0' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANES_GLOBAL_VERSION=16' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANES_CAPABILITY=2048' "$repo_dir/$env_file"
@@ -217,7 +217,7 @@ grep -qx 'TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=0' "$repo_dir/.env.physical"
 [[ $(grep -Fc \
   'TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=${TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS:-0}' \
   "$repo_dir/docker-compose.yaml") -eq 6 ]]
-for env_file in .env .env.desktop .env.devnet .env.laptop; do
+for env_file in .env .env.devnet .env.laptop; do
   ! grep -q '^TON_NATIVE_POST_COMMIT_PACK_GRACE_20MS=' "$repo_dir/$env_file"
 done
 
@@ -314,3 +314,13 @@ bash -n "$repo_dir/benchmark/run-fresh-native-cycle.sh"
 "$repo_dir/run-native-benchmark.sh" --self-test-container-image-metadata-fallback
 sh -n "$repo_dir/native-load-generator/entrypoint.sh"
 sh -n "$repo_dir/native-load-generator/payment-lanes.sh"
+
+# Desktop is an explicit fresh four-lane reference; physical diagnosis stays eight-lane.
+for setting in NATIVE_TRANSFER_RUNS_ENABLED=1 NATIVE_PAYMENT_LANES_ENABLED=1 \
+  NATIVE_PAYMENT_LANE_DEPTH=2 ACTUAL_MIN_SPLIT=2 MIN_SPLIT=2 MAX_SPLIT=2 \
+  NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1 NATIVE_LOAD_PAYMENT_LANE_DEPTH=2 \
+  NATIVE_LOAD_NATIVE_RUN_BATCHING=1 NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=16 \
+  NATIVE_LOAD_CONNECTIONS=10 NATIVE_LOAD_DURATION_SECONDS=600 \
+  NATIVE_LOAD_SUBMIT_COALESCE_MS=20 NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=900; do
+  grep -qx "$setting" "$repo_dir/.env.desktop"
+done

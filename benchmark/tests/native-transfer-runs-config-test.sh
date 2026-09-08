@@ -41,7 +41,7 @@ NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=15
 NATIVE_TRANSFER_RUNS_CAPABILITY=512
 ! resolve_native_transfer_runs_config >/dev/null 2>&1
 
-for env_file in .env .env.desktop .env.devnet .env.laptop; do
+for env_file in .env .env.devnet .env.laptop; do
   grep -qx 'VERSION_CAPABILITIES=14' "$repo_dir/$env_file"
   grep -qx 'NATIVE_TRANSFER_RUNS_ENABLED=0' "$repo_dir/$env_file"
   grep -qx 'NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=15' "$repo_dir/$env_file"
