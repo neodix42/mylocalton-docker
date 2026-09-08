@@ -337,7 +337,7 @@ try:
     if len(header) != 4 or header[0] != 'NATIVE_PAYMENT_LANES_MANIFEST_V1':
         raise ValueError('invalid lane manifest header')
     depth, lanes, available = map(int, header[1:])
-    if depth not in (1, 2) or lanes != 1 << depth or offset + count > available:
+    if depth not in (1, 2, 3) or lanes != 1 << depth or offset + count > available:
         raise ValueError('lane manifest does not cover the requested depth/source range')
     with tarfile.open(fileobj=sys.stdout.buffer, mode='w|gz', format=tarfile.USTAR_FORMAT) as archive:
         def add(name, data):
@@ -398,8 +398,8 @@ def validate_wallet_archive(path, offset, sources):
     lines = manifest.splitlines()
     header = lines[0].split() if lines else []
     require(len(header) == 4 and header[0] == 'NATIVE_PAYMENT_LANES_MANIFEST_V1', 'invalid lane manifest header')
-    depth = uint(header[1], 'manifest lane depth', 1, 2)
-    require(uint(header[2], 'manifest lane count', 2, 4) == 1 << depth, 'manifest lane count/depth mismatch')
+    depth = uint(header[1], 'manifest lane depth', 1, 3)
+    require(uint(header[2], 'manifest lane count', 2, 8) == 1 << depth, 'manifest lane count/depth mismatch')
     available = uint(header[3], 'manifest source coverage', 1)
     require(offset + sources <= available, 'lane manifest does not cover selected source range')
     rows = set()
@@ -425,6 +425,34 @@ def validate_wallet_archive(path, offset, sources):
     return depth
 
 
+def require_image_lane_support(image_id, depth):
+    if depth < 3:
+        return  # Preserve compatibility with existing two/four-lane images.
+    # The native binary already supports deeper lanes, but an older derived
+    # image can still carry a depth-1/2-only shell entrypoint helper. Probe the
+    # actual pinned image before publishing a supposedly ready client bundle.
+    script = """. /usr/local/lib/native-load-generator/payment-lanes.sh
+native_payment_lanes_validate_mode 1 1 3 3
+test "$(native_payment_lanes_expected_shard_prefixes 3)" = '1000000000000000
+3000000000000000
+5000000000000000
+7000000000000000
+9000000000000000
+B000000000000000
+D000000000000000
+F000000000000000'
+"""
+    print('Checking eight-lane initialization support in the pinned generator image.', flush=True)
+    try:
+        subprocess.run(['docker', 'run', '--rm', '--pull', 'never', '--network', 'none',
+                        '--read-only', '--entrypoint', '/bin/sh', image_id, '-ec', script],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       timeout=45, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ExportError('the pinned generator image does not support eight-lane client initialization; '
+                          'rebuild native-load-generator instead of reusing an older derived image') from exc
+
+
 def environment_text(source, args, depth, image_id):
     values = {}
     for line in source.read_text().splitlines():
@@ -445,7 +473,7 @@ def environment_text(source, args, depth, image_id):
                    'NATIVE_LOAD_NATIVE_TRANSFER_RUNS': '1', 'NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE': '16',
                    'NATIVE_PAYMENT_LANES_ENABLED': '1', 'NATIVE_PAYMENT_LANE_DEPTH': str(depth),
                    'NATIVE_LOAD_PAYMENT_LANE_DEPTH': str(depth),
-                   'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS': '900' if depth == 2 else '360'})
+                   'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS': {1: '360', 2: '900', 3: '1800'}[depth]})
     return '# Exported native client preset; plain values, never source this file as shell code.\n' + ''.join(
         f'{key}={value}\n' for key, value in sorted(values.items()))
 
@@ -506,6 +534,7 @@ def main():
         (staging / 'external.global.config.json').write_text(json.dumps(config, indent=2) + '\n')
         export_wallets(args, staging / 'test-wallets.tar.gz')
         depth = validate_wallet_archive(staging / 'test-wallets.tar.gz', args.source_offset, args.sources)
+        require_image_lane_support(image['id'], depth)
         (staging / 'remote-load.env').write_text(environment_text(required['native-remote-load.env'], args, depth, image['id']))
         for name in ('import-native-client.sh', 'run-remote-load.sh'):
             shutil.copyfile(required[name], staging / name)

@@ -1079,13 +1079,14 @@ def canonical_lane_balance_telemetry($final):
     )
   };
 
-# Independently validate the concrete depth-2 lane rows. This prevents a
+# Independently validate the concrete fixed-depth lane rows. This prevents a
 # self-inconsistent producer from turning forged summary booleans into a
 # capacity pass. All arithmetic is over nonnegative integer transfer counts.
-def canonical_depth2_lane_record_checks($balance):
+def canonical_lane_record_checks($balance; $depth):
+  pow(2; $depth) as $expected_lanes |
   field_or_null($balance; "lanes") as $lanes |
   (($lanes | type) == "array") as $array_valid |
-  (if $array_valid then (($lanes | length) == 4) else false end) as $lane_count_valid |
+  (if $array_valid then (($lanes | length) == $expected_lanes) else false end) as $lane_count_valid |
   (if $array_valid then
      all($lanes[];
        . as $lane |
@@ -1093,15 +1094,31 @@ def canonical_depth2_lane_record_checks($balance):
        field_or_null($lane; "measured_native_transfers") as $transfers |
        ($lane | type) == "object" and
        ($shard | type) == "string" and ($shard | length) > 0 and
-       ($transfers | type) == "number" and $transfers >= 0 and
+       ($transfers | type) == "number" and ($transfers | isfinite) and $transfers >= 0 and
        ($transfers | floor) == $transfers)
    else false
    end) as $records_valid |
+  # Eight-lane results must name the actual complete depth-3 basechain
+  # topology. Normalize both historical and current ShardIdFull spellings
+  # before duplicate detection; summary depth fields alone are not evidence.
   (if $records_valid then
-     ([$lanes[].shard] | unique | length) == ($lanes | length)
+     [$lanes[].shard | if $depth == 3 then
+        ascii_downcase |
+        if test("^0:[13579bdf]0{15}$") then .[2:]
+        elif test("^\\(0,[13579bdf]0{15}\\)$") then .[3:-1]
+        else null end
+      else . end]
+   else [] end) as $shards |
+  (if $records_valid then
+     ($shards | unique | length) == ($lanes | length)
    else false
    end) as $unique_shards |
-  (if $records_valid then all($lanes[]; field_or_null(.; "depth") == 2)
+  (if $depth == 3 then
+     $records_valid and ($shards | sort) ==
+       ["1000000000000000", "3000000000000000", "5000000000000000", "7000000000000000",
+        "9000000000000000", "b000000000000000", "d000000000000000", "f000000000000000"]
+   else true end) as $shard_topology_valid |
+  (if $records_valid then all($lanes[]; field_or_null(.; "depth") == $depth)
    else false
    end) as $record_depths_valid |
   (if $records_valid then all($lanes[]; .measured_native_transfers > 0)
@@ -1113,17 +1130,17 @@ def canonical_depth2_lane_record_checks($balance):
   field_or_null($balance; "measured_transfers") as $aggregate_transfers |
   field_or_null($balance; "lane_measured_transfers_sum") as $reported_lane_sum |
   ($records_valid and
-   ($aggregate_transfers | type) == "number" and $aggregate_transfers >= 0 and
+   ($aggregate_transfers | type) == "number" and ($aggregate_transfers | isfinite) and $aggregate_transfers >= 0 and
    ($aggregate_transfers | floor) == $aggregate_transfers and
-   ($reported_lane_sum | type) == "number" and $reported_lane_sum >= 0 and
+   ($reported_lane_sum | type) == "number" and ($reported_lane_sum | isfinite) and $reported_lane_sum >= 0 and
    ($reported_lane_sum | floor) == $reported_lane_sum and
    $measured_transfers_sum == $aggregate_transfers and
    $measured_transfers_sum == $reported_lane_sum) as $totals_reconcile |
   (if $records_valid and $measured_transfers_sum > 0 then
      all($lanes[];
-       (.measured_native_transfers * 4 * 10000) >=
+       (.measured_native_transfers * $expected_lanes * 10000) >=
          ($measured_transfers_sum * 9500) and
-       (.measured_native_transfers * 4 * 10000) <=
+       (.measured_native_transfers * $expected_lanes * 10000) <=
          ($measured_transfers_sum * 10500))
    else false
    end) as $within_tolerance |
@@ -1132,6 +1149,7 @@ def canonical_depth2_lane_record_checks($balance):
     lane_count_valid:$lane_count_valid,
     records_valid:$records_valid,
     unique_shards:$unique_shards,
+    shard_topology_valid:$shard_topology_valid,
     record_depths_valid:$record_depths_valid,
     every_lane_active:$every_lane_active,
     measured_transfers_sum:$measured_transfers_sum,
@@ -1139,24 +1157,36 @@ def canonical_depth2_lane_record_checks($balance):
     within_tolerance:$within_tolerance
   };
 
-# A four-lane depth-2 result is only a capacity result when the proof follower
+# Retain the original helper name for callers replaying historical results.
+def canonical_depth2_lane_record_checks($balance):
+  canonical_lane_record_checks($balance; 2);
+
+# A four/eight-lane depth-2/3 result is only a capacity result when the proof follower
 # observed useful canonical work in every fixed lane.  Depth 0/1 records
 # predate this acceptance dimension, so their missing balance telemetry is
 # deliberately not applicable rather than a retroactive failure.
 def canonical_lane_balance_acceptance($final):
+  field_or_null($final; "native_payment_lane_depth") as $depth |
   if $final == null then
     {
       canonical_lane_balance_required:null,
       canonical_lane_balance_valid:null,
       canonical_lane_balance_invalid_reasons:["missing_final_generator_record"]
     }
-  elif field_or_null($final; "native_payment_lane_depth") != 2 then
+  elif $depth == null or $depth == 0 or $depth == 1 then
     {
       canonical_lane_balance_required:false,
       canonical_lane_balance_valid:null,
       canonical_lane_balance_invalid_reasons:[]
     }
+  elif $depth != 2 and $depth != 3 then
+    {
+      canonical_lane_balance_required:true,
+      canonical_lane_balance_valid:false,
+      canonical_lane_balance_invalid_reasons:["native_payment_lane_depth_invalid"]
+    }
   else
+    pow(2; $depth) as $expected_lanes |
     field_or_null($final; "canonical_lane_balance") as $balance |
     if ($balance | type) != "object" then
       {
@@ -1165,11 +1195,20 @@ def canonical_lane_balance_acceptance($final):
         canonical_lane_balance_invalid_reasons:["canonical_lane_balance_missing"]
       }
     else
-      canonical_depth2_lane_record_checks($balance) as $lane_records |
-      (field_or_null($balance; "depth") == 2) as $depth_valid |
+      canonical_lane_record_checks($balance; $depth) as $lane_records |
+      (field_or_null($balance; "depth") == $depth) as $depth_valid |
       (field_or_null($balance; "tolerance_bps") == 500) as $tolerance_valid |
-      (field_or_null($balance; "expected_lanes") == 4) as $expected_count_valid |
-      (field_or_null($balance; "observed_lanes") == 4) as $observed_count_valid |
+      (field_or_null($balance; "expected_lanes") == $expected_lanes) as $expected_count_valid |
+      (field_or_null($balance; "observed_lanes") == $expected_lanes) as $observed_count_valid |
+      (if $depth == 3 then
+         field_or_null($final; "canonical_follower_basechain_leaf_shards") == $expected_lanes
+       else true end) as $follower_count_valid |
+      (if $depth == 3 then
+         field_or_null($final; "canonical_chain_measure_transfers") as $chain_transfers |
+         ($chain_transfers | type) == "number" and ($chain_transfers | isfinite) and
+         $chain_transfers >= 0 and ($chain_transfers | floor) == $chain_transfers and
+         $chain_transfers == field_or_null($balance; "measured_transfers")
+       else true end) as $chain_total_valid |
       (field_or_null($balance; "required") == true and
        field_or_null($balance; "topology_complete") == true and
        field_or_null($balance; "totals_reconcile") == true and
@@ -1178,8 +1217,10 @@ def canonical_lane_balance_acceptance($final):
        field_or_null($balance; "valid") == true and
        $depth_valid and $tolerance_valid and
        $expected_count_valid and $observed_count_valid and
+       $follower_count_valid and $chain_total_valid and
        $lane_records.lane_count_valid and $lane_records.records_valid and
        $lane_records.unique_shards and $lane_records.record_depths_valid and
+       $lane_records.shard_topology_valid and
        $lane_records.every_lane_active and $lane_records.totals_reconcile and
        $lane_records.within_tolerance) as $valid |
       {
@@ -1206,6 +1247,10 @@ def canonical_lane_balance_acceptance($final):
           then "canonical_lane_balance_expected_lanes_mismatch" else empty end,
           if $observed_count_valid | not
           then "canonical_lane_balance_observed_lanes_mismatch" else empty end,
+          if $follower_count_valid | not
+          then "canonical_lane_balance_follower_lanes_mismatch" else empty end,
+          if $chain_total_valid | not
+          then "canonical_lane_balance_chain_total_mismatch" else empty end,
           if $lane_records.lane_count_valid | not
           then "canonical_lane_balance_lane_records_mismatch" else empty end,
           if $lane_records.array_valid and ($lane_records.records_valid | not)
@@ -1214,6 +1259,8 @@ def canonical_lane_balance_acceptance($final):
           then "canonical_lane_balance_duplicate_shard" else empty end,
           if $lane_records.records_valid and ($lane_records.record_depths_valid | not)
           then "canonical_lane_balance_lane_depth_mismatch" else empty end,
+          if $lane_records.records_valid and ($lane_records.shard_topology_valid | not)
+          then "canonical_lane_balance_lane_shard_mismatch" else empty end,
           if $lane_records.records_valid and ($lane_records.every_lane_active | not)
           then "canonical_lane_balance_inactive_record" else empty end,
           if $lane_records.records_valid and ($lane_records.totals_reconcile | not)
@@ -1597,7 +1644,7 @@ def native_capacity_load_acceptance($final):
   };
 
 # Lift the generator's independent acceptance dimensions into the report
-# without weakening its proof/capacity contract. For depth 2, canonical lane
+# without weakening its proof/capacity contract. For depths 2/3, canonical lane
 # balance is an additional independent decision and a prerequisite for an
 # effective chain-capacity pass. Signed-run geometry independently gates both
 # ingress and chain capacity, while proof correctness remains untouched.
@@ -1702,6 +1749,7 @@ def capacity_acceptance($final):
 # capacity failure, missing rates, incomplete drain, density, or lane failure.
 def native_benchmark_load_level_acceptance($summary):
   $summary.generator as $generator |
+  canonical_lane_balance_acceptance($generator.final) as $lane_balance |
   (($summary.run.benchmark_exit_code == 0) and
    ($summary.run.interrupted == false) and
    ($generator.final.chain_capacity_valid == true) and
@@ -1716,6 +1764,8 @@ def native_benchmark_load_level_acceptance($summary):
    ($summary.validator_pool.cleanup_acceptance.valid == true) and
    (if $generator.capacity_acceptance.canonical_lane_balance_required == true then
       $generator.capacity_acceptance.canonical_lane_balance_valid == true else true end) and
+   (if $lane_balance.canonical_lane_balance_required == true then
+      $lane_balance.canonical_lane_balance_valid == true else true end) and
    (if $summary.strict_image_reuse.required == true then
       $summary.strict_image_reuse.valid == true else true end)) as $prerequisites |
   ($prerequisites and $generator.chain_capacity_valid == true and

@@ -7,10 +7,10 @@ harness_git=(git -c "safe.directory=$repo_dir" -C "$repo_dir")
 
 usage() {
   cat <<'EOF'
-Usage: run-native-payment-lanes-cycle.sh [--depth 1|2] [ENV_FILE]
+Usage: run-native-payment-lanes-cycle.sh [--depth 1|2|3] [ENV_FILE]
 
 Create a fresh fixed-depth native payment-lane genesis and run its baseline.
-Depth defaults to 1 (two lanes); depth 2 creates four lanes. This command
+Depth defaults to 1 (two lanes); depths 2 and 3 create four and eight lanes. This command
 deletes only the benchmark Compose project's allowlisted state.
 EOF
 }
@@ -21,7 +21,7 @@ while (( $# > 0 )); do
   case "$1" in
     --depth)
       if (( $# < 2 )); then
-        echo "--depth requires 1 or 2" >&2
+        echo "--depth requires 1, 2 or 3" >&2
         usage >&2
         exit 2
       fi
@@ -54,9 +54,9 @@ while (( $# > 0 )); do
 done
 
 case "$lane_depth" in
-  1|2) ;;
+  1|2|3) ;;
   *)
-    echo "--depth must be 1 or 2, got '$lane_depth'" >&2
+    echo "--depth must be 1, 2 or 3, got '$lane_depth'" >&2
     usage >&2
     exit 2
     ;;
@@ -139,6 +139,7 @@ if ! jq -e -L "$script_dir/jq" --arg harness_revision "$harness_revision" \
   .generator.final.native_payment_lane_depth == $expected_depth and
   .generator.final.canonical_follower_basechain_leaf_shards == $expected_lane_count and
   ($expected_depth == 1 or .generator.final.canonical_lane_balance.valid == true) and
+  ($expected_depth == 1 or canonical_lane_balance_acceptance(.generator.final).canonical_lane_balance_valid == true) and
   .generator.valid_canonical_run == true and
   .generator.native_signed_run_quantum.telemetry_contract_valid == true and
   .generator.native_signed_run_quantum.benchmark_profile_valid == true and

@@ -607,7 +607,7 @@ native_payment_lanes_manifest_header_valid() {
 
   [[ $schema == NATIVE_PAYMENT_LANES_MANIFEST_V1 && -z $extra ]] || return 1
   case "$depth:$lane_count" in
-    1:2|2:4) ;;
+    1:2|2:4|3:8) ;;
     *) return 1 ;;
   esac
   native_payment_lanes_canonical_awk_uint "$source_count" &&
@@ -763,7 +763,8 @@ native_payment_lanes_configuration_checks() {
       },
       consistency:{
         header_lane_count: (($depth == "1" and $lanes == "2") or
-                            ($depth == "2" and $lanes == "4")),
+                            ($depth == "2" and $lanes == "4") or
+                            ($depth == "3" and $lanes == "8")),
         runtime_manifest_depth: ($runtime.NATIVE_PAYMENT_LANE_DEPTH == $depth),
         durable_manifest_depth: ($durable.NATIVE_PAYMENT_LANE_DEPTH == $depth),
         durable_manifest_lane_count: $lane_count_valid,
@@ -800,6 +801,7 @@ native_payment_lanes_manifest_summary_self_test() {
   local eight=8888888888888888888888888888888888888888888888888888888888888888
   local cee=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   local runtime runtime_depth_one durable durable_depth_one durable_depth_one_legacy
+  local runtime_depth_three durable_depth_three manifest_depth_three lane address
   local summary checks enabled_check
 
   summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2\n0 0 %s %s\n1 1 %s %s\n' \
@@ -814,6 +816,23 @@ native_payment_lanes_manifest_summary_self_test() {
     native_payment_lanes_manifest_summary /dev/stdin 4 2 4)
   jq -e '.records == 4 and .invalid == false and .lane_record_counts == [1,1,1,1] and
          .lane_balance.balanced == true' <<<"$summary" >/dev/null
+
+  manifest_depth_three=$(
+    printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 3 8 8\n'
+    for ((lane=0; lane<8; ++lane)); do
+      printf -v address '%x%063d' "$((lane * 2))" 0
+      printf '%s %s %s %s\n' "$lane" "$lane" "$address" "$address"
+    done
+  )
+  summary=$(native_payment_lanes_manifest_summary /dev/stdin 8 3 8 <<<"$manifest_depth_three")
+  jq -e '.records == 8 and .invalid == false and .lane_record_counts == [1,1,1,1,1,1,1,1] and
+         .lane_balance.balanced == true' <<<"$summary" >/dev/null
+  summary=$(sed '$d' <<<"$manifest_depth_three" |
+    native_payment_lanes_manifest_summary /dev/stdin 8 3 8)
+  jq -e '.records == 7 and .invalid == true' <<<"$summary" >/dev/null
+  summary=$(sed 's/^7 7 /7 6 /' <<<"$manifest_depth_three" |
+    native_payment_lanes_manifest_summary /dev/stdin 8 3 8)
+  jq -e '.invalid == true and .lane_balance.balanced == false' <<<"$summary" >/dev/null
 
   summary=$(printf 'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 4\n0 0 %s %s\n1 1 %s %s\n2 2 %s %s\n3 3 %s %s\n' \
     "$zero" "$zero" "$eight" "$four" "$eight" "$eight" "$cee" "$cee" |
@@ -835,6 +854,12 @@ native_payment_lanes_manifest_summary_self_test() {
 
   native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 1 2 2 ''
   native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 4 ''
+  native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 3 8 8 ''
+  if native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 3 4 8 '' ||
+     native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 3 8 7 '' ||
+     native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 4 16 16 ''; then
+    return 1
+  fi
   native_payment_lanes_manifest_header_valid \
     NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 9007199254740991 ''
   if native_payment_lanes_manifest_header_valid NATIVE_PAYMENT_LANES_MANIFEST_V1 2 2 4 ''; then
@@ -877,6 +902,26 @@ native_payment_lanes_manifest_summary_self_test() {
   jq -e '.valid and .runtime.fixed_split and .durable.manifest_sources and
          .durable.lane_count_explicit and (.durable.lane_count_legacy_inferred | not) and
          .consistency.header_lane_count' <<<"$checks" >/dev/null
+  runtime_depth_three=$(jq -c '
+    .ACTUAL_MIN_SPLIT = "3" | .MIN_SPLIT = "3" | .MAX_SPLIT = "3" |
+    .NATIVE_PAYMENT_LANE_DEPTH = "3"
+  ' <<<"$runtime")
+  durable_depth_three=$(jq -c '
+    .NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT = "3" |
+    .NATIVE_PAYMENT_LANE_MIN_SPLIT = "3" | .NATIVE_PAYMENT_LANE_MAX_SPLIT = "3" |
+    .NATIVE_PAYMENT_LANE_DEPTH = "3" | .NATIVE_PAYMENT_LANE_COUNT = "8" |
+    .NATIVE_SPAM_REQUESTED_SOURCES = "8" | .NATIVE_SPAM_SOURCES = "8" |
+    .NATIVE_SPAM_GENESIS_SOURCES = "8"
+  ' <<<"$durable")
+  checks=$(native_payment_lanes_configuration_checks "$runtime_depth_three" "$durable_depth_three" 3 8 8)
+  jq -e '.valid and .durable.lane_count_explicit and .consistency.header_lane_count and
+         .consistency.runtime_durable_split' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks "$runtime_depth_three" \
+    "$(jq -c 'del(.NATIVE_PAYMENT_LANE_COUNT)' <<<"$durable_depth_three")" 3 8 8)
+  jq -e '.valid == false and .durable.lane_count == false and
+         .durable.lane_count_legacy_inferred == false' <<<"$checks" >/dev/null
+  checks=$(native_payment_lanes_configuration_checks "$runtime_depth_three" "$durable_depth_three" 3 4 8)
+  jq -e '.valid == false and .consistency.header_lane_count == false' <<<"$checks" >/dev/null
   runtime_depth_one=$(jq -c '
     .ACTUAL_MIN_SPLIT = "1" | .MIN_SPLIT = "1" | .MAX_SPLIT = "1" |
     .NATIVE_PAYMENT_LANE_DEPTH = "1"

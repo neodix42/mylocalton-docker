@@ -244,7 +244,7 @@ generate_basechain_state() {
   fi
   if [ "$native_payment_lanes" = "1" ]; then
     if ! native_payment_lane_depth_is_valid "$native_payment_lane_depth"; then
-      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2 for the supported fixed-lane benchmark topologies, got '$native_payment_lane_depth'"
+      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1, 2, or 3 for the supported fixed-lane benchmark topologies, got '$native_payment_lane_depth'"
       exit 2
     fi
     if [ "$genesis_destinations" != "1" ]; then
@@ -499,7 +499,7 @@ if [ -f "/var/ton-work/db/state/IDENTITY" ]; then
   fi
   if [ "$existing_native_payment_lanes" = "1" ]; then
     if ! native_payment_lane_depth_is_valid "$existing_native_payment_lane_depth"; then
-      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2 for an existing fixed-lane state, got '$existing_native_payment_lane_depth'" >&2
+      echo "NATIVE_PAYMENT_LANE_DEPTH must be 1, 2, or 3 for an existing fixed-lane state, got '$existing_native_payment_lane_depth'" >&2
       exit 2
     fi
     if ! native_payment_lanes_existing_genesis_marker_is_valid \

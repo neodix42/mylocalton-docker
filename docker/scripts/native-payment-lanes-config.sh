@@ -6,23 +6,23 @@
 # feature switch: a v16 lane chain must retain capNativeTransferRuns as well as
 # advertise capNativePaymentLanes.
 #
-# The harness intentionally supports only the fixed depth-1 and depth-2
-# topologies. They give the benchmark a reproducible split shape and prevent a
+# The harness supports fixed depths 1 through 3 (two, four, or eight lanes).
+# They give the benchmark a reproducible split shape and prevent a
 # misleading run that happens to start before every required split or that
 # permits a later split to separate an otherwise lane-local pair.
 native_payment_lanes_existing_genesis_marker_is_valid() {
   local marker_file=$1 expected_depth=${2:-1}
   local expected_lane_count
 
-  if [[ $expected_depth != 1 && $expected_depth != 2 ]] || [[ ! -r $marker_file ]]; then
+  if [[ $expected_depth != 1 && $expected_depth != 2 && $expected_depth != 3 ]] || [[ ! -r $marker_file ]]; then
     return 2
   fi
   expected_lane_count=$((1 << expected_depth))
 
   # Parse the marker once. Every activation fact must occur exactly once and
   # match the requested topology. Depth-1 markers predate the lane-count fact,
-  # so they may omit it; when present it is still unique and exact. Depth 2 has
-  # no legacy representation and always requires one explicit count.
+  # so they may omit it; when present it is still unique and exact. Depths 2/3
+  # have no legacy representation and always require one explicit count.
   awk -v expected_depth="$expected_depth" -v expected_lane_count="$expected_lane_count" '
     BEGIN {
       required["NATIVE_PAYMENT_LANES_ENABLED"] = "1"
@@ -60,7 +60,7 @@ native_payment_lanes_existing_genesis_marker_is_valid() {
           valid = 0
         }
       }
-      if ((expected_depth == 2 && lane_count_records != 1) ||
+      if ((expected_depth >= 2 && lane_count_records != 1) ||
           (expected_depth == 1 && lane_count_records > 1)) {
         valid = 0
       }
@@ -101,8 +101,8 @@ resolve_native_payment_lanes_config() {
         echo "NATIVE_PAYMENT_LANES_CAPABILITY must be 2048 when NATIVE_PAYMENT_LANES_ENABLED=1, got '$requested_capability'" >&2
         return 2
       fi
-      if [[ $lane_depth != 1 && $lane_depth != 2 ]]; then
-        echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2 for a supported fixed benchmark topology, got '$lane_depth'" >&2
+      if [[ $lane_depth != 1 && $lane_depth != 2 && $lane_depth != 3 ]]; then
+        echo "NATIVE_PAYMENT_LANE_DEPTH must be 1, 2, or 3 for a supported fixed benchmark topology, got '$lane_depth'" >&2
         return 2
       fi
       if [[ $actual_min_split != $lane_depth || $min_split != $lane_depth || $max_split != $lane_depth ]]; then

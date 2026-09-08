@@ -84,7 +84,7 @@ def parser():
         p.add_argument('--' + flag, type=int, default=default)
     p.add_argument('--target-tps', type=float, default=0)
     p.add_argument('--initial-rtt', type=float, default=0.5)
-    p.add_argument('--lane-depth', type=int, choices=[1, 2], default=2)
+    p.add_argument('--lane-depth', type=int, choices=[1, 2, 3], default=2)
     p.add_argument('--arm-timeout', type=int, default=0,
                    help='wall-clock watchdog; 0 derives readiness + phases + 10 minute setup/report allowance')
     return p
@@ -111,7 +111,7 @@ def validate_options(a):
     a.global_config = str(path)
     a.env_file = a.env_file.resolve()
     require(a.env_file.is_file(), 'env file does not exist')
-    a.arm_timeout = a.arm_timeout or ((900 if a.lane_depth == 2 else 360) + a.ramp + a.warmup +
+    a.arm_timeout = a.arm_timeout or ({1: 360, 2: 900, 3: 1800}[a.lane_depth] + a.ramp + a.warmup +
                                       a.duration + a.drain + 600)
     require(a.arm_timeout >= a.ramp + a.warmup + a.duration + a.drain,
             'arm timeout must allow all configured phases and drain')
@@ -216,7 +216,7 @@ class Host:
         require(isinstance(raw, list) and len(raw) == 1, 'missing genesis container')
         c = raw[0]
         require(c['State']['Running'] is True and c['State'].get('Health', {}).get('Status') == 'healthy',
-                'prepare one healthy four-lane validator before this sweep; no provisioning is performed')
+                'prepare one healthy validator at the requested lane depth before this sweep; no provisioning is performed')
         identity = {'container_id': c['Id'], 'image_id': c['Image'], 'started_at': c['State']['StartedAt'],
                     'restart_count': c['RestartCount'], 'running': True,
                     'validator_process': public_process(self.text(['docker', 'exec', 'genesis', 'sh', '-c', PROCESS_PROBE]))}
@@ -290,6 +290,21 @@ def assess(summary, a, count, frozen, wrapper_exit):
     for field in ['chain_correctness_valid', 'run_complete', 'native_signed_run_quantum_valid',
                   'canonical_lane_balance_valid', 'native_run_batching_valid', 'validator_cleanup_valid']:
         check(acceptance.get(field) is True, field)
+    if a.lane_depth == 3:
+        # Re-evaluate the concrete eight-lane proof telemetry with the same
+        # policy as the wrapper. An old or forged summary may otherwise mark
+        # depth 3 as not applicable while claiming a successful capacity arm.
+        try:
+            result = subprocess.run(
+                ['jq', '-c', '-L', str(ROOT / 'benchmark' / 'jq'),
+                 'include "native-benchmark-lib"; canonical_lane_balance_acceptance(.)'],
+                input=json.dumps(f, allow_nan=False), text=True, capture_output=True, check=True)
+            lane_balance = json.loads(result.stdout)
+            check(lane_balance.get('canonical_lane_balance_required') is True and
+                  lane_balance.get('canonical_lane_balance_valid') is True,
+                  'canonical_eight_lane_evidence_invalid')
+        except (OSError, subprocess.CalledProcessError, ValueError, TypeError):
+            check(False, 'canonical_eight_lane_evidence_unavailable')
     check(acceptance.get('correctness_invalid_reasons') == [] and
           acceptance.get('run_incomplete_reasons') == [], 'correctness_or_completion_reasons')
     check(g.get('valid_canonical_run') is True and f.get('canonical_backlog_after_drain') == 0,
@@ -307,6 +322,8 @@ def assess(summary, a, count, frozen, wrapper_exit):
                 'configured_signers': a.signers, 'configured_sources': a.sources,
                 'adaptive_initial_cwnd': a.initial_cwnd, 'initial_congestion_window': a.initial_cwnd,
                 'target_tps': a.target_tps}
+    if a.lane_depth == 3:
+        expected.update(native_payment_lane_depth=3, canonical_follower_basechain_leaf_shards=8)
     for key, value in expected.items():
         actual = f.get(key)
         valid_type = (type(actual) is bool if isinstance(value, bool) else

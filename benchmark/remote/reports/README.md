@@ -55,3 +55,7 @@ With 24,576 exported accounts, three setups receive 8,192 disjoint sources each,
 The [current public-dashboard audit](native-chart-scaling-20260908.md) confirms the NTRN classifier bug and records five unlabelled sustained periods around 48.6k–51.7k canonical logical TPS. It explains the fixed global credit budget, reduced batch density at high connection counts, external-work waits and dormant staged-trie threshold. The audit is an observation, not a new validated benchmark or capacity claim.
 
 Session Stats `97c4f771` fixes all native charts, adds native-only retained-history repair and a wait breakdown, and prevents subminute API rate inflation. All 16 tests and image publication passed; the report includes the verified image digest and commands to update only Session Stats while preserving its database.
+
+## Eight-lane configuration — 2026-09-08
+
+[Implementation and validation notes](native-eight-lanes-20260908.md) describe the new depth-3 physical-server default, manifest-derived exports, strict eight-lane readiness and acceptance checks, and the unmeasured live-TPS limitation. Historical four-lane results retain their original meaning.

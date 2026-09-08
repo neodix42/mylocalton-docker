@@ -41,7 +41,7 @@ NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=15
 NATIVE_TRANSFER_RUNS_CAPABILITY=512
 ! resolve_native_transfer_runs_config >/dev/null 2>&1
 
-for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
+for env_file in .env .env.desktop .env.devnet .env.laptop; do
   grep -qx 'VERSION_CAPABILITIES=14' "$repo_dir/$env_file"
   grep -qx 'NATIVE_TRANSFER_RUNS_ENABLED=0' "$repo_dir/$env_file"
   grep -qx 'NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=15' "$repo_dir/$env_file"
@@ -49,6 +49,13 @@ for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
   grep -qx 'NATIVE_LOAD_NATIVE_TRANSFER_RUNS=0' "$repo_dir/$env_file"
   grep -qx 'NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=16' "$repo_dir/$env_file"
 done
+
+# The physical-server profile opts into source-signed native payment lanes.
+grep -qx 'NATIVE_TRANSFER_RUNS_ENABLED=1' "$repo_dir/.env.physical"
+grep -qx 'NATIVE_TRANSFER_RUNS_GLOBAL_VERSION=15' "$repo_dir/.env.physical"
+grep -qx 'NATIVE_TRANSFER_RUNS_CAPABILITY=1024' "$repo_dir/.env.physical"
+grep -qx 'NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1' "$repo_dir/.env.physical"
+grep -qx 'NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE=16' "$repo_dir/.env.physical"
 
 grep -Fqx 'VERSION_CAPABILITIES capCreateStats capBounceMsgBody or capReportVersion or capShortDequeue or 64 or 128 or NATIVE_PROTOCOL_CAPABILITIES or config.version!' \
   "$repo_dir/docker/scripts/gen-zerostate.fif"

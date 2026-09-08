@@ -6,18 +6,19 @@
 native_payment_lanes_profile_env() {
   local lane_depth=1
   local readiness_timeout_seconds=360
+  local wallet_retries=128
 
   # The runners always pass an explicit depth. Retain the original command-
   # first form as a depth-1 compatibility path for callers that source this
   # helper directly.
   case "${1:-}" in
-    1|2)
+    1|2|3)
       lane_depth=$1
       shift
       ;;
     ''|*[!0-9]*) ;;
     *)
-      echo "native payment-lane depth must be 1 or 2, got '$1'" >&2
+      echo "native payment-lane depth must be 1, 2 or 3, got '$1'" >&2
       return 2
       ;;
   esac
@@ -26,6 +27,11 @@ native_payment_lanes_profile_env() {
     # A fresh depth-2 topology splits in two sequential rounds. The first
     # round alone can consume most of the depth-1 readiness allowance.
     readiness_timeout_seconds=900
+  elif (( lane_depth == 3 )); then
+    # Eight leaves require three sequential split rounds and each wallet
+    # has a one-in-eight chance of matching its assigned lane per attempt.
+    readiness_timeout_seconds=1800
+    wallet_retries=256
   fi
 
   env \
@@ -36,7 +42,7 @@ native_payment_lanes_profile_env() {
     NATIVE_PAYMENT_LANES_GLOBAL_VERSION=16 \
     NATIVE_PAYMENT_LANES_CAPABILITY=2048 \
     NATIVE_PAYMENT_LANE_DEPTH="$lane_depth" \
-    NATIVE_PAYMENT_LANE_WALLET_RETRIES=128 \
+    NATIVE_PAYMENT_LANE_WALLET_RETRIES="$wallet_retries" \
     NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=12 \
     GENESIS_HEALTHCHECK_START_PERIOD=60m \
     ACTUAL_MIN_SPLIT="$lane_depth" \

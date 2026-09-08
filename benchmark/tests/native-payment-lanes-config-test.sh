@@ -63,6 +63,18 @@ NATIVE_PAYMENT_LANE_DEPTH=3
 ACTUAL_MIN_SPLIT=3
 MIN_SPLIT=3
 MAX_SPLIT=3
+assert_effective_config 16 3072 8
+for mismatched_split in ACTUAL_MIN_SPLIT MIN_SPLIT MAX_SPLIT; do
+  printf -v "$mismatched_split" '%s' 2
+  ! resolve_native_payment_lanes_config >/dev/null 2>&1
+  printf -v "$mismatched_split" '%s' 3
+done
+NATIVE_PAYMENT_LANE_DEPTH=4
+ACTUAL_MIN_SPLIT=4
+MIN_SPLIT=4
+MAX_SPLIT=4
+! resolve_native_payment_lanes_config >/dev/null 2>&1
+NATIVE_PAYMENT_LANE_DEPTH=03
 ! resolve_native_payment_lanes_config >/dev/null 2>&1
 NATIVE_PAYMENT_LANE_DEPTH=2
 ACTUAL_MIN_SPLIT=2
@@ -148,7 +160,37 @@ write_existing_genesis_marker "$depth2_duplicate_count_marker" 2 \
   'NATIVE_PAYMENT_LANE_COUNT=4' 'NATIVE_PAYMENT_LANE_COUNT=4'
 ! native_payment_lanes_existing_genesis_marker_is_valid "$depth2_duplicate_count_marker" 2
 
-for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
+depth3_explicit_marker=$test_dir/depth3-explicit.env
+write_existing_genesis_marker "$depth3_explicit_marker" 3 'NATIVE_PAYMENT_LANE_COUNT=8'
+native_payment_lanes_existing_genesis_marker_is_valid "$depth3_explicit_marker" 3
+# A topology change never makes an existing four-lane zero state reusable.
+! native_payment_lanes_existing_genesis_marker_is_valid "$depth2_explicit_marker" 3
+! native_payment_lanes_existing_genesis_marker_is_valid "$depth3_explicit_marker" 2
+! native_payment_lanes_existing_genesis_marker_is_valid "$depth3_explicit_marker" 4
+! native_payment_lanes_existing_genesis_marker_is_valid "$depth3_explicit_marker" 03
+
+depth3_missing_count_marker=$test_dir/depth3-missing-count.env
+write_existing_genesis_marker "$depth3_missing_count_marker" 3
+! native_payment_lanes_existing_genesis_marker_is_valid "$depth3_missing_count_marker" 3
+depth3_wrong_count_marker=$test_dir/depth3-wrong-count.env
+write_existing_genesis_marker "$depth3_wrong_count_marker" 3 'NATIVE_PAYMENT_LANE_COUNT=4'
+! native_payment_lanes_existing_genesis_marker_is_valid "$depth3_wrong_count_marker" 3
+
+# Every activation fact remains mandatory, exact, and unique at depth three.
+for field in NATIVE_PAYMENT_LANES_ENABLED NATIVE_PAYMENT_LANE_DEPTH NATIVE_TRANSFER_RUNS_ENABLED \
+  NATIVE_PAYMENT_LANES_EFFECTIVE_VERSION NATIVE_PAYMENT_LANES_EFFECTIVE_CAPABILITIES \
+  NATIVE_PAYMENT_LANE_ACTUAL_MIN_SPLIT NATIVE_PAYMENT_LANE_MIN_SPLIT NATIVE_PAYMENT_LANE_MAX_SPLIT \
+  NATIVE_PAYMENT_LANE_COUNT; do
+  sed "/^$field=/d" "$depth3_explicit_marker" > "$test_dir/depth3-missing.env"
+  ! native_payment_lanes_existing_genesis_marker_is_valid "$test_dir/depth3-missing.env" 3
+  sed "s/^$field=.*/$field=invalid/" "$depth3_explicit_marker" > "$test_dir/depth3-invalid.env"
+  ! native_payment_lanes_existing_genesis_marker_is_valid "$test_dir/depth3-invalid.env" 3
+  cp "$depth3_explicit_marker" "$test_dir/depth3-duplicate.env"
+  grep "^$field=" "$depth3_explicit_marker" >> "$test_dir/depth3-duplicate.env"
+  ! native_payment_lanes_existing_genesis_marker_is_valid "$test_dir/depth3-duplicate.env" 3
+done
+
+for env_file in .env .env.desktop .env.devnet .env.laptop; do
   grep -qx 'NATIVE_PAYMENT_LANES_ENABLED=0' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANES_GLOBAL_VERSION=16' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANES_CAPABILITY=2048' "$repo_dir/$env_file"
@@ -156,6 +198,15 @@ for env_file in .env .env.desktop .env.devnet .env.laptop .env.physical; do
   grep -qx 'NATIVE_PAYMENT_LANE_WALLET_RETRIES=128' "$repo_dir/$env_file"
   grep -qx 'NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=1' "$repo_dir/$env_file"
   grep -qx 'NATIVE_LOAD_PAYMENT_LANE_DEPTH=0' "$repo_dir/$env_file"
+done
+
+for setting in NATIVE_TRANSFER_RUNS_ENABLED=1 NATIVE_PAYMENT_LANES_ENABLED=1 \
+  NATIVE_PAYMENT_LANES_GLOBAL_VERSION=16 NATIVE_PAYMENT_LANES_CAPABILITY=2048 \
+  NATIVE_PAYMENT_LANE_DEPTH=3 NATIVE_PAYMENT_LANE_WALLET_RETRIES=256 \
+  NATIVE_PAYMENT_LANE_WALLET_PARALLELISM=12 ACTUAL_MIN_SPLIT=3 MIN_SPLIT=3 MAX_SPLIT=3 \
+  NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1 NATIVE_LOAD_PAYMENT_LANE_DEPTH=3 \
+  NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=1800; do
+  grep -qx "$setting" "$repo_dir/.env.physical"
 done
 
 grep -qx 'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS=0' "$repo_dir/.env.physical"
@@ -228,13 +279,19 @@ profile_environment=$(native_payment_lanes_profile_env 2 \
   env NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=1200 env)
 grep -qx 'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=1200' <<< "$profile_environment"
 ! grep -qx 'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=900' <<< "$profile_environment"
+profile_environment=$(native_payment_lanes_profile_env 3 env)
+for setting in NATIVE_PAYMENT_LANE_DEPTH=3 NATIVE_LOAD_PAYMENT_LANE_DEPTH=3 \
+  ACTUAL_MIN_SPLIT=3 MIN_SPLIT=3 MAX_SPLIT=3 NATIVE_PAYMENT_LANE_WALLET_RETRIES=256 \
+  NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS=1800; do
+  grep -qx "$setting" <<< "$profile_environment"
+done
 ! native_payment_lanes_profile_env 0 env >/dev/null 2>&1
-! native_payment_lanes_profile_env 3 env >/dev/null 2>&1
+! native_payment_lanes_profile_env 4 env >/dev/null 2>&1
 
 "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh" --help >/dev/null
 "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh" --help >/dev/null
 ! "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh" --depth 0 >/dev/null 2>&1
-! "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh" --depth 3 >/dev/null 2>&1
+! "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh" --depth 4 >/dev/null 2>&1
 ! "$repo_dir/benchmark/run-native-payment-lanes-cycle.sh" '' >/dev/null 2>&1
 ! "$repo_dir/benchmark/run-native-payment-lanes-staircase.sh" '' >/dev/null 2>&1
 ! "$repo_dir/benchmark/run-fresh-native-cycle.sh" '' >/dev/null 2>&1

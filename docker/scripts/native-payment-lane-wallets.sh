@@ -20,7 +20,7 @@ native_payment_lane_address_hex() {
 }
 
 native_payment_lane_depth_is_valid() {
-  [[ ${1:-} == 1 || ${1:-} == 2 ]]
+  [[ ${1:-} == 1 || ${1:-} == 2 || ${1:-} == 3 ]]
 }
 
 native_payment_lane_count() {
@@ -30,25 +30,16 @@ native_payment_lane_count() {
   printf '%s\n' "$((1 << depth))"
 }
 
-# The benchmark harness supports the two fixed leaves at depth 1 and the four
-# fixed leaves at depth 2.  The lane is selected by the corresponding high
-# account-id bits; textual user-friendly address encodings are never used for
-# shard placement.
+# The benchmark harness supports two, four, or eight fixed leaves. The lane
+# is selected by the corresponding high account-id bits; textual user-friendly
+# address encodings are never used for shard placement.
 native_payment_lane_for_address() {
   local address_file=$1 depth=${2:-1}
   local address_hex
 
   native_payment_lane_depth_is_valid "$depth" || return 2
   address_hex=$(native_payment_lane_address_hex "$address_file") || return 1
-  case "$depth:$address_hex" in
-    1:[01234567]*) printf '0\n' ;;
-    1:[89aAbBcCdDeEfF]*) printf '1\n' ;;
-    2:[0123]*) printf '0\n' ;;
-    2:[4567]*) printf '1\n' ;;
-    2:[89aAbB]*) printf '2\n' ;;
-    2:[cCdDeEfF]*) printf '3\n' ;;
-    *) return 1 ;;
-  esac
+  printf '%s\n' "$((16#${address_hex:0:2} >> (8 - depth)))"
 }
 
 native_payment_lane_wallet_state() {
@@ -78,7 +69,7 @@ create_native_payment_lane_wallet() {
   local wallet_dir temp_dir temp_base attempt lane lane_count
 
   lane_count=$(native_payment_lane_count "$depth") || {
-    genesis_log "Native payment lane depth must be 1 or 2, got '$depth'"
+    genesis_log "Native payment lane depth must be 1, 2, or 3, got '$depth'"
     return 2
   }
   if ! [[ $expected_lane =~ ^[0-9]+$ ]] || ((10#$expected_lane >= lane_count)); then
@@ -161,7 +152,7 @@ prepare_native_payment_lane_wallet_set() {
   local result_tmp="$result_file.tmp.$$"
 
   lane_count=$(native_payment_lane_count "$depth") || {
-    genesis_log "Native payment lane depth must be 1 or 2, got '$depth'"
+    genesis_log "Native payment lane depth must be 1, 2, or 3, got '$depth'"
     return 2
   }
   expected_lane=$((index % lane_count))
@@ -194,7 +185,7 @@ prepare_native_payment_lane_wallet_sets_parallel() {
 
   NATIVE_PAYMENT_LANE_WALLET_RESULTS_DIR=
   if ! native_payment_lane_depth_is_valid "$depth"; then
-    genesis_log "Native payment lane depth must be 1 or 2, got '$depth'"
+    genesis_log "Native payment lane depth must be 1, 2, or 3, got '$depth'"
     return 2
   fi
   if ! native_payment_lane_wallet_parallelism_is_valid "$parallelism"; then

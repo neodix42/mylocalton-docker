@@ -1,0 +1,15 @@
+# Eight-lane physical genesis and remote export — 8 September 2026
+
+Fresh `.env.physical` deployments now select depth 3: eight fixed native payment lanes. `ACTUAL_MIN_SPLIT`, `MIN_SPLIT`, `MAX_SPLIT`, and both native lane-depth settings agree. The source population remains 24,576, or 3,072 sources per lane. Source-signed runs retain their 16-transfer maximum; worker counts and admission budgets are unchanged.
+
+Genesis helpers, wallet prefix selection, durable markers, local cycle/staircase/sweep wrappers, runtime readiness, export/import, and benchmark acceptance support depths 1 through 3. Existing two/four-lane chains and bundles retain their own depth; the exporter reads that depth from the actual wallet manifest. It does not relabel existing four-lane wallets as eight-lane wallets.
+
+Depth 3 uses 256 wallet-generation attempts and a 1,800-second topology-readiness allowance, retaining 12 bounded provisioning workers. Readiness requires the exact eight basechain leaves, without missing, duplicate, foreign or malformed entries. Eight-lane acceptance checks concrete shard identities, depth, canonical totals and each lane's activity/share; summary booleans alone cannot pass a malformed result. The image exporter checks that the immutable generator image contains eight-lane shell helpers before publishing a depth-3 bundle.
+
+Validation passed the full native benchmark reporting suite (including 18 connection-sweep tests and strict eight-lane acceptance cases), 64 remote export/import/runner integration tests, 12 registry-image wrapper tests, rendered Docker Compose environment checks, and a real Fift wallet smoke test. The latter generated 16 real source/destination pairs across all eight lanes, verified full and subset manifests, rejected a wrong depth, and reused matching wallets. It used the current `new-native-wallet.fif` with installed Fift revision `3d478cbde854be03a18ab2a59f8fc3c565cf7d14`; the temporary private material was removed after the check. This verifies wallet construction, not live consensus.
+
+The configured local Docker daemon was unavailable: its Unix socket did not exist. No validator was started or restarted, no existing database was reset, and no eight-lane TPS result is claimed. The integration tests simulate Docker and canonical report fixtures. A real eight-lane genesis/load run remains necessary on A/B before comparing performance with four lanes.
+
+For deployment, update the MyLocalTonDocker checkout and use the new physical settings only with fresh, separate state and matching funded wallets. `start-native-genesis.sh` obtains the published TON base and rebuilds both derived wrappers locally. The existing TON binary already supports depth 3; this change does not need a TON consensus/image-workflow modification. Export and import a new bundle for B so its prebuilt image contains the updated helpers. Use the same immutable image across subsequent paired tests.
+
+See [remote setup](../README.md) and [local lane benchmarking](../../../README.md#phase-a-native-payment-lanes-two-four-or-eight-fixed-shards). Sixteen lanes remain unsupported by these wrappers.

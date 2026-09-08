@@ -115,6 +115,13 @@ if args[:1] == ['exec']:
  if stdin: stdin=stdin.replace(b'/usr/share/data',str(root/'data').encode()).replace(b'/var/ton-work/db/native-spam/wallets',str(root/'data'/'test-wallets').encode())
  proc=subprocess.run([sys.executable,*tail[1:]],input=stdin)
  sys.exit(proc.returncode)
+if args[:1] == ['run'] and '--entrypoint' in args and args[args.index('--entrypoint')+1]=='/bin/sh':
+ with (root/'lane-capability-calls.jsonl').open('a') as out:out.write(json.dumps(args)+'\n')
+ if args[-2]!='-ec' or '--mount' in args or '--env-file' in args or '--read-only' not in args or args[args.index('--network')+1]!='none':
+  raise SystemExit('unsafe lane capability probe arguments')
+ script=args[-1].replace('/usr/local/lib/native-load-generator/payment-lanes.sh',str(root/'image-payment-lanes.sh'))
+ proc=subprocess.run(['/bin/sh','-ec',script])
+ sys.exit(proc.returncode)
 if args[:1] == ['run'] and '--entrypoint' in args and args[args.index('--entrypoint')+1]=='/usr/local/bin/native-load-generator':
  with (root/'capability-calls.jsonl').open('a') as out:out.write(json.dumps(args)+'\n')
  if args[-1]!='--help' or '--mount' in args or '--env-file' in args or args[args.index('--network')+1]!='none':
@@ -192,6 +199,7 @@ class RemoteTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.fake = self.root / 'fake'
         self.fake.mkdir()
+        shutil.copy2(ROOT/'native-load-generator/payment-lanes.sh', self.fake/'image-payment-lanes.sh')
         self.data = self.fake / 'data'
         self.wallets = self.data / 'test-wallets'
         self.wallets.mkdir(parents=True)
@@ -212,17 +220,7 @@ class RemoteTests(unittest.TestCase):
              'liteservers':[{'ip':2130706433,'port':40004,'id':{'@type':'pub.ed25519','key':enc(3)}}],
              'dht':{'@type':'dht.config.global','k':6,'a':3,'static_nodes':{'nodes':[]}}}
         (self.data/'global.config.json').write_text(json.dumps(self.config))
-        rows=[f'NATIVE_PAYMENT_LANES_MANIFEST_V1 2 4 {ALL_SOURCES}']
-        for i in range(ALL_SOURCES):
-            addresses={}
-            for kind in ['source','dest']:
-                address=bytes([(i%4)<<6])+hashlib.sha256(f'{kind}-{i}'.encode()).digest()[1:]
-                addresses[kind]=address
-                (self.wallets/f'{kind}-{i}.addr').write_bytes(address)
-                (self.wallets/f'{kind}-{i}.pub').write_bytes(address)
-                (self.wallets/f'{kind}-{i}.pk').write_bytes(hashlib.sha256(f'private-{kind}-{i}'.encode()).digest())
-            rows.append(f'{i} {i%4} {addresses["source"].hex()} {addresses["dest"].hex()}')
-        (self.wallets/'native-payment-lanes.manifest').write_text('\n'.join(rows)+'\n')
+        self.write_wallets(2)
         (self.wallets/'private-unrelated.key').write_text('must never export')
         self.bundle=self.root/'bundle'
         self.client=self.root/'client'
@@ -236,6 +234,20 @@ class RemoteTests(unittest.TestCase):
         (self.fixture_repo/'.env').write_text('NATIVE_LOAD_IMAGE='+CONFIGURED_IMAGE_REF+'\nTON_IMAGE=ghcr.io/corton-nommander/ton\nTON_BRANCH=master\n')
         for name in ['prepare-native-images.sh','start-native-genesis.sh']:
             if (ROOT/name).is_file():shutil.copy2(ROOT/name,self.fixture_repo/name)
+
+    def write_wallets(self, depth):
+        lanes = 1 << depth
+        rows=[f'NATIVE_PAYMENT_LANES_MANIFEST_V1 {depth} {lanes} {ALL_SOURCES}']
+        for i in range(ALL_SOURCES):
+            addresses={}
+            for kind in ['source','dest']:
+                address=bytes([(i % lanes) << (8 - depth)])+hashlib.sha256(f'{kind}-{i}'.encode()).digest()[1:]
+                addresses[kind]=address
+                (self.wallets/f'{kind}-{i}.addr').write_bytes(address)
+                (self.wallets/f'{kind}-{i}.pub').write_bytes(address)
+                (self.wallets/f'{kind}-{i}.pk').write_bytes(hashlib.sha256(f'private-{kind}-{i}'.encode()).digest())
+            rows.append(f'{i} {i % lanes} {addresses["source"].hex()} {addresses["dest"].hex()}')
+        (self.wallets/'native-payment-lanes.manifest').write_text('\n'.join(rows)+'\n')
 
     def scenario(self, **settings):
         (self.fake/'scenario.json').write_text(json.dumps(settings))
@@ -347,6 +359,163 @@ class RemoteTests(unittest.TestCase):
         data=(self.bundle/name).read_bytes()
         manifest['files'][name]={'sha256':sha(data),'size':len(data)}
         path.write_text(json.dumps(manifest))
+
+    def test_export_import_inherits_all_supported_manifest_depths(self):
+        preset = (REMOTE/'native-remote-load.env').read_text()
+        self.assertIn('NATIVE_PAYMENT_LANE_DEPTH=3\n', preset)
+        self.assertIn('NATIVE_LOAD_PAYMENT_LANE_DEPTH=3\n', preset)
+        self.assertIn('NATIVE_LOAD_SOURCES=24576\n', preset)
+        for depth in (1, 2, 3):
+            with self.subTest(depth=depth):
+                self.write_wallets(depth)
+                self.bundle = self.root/f'bundle-depth{depth}'
+                self.client = self.root/f'client-depth{depth}'
+                self.export('--no-image')
+                manifest = json.loads((self.bundle/'export-manifest.json').read_text())
+                self.assertEqual(manifest['wallets'], {'lane_depth':depth,
+                    'source_offset':SOURCE_OFFSET, 'sources':SOURCES})
+                exported = (self.bundle/'remote-load.env').read_text()
+                self.assertIn(f'NATIVE_PAYMENT_LANE_DEPTH={depth}\n', exported)
+                self.assertIn(f'NATIVE_LOAD_PAYMENT_LANE_DEPTH={depth}\n', exported)
+                ready_timeout = {1:360, 2:900, 3:1800}[depth]
+                self.assertIn(f'NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS={ready_timeout}\n', exported)
+                self.import_bundle('--no-load-image')
+                self.assertEqual((self.client/'remote-load.env').read_text(), exported)
+                wallet_dir = self.client/'client-data/wallets'
+                self.assertEqual((wallet_dir/'native-payment-lanes.manifest').read_bytes(),
+                                 (self.wallets/'native-payment-lanes.manifest').read_bytes())
+                actual_lanes = [0] * (1 << depth)
+                for index in range(SOURCE_OFFSET, SOURCE_OFFSET + SOURCES):
+                    for kind in ('source', 'dest'):
+                        address = (wallet_dir/f'{kind}-{index}.addr').read_bytes()
+                        self.assertEqual(address[0] >> (8-depth), index % (1 << depth))
+                    actual_lanes[index % (1 << depth)] += 1
+                self.assertEqual(actual_lanes, [SOURCES // (1 << depth)] * (1 << depth))
+
+    def test_eight_lane_export_probes_pinned_helper_without_network_or_wallets(self):
+        self.write_wallets(3)
+        self.export('--no-image')
+        probes=[json.loads(line) for line in (self.fake/'lane-capability-calls.jsonl').read_text().splitlines()]
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0][:-1], ['run','--rm','--pull','never','--network','none',
+                                        '--read-only','--entrypoint','/bin/sh',IMAGE_ID,'-ec'])
+        self.assertIn('native_payment_lanes_validate_mode 1 1 3 3', probes[0][-1])
+        self.assertIn('native_payment_lanes_expected_shard_prefixes 3', probes[0][-1])
+        self.assertFalse(any(c[:1] in (['pull'], ['build']) for c in self.calls()))
+        self.assertTrue(self.bundle.is_dir())
+
+    def test_eight_lane_export_rejects_legacy_image_helper_without_partial_bundle(self):
+        self.write_wallets(3)
+        helper=self.fake/'image-payment-lanes.sh'
+        helper.write_text(helper.read_text().replace('1|2|3) return 0', '1|2) return 0'))
+        result=self.export('--include-image',success=False)
+        self.assertIn('does not support eight-lane client initialization', result.stderr)
+        self.assertFalse(self.bundle.exists())
+        self.assertEqual(list(self.root.glob('.bundle.staging-*')), [])
+        self.assertFalse(any(c[:2]==['image','save'] for c in self.calls()))
+
+    def test_eight_lane_export_rejects_helper_with_wrong_shard_prefixes(self):
+        self.write_wallets(3)
+        helper=self.fake/'image-payment-lanes.sh'
+        original=helper.read_text()
+        corrupted=original.replace('prefix=$(((2 * lane + 1) << (3 - depth)))', 'prefix=0')
+        self.assertNotEqual(corrupted, original)
+        helper.write_text(corrupted)
+        self.export('--no-image',success=False)
+        self.assertFalse(self.bundle.exists())
+        self.assertEqual(list(self.root.glob('.bundle.staging-*')), [])
+
+    def test_legacy_exports_do_not_require_eight_lane_image_helper(self):
+        helper=self.fake/'image-payment-lanes.sh'
+        helper.write_text(helper.read_text().replace('1|2|3) return 0', '1|2) return 0'))
+        self.export('--no-image')
+        self.assertFalse((self.fake/'lane-capability-calls.jsonl').exists())
+        self.import_bundle('--no-load-image')
+
+    def test_export_rejects_unsupported_or_mismatched_eight_lane_headers(self):
+        self.write_wallets(3)
+        path = self.wallets/'native-payment-lanes.manifest'
+        original = path.read_text().splitlines()
+        for header in (f'NATIVE_PAYMENT_LANES_MANIFEST_V1 4 16 {ALL_SOURCES}',
+                       f'NATIVE_PAYMENT_LANES_MANIFEST_V1 3 4 {ALL_SOURCES}'):
+            with self.subTest(header=header):
+                path.write_text('\n'.join([header, *original[1:]])+'\n')
+                self.export('--no-image', success=False)
+                self.assertFalse(self.bundle.exists())
+                self.assertEqual(list(self.root.glob('.bundle.staging-*')), [])
+
+    def test_eight_lane_import_rejects_rehashed_manifest_and_cross_lane_corruption(self):
+        self.write_wallets(3)
+        for mutation in ('header_count', 'duplicate', 'missing', 'lane_out_of_range', 'cross_lane'):
+            with self.subTest(mutation=mutation):
+                if self.bundle.exists(): shutil.rmtree(self.bundle)
+                self.export('--no-image')
+                path = self.bundle/'test-wallets.tar.gz'
+                with tarfile.open(path) as archive:
+                    entries = [(member, archive.extractfile(member).read()) for member in archive]
+                changed_address = bytearray((self.wallets/f'dest-{SOURCE_OFFSET}.addr').read_bytes())
+                changed_address[0] ^= 0x20  # Same depth-2 lane, different depth-3 lane.
+                changed_address = bytes(changed_address)
+                with tarfile.open(path, 'w:gz') as archive:
+                    for member, data in entries:
+                        if member.name == 'native-payment-lanes.manifest':
+                            lines = data.decode().splitlines()
+                            row_index = SOURCE_OFFSET + 1
+                            if mutation == 'header_count': lines[0] = lines[0].replace('3 8', '3 4')
+                            elif mutation == 'duplicate': lines.append(lines[row_index])
+                            elif mutation == 'missing': del lines[row_index]
+                            else:
+                                row = lines[row_index].split()
+                                if mutation == 'lane_out_of_range': row[1] = '8'
+                                if mutation == 'cross_lane': row[3] = changed_address.hex()
+                                lines[row_index] = ' '.join(row)
+                            data = ('\n'.join(lines)+'\n').encode()
+                        elif mutation == 'cross_lane' and member.name in (
+                                f'dest-{SOURCE_OFFSET}.pub', f'dest-{SOURCE_OFFSET}.addr'):
+                            data = changed_address
+                        member.size = len(data)
+                        archive.addfile(member, io.BytesIO(data))
+                self.rewrite_inventory('test-wallets.tar.gz')
+                self.import_bundle('--no-load-image', success=False)
+                self.assertFalse(self.client.exists())
+                self.assertEqual(list(self.root.glob('.client.import-*')), [])
+
+    def test_eight_lane_runner_isolates_balanced_source_ranges_and_preserves_proof_gates(self):
+        self.prepare_runner(depth=3)
+        self.run_load('--connections',10,50,'--source-policy','isolated')
+        settings = json.loads((self.results/'settings.json').read_text())
+        self.assertEqual(settings['lane_depth'], 3)
+        self.assertEqual(settings['source_partitions'], [
+            {'source_offset':SOURCE_OFFSET,'sources':16},
+            {'source_offset':SOURCE_OFFSET+16,'sources':16}])
+        summary = json.loads((self.results/'summary.json').read_text())
+        self.assertTrue(summary['completed'])
+        for arm in summary['arms']:
+            self.assertTrue(arm['source_reuse_safe'])
+            self.assertEqual(arm['final']['canonical_lane_balance']['depth'], 3)
+            self.assertEqual(arm['final']['canonical_lane_balance']['expected_lanes'], 8)
+        runs = json.loads((self.fake/'runs.json').read_text())
+        for run in runs:
+            self.assertEqual(run['env']['NATIVE_PAYMENT_LANE_DEPTH'], '3')
+            self.assertEqual(run['env']['NATIVE_LOAD_PAYMENT_LANE_DEPTH'], '3')
+            self.assertEqual(run['env']['NATIVE_LOAD_INFLIGHT'], '262144')
+
+    def test_eight_lane_runner_rejects_wrong_topology_and_incomplete_cohorts(self):
+        self.prepare_runner(depth=3)
+        final = json.loads((self.fake/'final.json').read_text())
+        lane_balance = final['canonical_lane_balance']
+        for mutation in ({'canonical_lane_balance':dict(lane_balance, depth=2, expected_lanes=4)},
+                         {'canonical_lane_balance':dict(lane_balance, topology_complete=False)},
+                         {'canonical_backlog_after_drain':16},
+                         {'canonical_follower_final_catchup_complete':False}):
+            with self.subTest(mutation=mutation):
+                self.scenario(final_overrides=mutation)
+                self.results = self.root/('depth3-rejected-'+str(len(self.calls())))
+                self.run_load('--connections',10,50,success=False)
+                summary = json.loads((self.results/'summary.json').read_text())
+                self.assertFalse(summary['completed'])
+                self.assertEqual(len(summary['arms']), 1)
+                self.assertFalse(summary['arms'][0]['source_reuse_safe'])
 
     def test_detected_existing_image_is_refreshed_from_registry(self):
         self.scenario(build_new_id=True)
@@ -600,7 +769,8 @@ class RemoteTests(unittest.TestCase):
         self.assertFalse(self.client.exists())
 
 
-    def prepare_runner(self):
+    def prepare_runner(self, depth=2):
+        self.write_wallets(depth)
         self.export('--no-image')
         self.import_bundle('--no-load-image')
         # Model an already imported six-worker bundle. The default profile must
@@ -617,7 +787,7 @@ class RemoteTests(unittest.TestCase):
                  'native_signed_run_effective_quantum_max':16,
                  'canonical_lane_balance':{key:True for key in ['enabled','required','valid','topology_complete',
                                                               'totals_reconcile','every_lane_active','within_tolerance']}}
-        final['canonical_lane_balance'].update(depth=2,expected_lanes=4)
+        final['canonical_lane_balance'].update(depth=depth,expected_lanes=1 << depth)
         for key in ['benchmark_result_valid','canonical_result_valid','chain_correctness_valid',
                     'canonical_follower_enabled','canonical_follower_final_catchup_complete',
                     'native_signed_runs_enabled','native_run_batching_requested','native_run_batching_enabled',

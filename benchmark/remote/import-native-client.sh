@@ -137,7 +137,7 @@ def install():
     sources = uint(wallets['sources'], 'source count', 1, 1000000)
     offset = uint(wallets['source_offset'], 'source offset')
     require(offset + sources <= 2**32 - 1, 'Source range overflows uint32')
-    depth = uint(wallets['lane_depth'], 'lane depth', 1, 2)
+    depth = uint(wallets['lane_depth'], 'lane depth', 1, 3)
     endpoint = manifest['endpoint']
     address = ipaddress.IPv4Address(endpoint['ip'])
     port = uint(endpoint['port'], 'liteserver port', 1, 65535)

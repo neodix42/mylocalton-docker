@@ -148,20 +148,23 @@ On generator images with the bounded NTRN coalescer, freshly ready source heads 
 
 The JSON field `native_run_batching_coalesce_ms` reports that configured delay when batching is enabled and zero when it is off. Use the pinned generator image revision and this field to distinguish the bounded coalescer from earlier immediate batching images, which can report both mode booleans as true while omitting the delay field. The existing boolean acceptance contract remains compatible with those images.
 
-#### Phase-A native payment lanes (two or four fixed shards)
+#### Phase-A native payment lanes (two, four or eight fixed shards)
 
 The opt-in Phase-A profile keeps every source/destination pair inside one
 deterministic fixed-depth lane. It enables v5 source-signed runs plus
 GlobalVersion `16`, `capNativeTransferRuns=1024`, and
 `capNativePaymentLanes=2048`; the
-resulting capability word is `3072`. Depth 1 remains the default; depth 2 is
-selected explicitly with `--depth 2`. The profile fixes `ACTUAL_MIN_SPLIT`,
+resulting capability word is `3072`. Fresh `.env.physical` genesis deployments use
+depth 3 (eight lanes). The historical cycle helpers retain depth 1 unless an
+explicit `--depth 2` or `--depth 3` is supplied. The profile fixes `ACTUAL_MIN_SPLIT`,
 `MIN_SPLIT`, and `MAX_SPLIT` to the selected depth, assigns source index modulo
 `2^depth` across the account-id prefixes, rejection-samples matching addresses,
 and writes a public-address manifest alongside the read-only load wallets. The
 generator checks that manifest and waits for two consecutive masterchain-anchored views
 of the exact leaf set before it offers load: `0x4000…`/`0xC000…` at depth 1,
-or `0x2000…`/`0x6000…`/`0xA000…`/`0xE000…` at depth 2.
+or `0x2000…`/`0x6000…`/`0xA000…`/`0xE000…` at depth 2. At depth 3, all eight
+leaves `0x1000…`, `0x3000…`, `0x5000…`, `0x7000…`, `0x9000…`, `0xB000…`,
+`0xD000…`, and `0xF000…` must be present exactly once.
 
 Run it only through the guarded fresh-cycle helper (it deliberately deletes
 the benchmark project's allowlisted state and regenerates the zero state):
@@ -171,11 +174,15 @@ sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical
 
 # Four fixed leaves; this always creates a fresh depth-2 zero state.
 sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical --depth 2
+
+# Eight fixed leaves; matches the new physical-server topology.
+sudo ./benchmark/run-native-payment-lanes-cycle.sh .env.physical --depth 3
 ```
 
 After one valid fresh 4k baseline, use the non-destructive ladder without
 regenerating the wallets. Depth 1 retains its historical 6k/10k/15k defaults;
-depth 2 defaults to 30k/32k/34k. It reapplies the exact fixed-depth profile,
+depth 2 defaults to 30k/32k/34k. For depth 3, specify the desired rates when
+calibrating the new topology; lane count is not a measured TPS guarantee. It reapplies the exact fixed-depth profile,
 requires a matching healthy genesis, changes only `NATIVE_LOAD_TARGET_TPS`,
 and stops at the first invalid capacity rung:
 
@@ -187,7 +194,9 @@ sudo ./benchmark/run-native-payment-lanes-staircase.sh .env.physical --depth 2
 ```
 
 The physical profile's randomized key generation normally creates 49,152
-wallets (24,576 source/destination pairs); lane placement rejection-samples
+wallets (24,576 source/destination pairs, or 3,072 sources per lane at depth 3).
+Eight-lane provisioning uses 256 attempts per wallet and allows 1,800 seconds for
+masterchain-anchored topology readiness after bootstrap. Lane placement rejection-samples
 each account-id prefix. A comparable four-lane capacity study can explicitly
 raise this to 49,152 sources so each leaf retains 12,288 sources. The guarded
 helper uses 12 bounded provisioning workers (the safe default is
@@ -213,18 +222,19 @@ wallet keys are copied into the bundle.
 The final generator record and `benchmark-summary.json.generator` also retain
 `canonical_lane_balance` and its deterministic `lanes` array. Counts come from
 the same proof-anchored, whole-second measurement cohort as aggregate canonical
-TPS. For a depth-2 result, the wrapper independently requires the generator's
-required/topology/reconciliation/activity/tolerance/validity checks to be true,
-exactly four expected and observed lanes, equal aggregate and summed lane
-transfers, and exactly four lane records. Every lane must be nonempty and its
-share must stay within five percent of an equal quarter. A false, missing, or
+TPS. For depth-2 and depth-3 results, the wrapper independently requires the
+generator's required/topology/reconciliation/activity/tolerance/validity checks to
+be true, exactly `2^depth` expected and observed lanes, equal aggregate and summed
+lane transfers, and exactly `2^depth` lane records. Every lane must be nonempty
+and its share must stay within five percent of its equal share (one quarter or
+one eighth). Eight-lane records also prove the exact basechain shard identities. A false, missing, or
 self-inconsistent balance record fails
 `acceptance.canonical_lane_balance_valid`, records stable invalid-reason codes,
 and forces `acceptance.chain_capacity_valid` false without reclassifying proof
 correctness. Missing balance telemetry remains non-applicable for historical
 depth-0 and depth-1 summaries.
 
-The profile supports only fixed depths 1 and 2. It measures independent local
+The profile supports fixed depths 1, 2 and 3. It measures independent local
 lanes, not cross-lane receipts: cross-lane debit/proof/credit/refund semantics
 remain a later protocol phase. A depth change requires a fresh zero state. Do
 not reuse a payment-lane database with the default scalar profile, or a default
@@ -676,7 +686,7 @@ diagnostic and does not change benchmark acceptance. Legacy or mixed records kee
 `benchmark-summary.json.acceptance` keeps canonical proof correctness, complete
 settled execution, ingress-capacity validity, canonical lane-balance validity,
 chain-capacity validity, validator canonical cleanup, and reproducibility as
-independent decisions. Lane-balance validity is required only for depth 2, but
+independent decisions. Lane-balance validity is required for depths 2 and 3, but
 an invalid or absent required balance also prevents a chain-capacity pass.
 Each failed decision has stable reason codes. Missing reconciliation or pending
 pool snapshots fail closed rather than silently accepting an old image or a

@@ -7,12 +7,13 @@ harness_git=(git -c "safe.directory=$repo_dir" -C "$repo_dir")
 
 usage() {
   cat <<'EOF'
-Usage: run-native-payment-lanes-staircase.sh [--depth 1|2] [ENV_FILE] [TPS ...]
+Usage: run-native-payment-lanes-staircase.sh [--depth 1|2|3] [ENV_FILE] [TPS ...]
 
 Reuse an accepted fixed-depth native payment-lane genesis for a throughput
 ladder. Depth defaults to 1 (two lanes). With no TPS values, depth 1 runs
-6000/10000/15000 TPS and depth 2 runs 30000/32000/34000 TPS. Depth-2 result
-IDs include "depth2"; depth-1 IDs retain their historical form.
+6000/10000/15000 TPS and depths 2/3 run 30000/32000/34000 TPS. Depth-2/3 result
+IDs include their depth; depth-1 IDs retain their historical form. Higher
+eight-lane targets must be supplied explicitly after validating the baseline.
 EOF
 }
 
@@ -22,7 +23,7 @@ while (( $# > 0 )); do
   case "$1" in
     --depth)
       if (( $# < 2 )); then
-        echo "--depth requires 1 or 2" >&2
+        echo "--depth requires 1, 2 or 3" >&2
         usage >&2
         exit 2
       fi
@@ -55,9 +56,9 @@ while (( $# > 0 )); do
 done
 
 case "$lane_depth" in
-  1|2) ;;
+  1|2|3) ;;
   *)
-    echo "--depth must be 1 or 2, got '$lane_depth'" >&2
+    echo "--depth must be 1, 2 or 3, got '$lane_depth'" >&2
     usage >&2
     exit 2
     ;;
@@ -208,6 +209,7 @@ require_matching_accepted_baseline() {
       .generator.final.native_payment_lane_depth == $expected_depth and
       .generator.final.canonical_follower_basechain_leaf_shards == $expected_lane_count and
       ($expected_depth == 1 or .generator.final.canonical_lane_balance.valid == true) and
+      ($expected_depth == 1 or canonical_lane_balance_acceptance(.generator.final).canonical_lane_balance_valid == true) and
       .generator.valid_canonical_run == true and
       .generator.ingress_capacity_valid == true and
       (native_benchmark_load_level_acceptance(.).valid == true) and
@@ -234,7 +236,7 @@ test -r "$env_file" || {
   exit 2
 }
 if (( $# == 0 )); then
-  if [[ $lane_depth == 2 ]]; then
+  if (( lane_depth >= 2 )); then
     set -- 30000 32000 34000
   else
     set -- 6000 10000 15000
@@ -260,8 +262,8 @@ require_matching_accepted_baseline "$lane_depth" "$lane_count"
 
 for target_tps in "$@"; do
   run_name=native-payment-lanes-${target_tps}
-  if [[ $lane_depth == 2 ]]; then
-    run_name=native-payment-lanes-depth2-${target_tps}
+  if (( lane_depth >= 2 )); then
+    run_name=native-payment-lanes-depth${lane_depth}-${target_tps}
   fi
   run_id=$(date -u +%Y%m%dT%H%M%SZ)-$run_name
   result_dir=$repo_dir/benchmark-results/$run_id
@@ -296,6 +298,7 @@ for target_tps in "$@"; do
     .generator.final.native_payment_lane_depth == $expected_depth and
     .generator.final.canonical_follower_basechain_leaf_shards == $expected_lane_count and
     ($expected_depth == 1 or .generator.final.canonical_lane_balance.valid == true) and
+    ($expected_depth == 1 or canonical_lane_balance_acceptance(.generator.final).canonical_lane_balance_valid == true) and
     .generator.valid_canonical_run == true and
     .generator.ingress_capacity_valid == true and
     (native_benchmark_load_level_acceptance(.).valid == true) and

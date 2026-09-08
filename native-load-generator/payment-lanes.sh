@@ -17,7 +17,7 @@ native_payment_lanes_is_positive_uint() {
 
 native_payment_lanes_depth_is_valid() {
   case "${1:-}" in
-    1|2) return 0 ;;
+    1|2|3) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -45,11 +45,11 @@ native_payment_lanes_validate_mode() {
         return 2
       fi
       if ! native_payment_lanes_depth_is_valid "$lane_depth"; then
-        echo "NATIVE_PAYMENT_LANE_DEPTH must be 1 or 2, got '$lane_depth'" >&2
+        echo "NATIVE_PAYMENT_LANE_DEPTH must be 1, 2 or 3, got '$lane_depth'" >&2
         return 2
       fi
       if ! native_payment_lanes_depth_is_valid "$load_lane_depth"; then
-        echo "NATIVE_LOAD_PAYMENT_LANE_DEPTH must be 1 or 2, got '$load_lane_depth'" >&2
+        echo "NATIVE_LOAD_PAYMENT_LANE_DEPTH must be 1, 2 or 3, got '$load_lane_depth'" >&2
         return 2
       fi
       if [ "$lane_depth" != "$load_lane_depth" ]; then
@@ -91,17 +91,11 @@ native_payment_lanes_hex_lane() {
   local address_hex=$1 depth=${2:-1}
 
   native_payment_lanes_depth_is_valid "$depth" || return 2
-  case "$depth:$address_hex" in
-    1:[01234567]*) printf '0\n' ;;
-    1:[89aAbBcCdDeEfF]*) printf '1\n' ;;
-    2:[0123]*) printf '0\n' ;;
-    2:[4567]*) printf '1\n' ;;
-    2:[89aAbB]*) printf '2\n' ;;
-    2:[cCdDeEfF]*) printf '3\n' ;;
-    *)
-      return 1
-      ;;
+  case "$address_hex" in
+    ''|*[!0-9A-Fa-f]*) return 1 ;;
   esac
+  local first_nibble=${address_hex%"${address_hex#?}"}
+  printf '%s\n' "$((0x$first_nibble >> (4 - depth)))"
 }
 
 native_payment_lanes_address_lane() {
@@ -109,7 +103,7 @@ native_payment_lanes_address_lane() {
   local address_hex lane
 
   native_payment_lanes_depth_is_valid "$depth" || {
-    echo "native payment lane depth must be 1 or 2, got '$depth'" >&2
+    echo "native payment lane depth must be 1, 2 or 3, got '$depth'" >&2
     return 2
   }
   address_hex=$(native_payment_lanes_address_hex "$address_file") || return
@@ -127,7 +121,7 @@ native_payment_lanes_validate_manifest() {
   local source_lane destination_lane expected_lane rows_file rows_status row_count=0
 
   expected_lane_count=$(native_payment_lanes_lane_count "$depth") || {
-    echo "the native payment lane benchmark manifest supports depths 1 and 2, got '$depth'" >&2
+    echo "the native payment lane benchmark manifest supports depths 1, 2 and 3, got '$depth'" >&2
     return 2
   }
   native_payment_lanes_is_uint "$source_offset" || {
@@ -263,34 +257,34 @@ native_payment_lanes_shard_prefixes() {
   printf '%s\n' "$1" |
     sed -n 's/^shard #[0-9][0-9]* : (0,\([0-9A-Fa-f]\{16\}\),[0-9][0-9]*):.*/\1/p' |
     tr '[:lower:]' '[:upper:]' |
-    sort -u
+    sort
 }
 
 native_payment_lanes_expected_shard_prefixes() {
-  local depth=${1:-1}
+  local depth=${1:-1} lane=0 lanes prefix
 
-  case "$depth" in
-    1)
-      printf '%s\n' \
-        4000000000000000 \
-        C000000000000000
-      ;;
-    2)
-      printf '%s\n' \
-        2000000000000000 \
-        6000000000000000 \
-        A000000000000000 \
-        E000000000000000
-      ;;
-    *) return 2 ;;
-  esac
+  lanes=$(native_payment_lanes_lane_count "$depth") || return 2
+  # Depths 1..3 have their shard termination bit in the leading hex nibble.
+  # Format that nibble separately to avoid signed 64-bit shell arithmetic.
+  while [ "$lane" -lt "$lanes" ]; do
+    prefix=$(((2 * lane + 1) << (3 - depth)))
+    printf '%X%015d\n' "$prefix" 0
+    lane=$((lane + 1))
+  done
 }
 
 native_payment_lanes_shards_are_ready() {
   local output=$1 depth=${2:-1}
-  local prefixes expected
+  local prefixes expected invalid
 
   native_payment_lanes_depth_is_valid "$depth" || return 2
+  # A fixed native topology must not silently discard malformed shard rows
+  # or foreign workchains and accidentally accept the remaining expected set.
+  invalid=$(printf '%s\n' "$output" | sed -n '
+    /^shard #[0-9][0-9]* : / {
+      /^shard #[0-9][0-9]* : (0,[0-9A-Fa-f]\{16\},[0-9][0-9]*):/!p
+    }')
+  [ -z "$invalid" ] || return 1
   prefixes=$(native_payment_lanes_shard_prefixes "$output")
   expected=$(native_payment_lanes_expected_shard_prefixes "$depth") || return
   [ "$prefixes" = "$expected" ]
@@ -304,7 +298,7 @@ native_payment_lanes_wait_for_shards() {
   local started_at now attempt=0 stable=0 output prefixes lane_count waiting_event
 
   lane_count=$(native_payment_lanes_lane_count "$depth") || {
-    echo "native payment lane readiness supports depths 1 and 2, got '$depth'" >&2
+    echo "native payment lane readiness supports depths 1, 2 and 3, got '$depth'" >&2
     return 2
   }
   waiting_event=waiting_for_lanes

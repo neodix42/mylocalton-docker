@@ -214,7 +214,7 @@ try:
         check(exported_offset + exported_sources <= 2**32-1, 'source interval overflows supported uint32 range')
         partition_sources = exported_sources
         if source_policy == 'isolated':
-            lanes = 1 << uint(env.get('NATIVE_LOAD_PAYMENT_LANE_DEPTH', ''), 'payment lane depth', 1, 2)
+            lanes = 1 << uint(env.get('NATIVE_LOAD_PAYMENT_LANE_DEPTH', ''), 'payment lane depth', 1, 3)
             partition_sources = exported_sources // len(counts) // lanes * lanes
             check(partition_sources >= lanes, 'isolated policy needs at least one complete lane set per setup')
             env['NATIVE_LOAD_SOURCES'] = str(partition_sources)
@@ -259,7 +259,7 @@ try:
                     'NATIVE_LOAD_NATIVE_TRANSFER_RUNS', 'NATIVE_PAYMENT_LANES_ENABLED']:
             check(env.get(key) == '1', key + '=1 is required for this native proof-checked runner')
         quantum = uint(env.get('NATIVE_LOAD_NATIVE_TRANSFER_RUN_SIZE', ''), 'signed run size', 1, 16)
-        depth = uint(env.get('NATIVE_LOAD_PAYMENT_LANE_DEPTH', ''), 'payment lane depth', 1, 2)
+        depth = uint(env.get('NATIVE_LOAD_PAYMENT_LANE_DEPTH', ''), 'payment lane depth', 1, 3)
         check(env.get('NATIVE_PAYMENT_LANE_DEPTH') == str(depth), 'payment lane depth mismatch')
         for key in ['NATIVE_LOAD_INFLIGHT', 'NATIVE_LOAD_MAX_CANONICAL_BACKLOG', 'NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG']:
             uint(env.get(key, ''), key, 1)

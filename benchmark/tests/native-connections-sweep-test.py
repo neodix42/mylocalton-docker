@@ -74,6 +74,28 @@ def summary(a, count):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_supported_depth_profiles_and_watchdog(self):
+        for depth, readiness, retries in [(1, 360, 128), (2, 900, 128), (3, 1800, 256)]:
+            with self.subTest(depth=depth):
+                a = options('--lane-depth', str(depth))
+                self.assertEqual(a.arm_timeout, readiness + a.ramp + a.warmup + a.duration + a.drain + 600)
+                command = sweep.profile_command(a, sweep.settings(a, 10), ['env'])
+                environment = dict(line.split('=', 1) for line in subprocess.check_output(
+                    command, cwd=sweep.ROOT, text=True).splitlines() if '=' in line)
+                for key in ['NATIVE_PAYMENT_LANE_DEPTH', 'NATIVE_LOAD_PAYMENT_LANE_DEPTH',
+                            'ACTUAL_MIN_SPLIT', 'MIN_SPLIT', 'MAX_SPLIT']:
+                    self.assertEqual(environment[key], str(depth))
+                self.assertEqual(environment['NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS'], str(readiness))
+                self.assertEqual(environment['NATIVE_PAYMENT_LANE_WALLET_RETRIES'], str(retries))
+        for depth in ['0', '4', '03', 'invalid']:
+            if depth == '03':
+                # argparse accepts integer spelling, but the effective depth
+                # passed to the shell profile remains canonical.
+                self.assertEqual(options('--lane-depth', depth).lane_depth, 3)
+                continue
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                options('--lane-depth', depth)
+
     def test_default_disjoint_shares_and_conservation(self):
         a = options()
         self.assertEqual(a.connections, [10, 50, 100])
@@ -172,6 +194,45 @@ class AcceptanceTests(unittest.TestCase):
 
     def assess(self, s):
         return sweep.assess(s, self.a, 10, self.frozen, 0)
+
+    def test_eight_lane_rows_override_claimed_acceptance(self):
+        a = options('--lane-depth', '3')
+        good = summary(a, 10)
+        good['generator']['final'].update(
+            native_payment_lane_depth=3, canonical_follower_basechain_leaf_shards=8,
+            canonical_chain_measure_transfers=8000,
+            canonical_lane_balance={
+                'required': True, 'valid': True, 'topology_complete': True, 'totals_reconcile': True,
+                'every_lane_active': True, 'within_tolerance': True, 'depth': 3, 'tolerance_bps': 500,
+                'expected_lanes': 8, 'observed_lanes': 8, 'measured_transfers': 8000,
+                'lane_measured_transfers_sum': 8000,
+                'lanes': [{'shard': f'(0,{prefix}000000000000000)', 'depth': 3,
+                           'measured_native_transfers': 1000} for prefix in '13579bdf']})
+        def assess(value):
+            return sweep.assess(value, a, 10, self.frozen, 0)
+        self.assertTrue(assess(good)['capacity_claim_allowed'])
+        malformed = [None, {}, [], copy.deepcopy(good['generator']['final']['canonical_lane_balance'])]
+        malformed[-1]['lanes'].pop()
+        duplicate = copy.deepcopy(good['generator']['final']['canonical_lane_balance'])
+        duplicate['lanes'][7] = copy.deepcopy(duplicate['lanes'][0])
+        malformed.append(duplicate)
+        imbalance = copy.deepcopy(good['generator']['final']['canonical_lane_balance'])
+        imbalance['lanes'][0]['measured_native_transfers'] = 949
+        imbalance['lanes'][7]['measured_native_transfers'] = 1051
+        malformed.append(imbalance)
+        for balance in malformed:
+            with self.subTest(balance=balance):
+                bad = copy.deepcopy(good)
+                bad['generator']['final']['canonical_lane_balance'] = balance
+                result = assess(bad)
+                self.assertFalse(result['continue_safe'])
+                self.assertFalse(result['capacity_claim_allowed'])
+        for field, value in [('native_payment_lane_depth', 2), ('canonical_follower_basechain_leaf_shards', 4)]:
+            bad = copy.deepcopy(good)
+            bad['generator']['final'][field] = value
+            self.assertFalse(assess(bad)['continue_safe'])
+        with patch.object(sweep.subprocess, 'run', side_effect=OSError('jq unavailable')):
+            self.assertFalse(assess(good)['continue_safe'])
 
     def test_acceptance_and_safe_pressure_observation_are_distinct(self):
         self.assertTrue(self.assess(self.s)['capacity_claim_allowed'])

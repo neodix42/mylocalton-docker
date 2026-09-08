@@ -14,6 +14,23 @@ TON_BUILD_PULL=true
 SESSION_STATS_IMAGE=ghcr.io/neodix42/ton-session-stats:side
 ```
 
+Fresh `.env.physical` deployments now use **eight lanes**. Copy it to `.env` only for a fresh deployment, then customize the host bindings and database path. Its topology is:
+
+```dotenv
+NATIVE_PAYMENT_LANE_DEPTH=3
+ACTUAL_MIN_SPLIT=3
+MIN_SPLIT=3
+MAX_SPLIT=3
+NATIVE_LOAD_PAYMENT_LANE_DEPTH=3
+NATIVE_PAYMENT_LANE_WALLET_RETRIES=256
+```
+
+The 24,576 source accounts remain evenly distributed: 3,072 per lane. Wallet generation uses 12 bounded workers; topology readiness allows 1,800 seconds for three split rounds. Eight lanes are a new configuration to benchmark, not a demonstrated TPS gain.
+
+An existing four-lane chain must keep its depth-2 settings. Use separate state and matching freshly funded wallets for an eight-lane genesis; do not repoint an existing database or only edit B's lane depth. The exporter reads the actual genesis wallet manifest and sets both client lane-depth variables automatically, so two- and four-lane exports remain supported. An eight-lane bundle includes depth 3 and eight-lane readiness/proof checks.
+
+After updating the checkout, `start-native-genesis.sh` rebuilds both derived wrappers from the published TON base. No new TON binary feature is required for depth 3. An old prebuilt wrapper image does not contain the new lane helpers: export/import a new bundle for B and keep its exact image fixed throughout measurements.
+
 The Git branch selects MyLocalTonDocker's scripts; `TON_BRANCH` selects the published TON image tag. From this checkout, launch A with:
 
 ```sh
@@ -143,7 +160,7 @@ bash run-remote-load.sh --source-policy isolated \
   --connections 100 300 500 --duration 600
 ```
 
-With 24,576 exported sources and three setups, each setup receives **8,192 distinct source accounts**, balanced across the four lanes. The same number of sources is used in every setup; unused remainder accounts are left unused. The runner verifies the manifest's balanced lane ordering and refuses insufficient or malformed partitions. Effective source offsets/counts are saved and printed with each result. This changes the workload cardinality, so compare it against another isolated run with the same number of setups, not a 24,576-source result.
+With 24,576 exported sources and three setups, each setup receives **8,192 distinct source accounts**, balanced across the exported lanes (eight for a fresh physical-server deployment). The same number of sources is used in every setup; unused remainder accounts are left unused. The runner verifies the manifest's balanced lane ordering and refuses insufficient or malformed partitions. Effective source offsets/counts are saved and printed with each result. This changes the workload cardinality, so compare it against another isolated run with the same number of setups, not a 24,576-source result.
 
 An invalid arm remains invalid and the sweep exits nonzero, but an exited workload can be followed by a setup using the next disjoint partition. Every later arm becomes `observation_only` while an earlier arm's cohort is unresolved: earlier admitted messages might still appear in the canonical chain TPS metric. `all_setups_attempted` distinguishes attempting the whole sequence from a wholly valid sweep. Interruptions, unverified container identity, and a workload that is not confirmed stopped still abort.
 

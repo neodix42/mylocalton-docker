@@ -30,6 +30,8 @@ NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:generator-entrypoint-v2 \
 
 The default generator image remains `mylocalton-native-load-generator:${TON_BRANCH:-latest}`. This optional override changes only the generator service image; it does not retag, rebuild, or recreate genesis. The replacement must retain the same TON source revision label as the validator. Its immutable image ID is frozen for every arm of the new sweep, and a partial failed sweep remains a separate rejected bundle. Build the replacement before starting the sweep; builds are never part of its measurement path.
 
+The local sweep retains its historical four-lane default. For a fresh eight-lane `.env.physical` genesis, pass `--lane-depth 3` explicitly; all eight lanes must be ready and proof-balanced. The standalone exported remote runner instead inherits the actual topology from A's manifest, so a fresh eight-lane export needs no lane argument on B.
+
 Default settings are:
 
 | Setting | Value |
