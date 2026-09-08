@@ -8,9 +8,21 @@ Never change an existing eight-lane database's depth/split values to 2.
 
 ## Prepare once, before measurement
 
-Pull the updated `native-payment-lanes-step6` MyLocalTonDocker branch on A. Wait
-for the corresponding TON master image build to succeed, then stop/drain B's
-current test before upgrading A with:
+Pull the updated `native-payment-lanes-step6` MyLocalTonDocker branch on A.
+The TON code is currently in [draft PR #4](https://github.com/corton-nommander/ton/pull/4);
+the existing `master` image does not contain this treatment yet. Wait for the
+[isolated image build](https://github.com/corton-nommander/ton/actions/runs/34231105092)
+to succeed, then select these two image variables in A's existing `.env`:
+
+```dotenv
+TON_BRANCH=native-admission-profile-20260908
+NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:native-admission-profile-20260908
+```
+
+Keep all database, lane, account and endpoint settings unchanged. After the PR
+is merged and the corresponding master image passes its checks, the normal
+`TON_BRANCH=master` setup can select this implementation. Stop/drain B's current
+test before upgrading A with:
 
 ```sh
 bash start-native-genesis.sh --env-file .env

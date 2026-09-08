@@ -81,6 +81,14 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(value['environment'],{'TON_NATIVE_ADMISSION_CONFIG_CACHE':'1'})
         self.assertNotIn('secret',json.dumps(value))
 
+    def test_engine_pid_must_belong_to_inspected_container(self):
+        with patch.object(m,'command',return_value='PID COMMAND\n123 validator-engin\n'), \
+             patch.object(m.os,'readlink',return_value='/usr/bin/validator-engine'), \
+             patch.object(Path,'read_text',return_value='0::/system.slice/docker-exact-id.scope'):
+            self.assertEqual(m.engine_pid('genesis','exact-id'),123)
+            with self.assertRaises(ValueError):
+                m.engine_pid('genesis','different-container')
+
     def test_sampler_writes_evidence_and_only_requests_read_operations(self):
         calls=[]
         def command(args, **kwargs):

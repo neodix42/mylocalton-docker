@@ -183,19 +183,20 @@ def identity(container):
                             for k, sep, v in [entry.partition('=')] if sep and k in ENV_KEYS}}
 
 
-def engine_pid(container):
+def engine_pid(container, container_id):
     found = []
     for line in command(['docker', 'top', container, '-eo', 'pid,comm']).splitlines()[1:]:
         fields = line.split()
         if fields and fields[0].isdigit():
             pid = int(fields[0])
             try:
-                if Path(os.readlink(f'/proc/{pid}/exe')).name == 'validator-engine':
+                if (Path(os.readlink(f'/proc/{pid}/exe')).name == 'validator-engine'
+                        and container_id in Path(f'/proc/{pid}/cgroup').read_text()):
                     found.append(pid)
             except OSError:
                 pass
     if len(found) != 1:
-        raise ValueError('cannot identify one host validator-engine PID; run sampler with host /proc access')
+        raise ValueError('cannot identify one host validator-engine PID in the container cgroup; run sampler on the Docker host with /proc access')
     return found[0]
 
 
@@ -267,7 +268,7 @@ def main():
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
     initial = identity(a.container)
-    pid = engine_pid(a.container)
+    pid = engine_pid(a.container, initial['container_id'])
     start_ticks = proc_stat(Path(f'/proc/{pid}/stat'))['start_ticks']
     save(output / 'identity.json', dict(initial, engine_pid=pid, engine_start_ticks=start_ticks,
                                        cpu_tick_hz=os.sysconf('SC_CLK_TCK'), interval_s=a.interval))
