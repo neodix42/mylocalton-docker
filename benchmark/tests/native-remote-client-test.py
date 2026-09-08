@@ -812,6 +812,40 @@ class RemoteTests(unittest.TestCase):
         return self.invoke('run-remote-load.sh','--directory',self.client,'--output',self.results,
                            '--profile','preset','--duration',10,'--warmup',1,'--drain',1,*args,success=success)
 
+    def test_coalesce_override_and_client_limit_evidence_preserve_acceptance(self):
+        self.prepare_runner()
+        self.scenario(final_overrides={'native_run_batching_coalesce_ms':10,
+            'cwnd_cap_limited_acks':7, 'congestion_window':1234,
+            'not_ready_by_reason':{'snapshot_revision':11, 'other':0}, 'rtt_ms':{'p95':200}})
+        original=(self.client/'remote-load.env').read_bytes()
+        self.run_load('--connections',10,'--submit-coalesce-ms',10)
+        summary=json.loads((self.results/'01-10-connections/summary.json').read_text())
+        self.assertTrue(summary['valid_run'])
+        limits=json.loads((self.results/'01-10-connections/client-limits.json').read_text())
+        self.assertIn('admission_window_cap_encountered',limits['signals'])
+        self.assertIn('not_ready_retries_observed',limits['signals'])
+        self.assertEqual(limits['observed']['rtt_ms']['p95'],200)
+        self.assertEqual((self.client/'remote-load.env').read_bytes(),original)
+        settings=json.loads((self.results/'settings.json').read_text())
+        self.assertEqual(settings['environment']['NATIVE_LOAD_SUBMIT_COALESCE_MS'],'10')
+
+    def test_coalesce_override_requires_generator_confirmation(self):
+        self.prepare_runner()
+        self.scenario(final_overrides={'native_run_batching_coalesce_ms':20})
+        self.run_load('--connections',10,'--submit-coalesce-ms',10,success=False)
+        arm=json.loads((self.results/'01-10-connections/summary.json').read_text())
+        self.assertFalse(arm['valid_run'])
+        self.assertTrue(any('coalesce' in reason for reason in arm['invalid_reasons']))
+        self.assertIn('final',arm)
+        self.assertEqual(arm['client_limits']['observed']['steady_offered_avg_tps'],160)
+
+    def test_invalid_coalesce_override_starts_no_container(self):
+        self.prepare_runner()
+        for value in ('0','101','nan','-1'):
+            self.results=self.root/('bad-coalesce-'+value)
+            self.run_load('--connections',10,'--submit-coalesce-ms',value,success=False)
+        self.assertFalse((self.fake/'runs.json').exists())
+
     def test_runner_order_fixed_budgets_and_immutable_local_image(self):
         self.prepare_runner()
         self.run_load('--connections',10,50,100,'--cpus',4,'--memory','8g')
@@ -893,7 +927,7 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(settings['environment']['NATIVE_LOAD_MAX_CANONICAL_BACKLOG'],'2097120')
         self.assertEqual(settings['environment']['NATIVE_LOAD_MAX_SOURCE_CANONICAL_BACKLOG'],'128')
         runs=json.loads((self.fake/'runs.json').read_text())
-        self.assertEqual([int(run['env']['NATIVE_LOAD_CONNECTIONS']) for run in runs],[10,50,100])
+        self.assertEqual([int(run['env']['NATIVE_LOAD_CONNECTIONS']) for run in runs],[10])
         for run in runs:
             self.assertEqual(run['env']['NATIVE_LOAD_WORKERS'],'10')
             self.assertEqual(run['env']['NATIVE_LOAD_SIGNERS'],'32')

@@ -11,6 +11,7 @@ Usage: run-remote-load.sh [--connections 10 50 100] [--directory CLIENT_ROOT]
        [--cpus COUNT] [--memory LIMIT]
        [--workers COUNT] [--signers COUNT]
        [--initial-cwnd LOGICAL_TRANSFERS] [--max-cwnd LOGICAL_TRANSFERS]
+       [--submit-coalesce-ms 1..100]
        [--output NEW_DIRECTORY] [--image LOCAL_IMAGE]
 
 CLIENT_ROOT defaults to this script's directory. It must contain remote-load.env,
@@ -39,6 +40,9 @@ Windows count logical transfers globally and are shared across workers/clients;
 more connections do not increase that budget. Explicit window values must be
 positive, fit the existing inflight limit, and permit complete signed runs.
 
+The default connection setup is 10 only. Keep credits fixed until measurement
+shows a binding limit; --connections explicitly enables a sweep.
+
 Examples (server48 is the default; select preset for smaller client hosts):
   bash run-remote-load.sh --connections 50 100 --duration 600
   bash run-remote-load.sh --connections 50 100 --duration 600 \
@@ -60,11 +64,12 @@ workers_override=
 signers_override=
 initial_cwnd_override=
 max_cwnd_override=
+coalesce_override=
 profile=server48
 source_policy=reuse
 cpus=
 memory=
-connections=(10 50 100)
+connections=(10)
 connections_seen=0
 declare -A options_seen=()
 while (($#)); do
@@ -79,7 +84,7 @@ while (($#)); do
       while (($#)) && [[ $1 != --* ]]; do connections+=("$1"); shift; done
       ((${#connections[@]})) || fail '--connections requires at least one count'
       ;;
-    --directory|--duration|--warmup|--drain|--profile|--source-policy|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd)
+    --directory|--duration|--warmup|--drain|--profile|--source-policy|--cpus|--memory|--output|--image|--workers|--signers|--initial-cwnd|--max-cwnd|--submit-coalesce-ms)
       [[ ! ${options_seen[$option]+yes} ]] || fail "duplicate $option"
       options_seen[$option]=1
       (($#)) && [[ $1 != --* && -n $1 ]] || fail "$option requires a value"
@@ -91,6 +96,7 @@ while (($#)); do
         --output) output=$1 ;; --image) image_override=$1 ;;
         --workers) workers_override=$1 ;; --signers) signers_override=$1 ;;
         --initial-cwnd) initial_cwnd_override=$1 ;; --max-cwnd) max_cwnd_override=$1 ;;
+        --submit-coalesce-ms) coalesce_override=$1 ;;
       esac
       shift
       ;;
@@ -207,7 +213,7 @@ try:
         env = environment(directory / 'remote-load.env')
         profile, source_policy = sys.argv[12:14]
         check(source_policy in ('reuse', 'isolated'), 'invalid source policy')
-        counts = [uint(x, 'connections', 1, 1024) for x in sys.argv[18:]]
+        counts = [uint(x, 'connections', 1, 1024) for x in sys.argv[19:]]
         check(counts and len(counts) == len(set(counts)), 'empty or duplicate connection count')
         exported_sources = uint(env.get('NATIVE_LOAD_SOURCES', ''), 'NATIVE_LOAD_SOURCES', 1, 1000000)
         exported_offset = uint(env.get('NATIVE_LOAD_SOURCE_OFFSET', '0'), 'NATIVE_LOAD_SOURCE_OFFSET')
@@ -234,6 +240,10 @@ try:
             if value:
                 uint(value, key + ' override', 1, 256 if key in ('NATIVE_LOAD_WORKERS', 'NATIVE_LOAD_SIGNERS') else 2**32-1)
                 env[key] = value
+        if sys.argv[18]:
+            env['NATIVE_LOAD_SUBMIT_COALESCE_MS'] = str(uint(sys.argv[18], 'submit coalesce ms', 1, 100))
+        coalesce_ms = uint(env.get('NATIVE_LOAD_SUBMIT_COALESCE_MS', '20'), 'submit coalesce ms', 1, 100)
+        env['NATIVE_LOAD_SUBMIT_COALESCE_MS'] = str(coalesce_ms)
         if not duration:
             # Upgrade previously exported 180-second presets without requiring keys
             # or the pinned image to be exported/imported again. Explicit CLI
@@ -355,7 +365,7 @@ try:
                     'nofile_limit': 65536, 'connections': counts, 'workers': workers, 'signers': signers, 'sources': sources, 'source_offset': offset,
                     'lane_depth': depth, 'quantum': quantum, 'cpus': cpus, 'memory': memory, 'duration': duration,
                     'warmup': warmup, 'ramp': ramp, 'drain': drain, 'watchdog_seconds': watchdog,
-                    'initial_cwnd': initial_cwnd, 'max_cwnd': max_cwnd, 'inflight': inflight,
+                    'initial_cwnd': initial_cwnd, 'max_cwnd': max_cwnd, 'inflight': inflight, 'submit_coalesce_ms': coalesce_ms, 'submit_coalesce_override': bool(sys.argv[18]),
                     'requested_image': image, 'environment': env, 'config_sha256': digest(config_path),
                     'wallet_manifest_sha256': digest(manifest), 'runner_sha256': digest(runner_path),
                     'runner_path': str(runner_path), 'created_unix_s': time.time(),
@@ -430,7 +440,12 @@ try:
         if row is not None:
             for key in ['phase', 'elapsed_s', 'measure_elapsed_s', 'offered_tps', 'mempool_accept_tps',
                         'canonical_chain_measure_transfers', 'canonical_gen_utime_bucket_duration_s',
-                        'canonical_backlog', 'canonical_follower_errors']:
+                        'canonical_backlog', 'canonical_follower_errors', 'steady_offered_avg_tps',
+                        'steady_mempool_accept_avg_tps', 'congestion_window', 'congestion_window_sampled_peak',
+                        'cwnd_cap_limited_acks', 'clients_at_query_cap', 'query_credit_stalls',
+                        'rtt_ms', 'wire_batch_avg_size', 'not_ready_by_reason',
+                        'native_signed_run_issue_holds', 'sources_at_canonical_backlog_cap',
+                        'measure_canonical_backpressure_fraction']:
                 if key in row: sample[key] = row[key]
             if 'canonical_chain_measure_avg_tps' in row:
                 # The native field divides by the entire planned block-time
@@ -445,7 +460,7 @@ try:
         print('Each setup: measurement={duration}s, warmup={warmup}s, ramp={ramp}s, drain limit={drain}s; '
               'profile={profile}, source policy={source_policy}, sources/setup={sources}; generator budget={cpus} CPUs/{memory}, workers={workers}, signers={signers}; '
               'global logical windows: initial={initial_cwnd}, max={max_cwnd}, inflight={inflight}; '
-              'watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
+              'coalesce={submit_coalesce_ms}ms; watchdog={watchdog_seconds}s (includes readiness).'.format(**settings))
     elif mode == 'owns':
         arm = Path(sys.argv[2]); settings = read(arm / 'runtime-settings.json')
         inspected = read(arm / 'ownership-inspect.json')
@@ -503,6 +518,9 @@ try:
             check(container.get('HostConfig', {}).get('NetworkMode') == 'host', 'container does not use host networking')
             check(parse_error is None, 'invalid generator JSON record: ' + str(parse_error))
             check(final is not None, 'missing or ambiguous final generator record')
+            if settings.get('submit_coalesce_override'):
+                check(final.get('native_run_batching_coalesce_ms') == settings['submit_coalesce_ms'],
+                      'generator did not confirm requested coalesce interval')
             for key in ['benchmark_result_valid', 'canonical_result_valid', 'chain_correctness_valid',
                         'canonical_follower_enabled', 'canonical_follower_final_catchup_complete']:
                 check(final.get(key) is True, key + ' is not true')
@@ -592,9 +610,27 @@ try:
                 'native_signed_run_proof_resolutions', 'native_signed_run_messages',
                 'repair_offered', 'repair_accepted', 'active_tasks', 'ready', 'retry_wait', 'inflight']
                 if key in final}
+        # Diagnostic observations never relax correctness, capacity or reuse gates.
+        final = summary.get('final') or {}
+        observed = {key: final[key] for key in [
+            'steady_offered_avg_tps', 'steady_mempool_accept_avg_tps', 'canonical_chain_measure_avg_tps',
+            'congestion_window', 'congestion_window_sampled_peak', 'effective_cwnd_cap',
+            'cwnd_cap_limited_acks', 'query_credit_stalls', 'clients_at_query_cap_sampled_peak',
+            'rtt_ms', 'wire_batch_avg_size', 'not_ready_by_reason', 'canonical_backlog_at_measure_end',
+            'canonical_backlog_after_drain', 'canonical_backlog_sampled_peak',
+            'native_signed_run_issue_holds', 'measure_canonical_backpressure_fraction'] if key in final}
+        signals = []
+        def positive(value): return type(value) in (int, float) and value > 0
+        if positive(observed.get('cwnd_cap_limited_acks')): signals.append('admission_window_cap_encountered')
+        if positive(observed.get('query_credit_stalls')): signals.append('query_credit_stalls_observed')
+        if positive(observed.get('measure_canonical_backpressure_fraction')) and observed['measure_canonical_backpressure_fraction'] > 0.01: signals.append('canonical_backpressure_above_one_percent')
+        if isinstance(observed.get('not_ready_by_reason'), dict) and any(positive(v) for v in observed['not_ready_by_reason'].values()): signals.append('not_ready_retries_observed')
+        summary['client_limits'] = {'observed': observed, 'signals': signals,
+            'semantics': 'Diagnostic clues, not a bottleneck verdict or capacity pass. Final congestion window may reflect drain; use measure-phase progress samples. Counters are lifetime unless named measure/steady.'}
+        save(arm / 'client-limits.json', summary['client_limits'])
         summary['finished_unix_s'] = time.time()
         save(arm / 'summary.json', summary)
-        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'source_partition', 'source_reuse_safe', 'valid_run', 'capacity_classification', 'capacity_observation_reasons', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons', 'generator_diagnostics']}))
+        print(json.dumps({key: summary.get(key) for key in ['connections', 'load_settings', 'source_partition', 'source_reuse_safe', 'valid_run', 'capacity_classification', 'capacity_observation_reasons', 'measured', 'invalid_reasons', 'execution', 'generator_failure_reasons', 'generator_diagnostics', 'client_limits']}))
         if errors and not summary['source_reuse_safe']:
             print('Stopped before reusing source accounts. Inspect ' + str(arm / 'execution.json') + ', ' + str(arm / 'generator.log') + ' and ' + str(arm / 'generator.stderr.log') + '.', file=sys.stderr)
         sys.exit(0 if summary['valid_run'] else 4 if summary.get('container_stopped_verified') and settings.get('source_policy') == 'isolated' else 1)
@@ -658,7 +694,7 @@ trap cleanup EXIT
 trap 'interrupt_reason=interrupted_SIGINT; exit 130' INT
 trap 'interrupt_reason=interrupted_SIGTERM; exit 143' TERM
 
-watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$profile" "$source_policy" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
+watchdog=$(helper prepare "$directory" "$client_data" "$output" "$duration_override" "$warmup_override" "$drain_override" "$cpus" "$memory" "$image_override" "$script_dir/${BASH_SOURCE[0]##*/}" "$profile" "$source_policy" "$workers_override" "$signers_override" "$initial_cwnd_override" "$max_cwnd_override" "$coalesce_override" "${connections[@]}" 2>"$output/preflight.stderr.log") || {
   cat "$output/preflight.stderr.log" >&2; exit 2;
 }
 # A remote Docker context would run the generator on the wrong server.

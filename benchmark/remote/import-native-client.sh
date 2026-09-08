@@ -263,7 +263,7 @@ def install():
             shutil.rmtree(stage)
     print(f'Client materials installed: {output}')
     print(f'Pinned image: {image_id}')
-    print('Run from that directory: bash run-remote-load.sh --connections 10 50 100')
+    print('Run from that directory: bash run-remote-load.sh --connections 10 --duration 600')
     print('Import is complete; load generation has not started.')
 
 

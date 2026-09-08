@@ -1735,4 +1735,6 @@ jq -n -e -L "$jq_dir" '
     .microbatch_accounts == null and .staged_updates == null)
 ' >/dev/null
 
+python3 "$script_dir/native-validator-profile-test.py"
+
 echo "native benchmark reporting tests passed"

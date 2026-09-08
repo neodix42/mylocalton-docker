@@ -130,7 +130,7 @@ Each run creates a new `remote-results/` directory with an overall `summary.json
 
 Do not run independent generators against the same source keys. The directory lock prevents overlap within one installed client dataset; it cannot coordinate separately copied wallets or another server. Synchronize A/B clocks, keep unrelated native traffic off A, and require offered load above canonical throughput for a capacity claim.
 
-A full default sweep has 30 measured minutes plus three warm-ups, readiness checks and drains. Expect separate load periods with gaps between setups. Ten minutes of measurement does not by itself certify stable throughput: inspect the final proof-checked result and the chart over that interval. The effective profile and resource budgets are printed before launch and recorded with each arm; an unexplained exit is not evidence that a resource limit was reached. Extra memory is a limit, not preallocated RAM or a reason to enlarge the backlog.
+The default run is one ten-minute, 10-connection arm. An explicit `--connections 10 50 100` sweep has 30 measured minutes plus three warm-ups, readiness checks and drains. Expect separate load periods with gaps between setups. Ten minutes of measurement does not by itself certify stable throughput: inspect the final proof-checked result and the chart over that interval. The effective profile and resource budgets are printed before launch and recorded with each arm; an unexplained exit is not evidence that a resource limit was reached. Extra memory is a limit, not preallocated RAM or a reason to enlarge the backlog.
 
 The earlier generic `container did not exit cleanly` can be diagnosed from the existing arm directory on B:
 
@@ -203,3 +203,8 @@ The suites exercise registry preparation/startup, export/import and runner succe
 The [saved failure observation](reports/native-drain-failure-20260907.json) records a complete ten-minute measurement followed by an unresolved 32-transfer drain tail (exit 2, no OOM/watchdog kill). The native client fix is in TON commit `a1e4c988`: an admission deadline that says "expired" now retries the original signed parent instead of replacing its hash. This requires a new generator image; updating the host script only changes resource/progress defaults.
 
 Use the [image upgrade procedure](https://github.com/corton-nommander/ton/blob/master/doc/native-remote-client-guide.md#upgrade-the-image-for-the-admission-timeout-drain-fix) after its image workflow publishes the fix. Preserve the existing chain and failed artifacts, import the new client into a new directory, then obtain one valid ten-minute arm before a sweep. The public dashboard's nine wholly contained minutes ranged from 59,649 to 65,739 canonical TPS; those observations do not make the incompletely drained run valid.
+
+
+For the four/eight-lane plateau investigation, follow [admission and block-overhead tests](admission-test-guide.md).
+The exact-state cache can be disabled for a matched control; independent block-signature worker tiers,
+A's read-only profiler, B's `client-limits.json` and `--submit-coalesce-ms` support controlled diagnosis.
