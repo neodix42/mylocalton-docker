@@ -49,3 +49,9 @@ bash run-remote-load.sh --source-policy isolated \
 ```
 
 With 24,576 exported accounts, three setups receive 8,192 disjoint sources each, balanced across the four lanes. This changes the workload cardinality. An incomplete arm remains invalid and the whole sweep exits nonzero; later arms are observation-only because earlier admitted messages may still contribute to chain TPS. Isolation covers one sweep and does not reconcile a prior failed sweep's accounts. The default reuse policy requires clean, complete proof/cohort checks before another setup uses those sources. See the [runner guide](../README.md) for image capability checks and operating details.
+
+## 8 September: native chart repair and connection scaling
+
+The [current public-dashboard audit](native-chart-scaling-20260908.md) confirms the NTRN classifier bug and records five unlabelled sustained periods around 48.6k–51.7k canonical logical TPS. It explains the fixed global credit budget, reduced batch density at high connection counts, external-work waits and dormant staged-trie threshold. The audit is an observation, not a new validated benchmark or capacity claim.
+
+Session Stats `97c4f771` fixes all native charts, adds native-only retained-history repair and a wait breakdown, and prevents subminute API rate inflation. All 16 tests and image publication passed; the report includes the verified image digest and commands to update only Session Stats while preserving its database.

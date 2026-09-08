@@ -1,0 +1,356 @@
+{
+  "created_at_utc": "2026-09-08T06:58:23.743832+00:00",
+  "requested_interval": {
+    "start": "2026-09-08T04:18:10.765Z",
+    "end": "2026-09-08T06:18:10.765Z"
+  },
+  "source_endpoint": "http://2.59.170.242:18000",
+  "source_revision_for_static_analysis": "9a587bc1",
+  "session_stats_source_revision_for_static_analysis": "097428e",
+  "provenance_limits": [
+    "The dashboard exposes no running image identity or current generator runtime-settings; static profile analysis is conditional on the deployed configuration matching these files.",
+    "/api/test_runs returned an empty list. No visible load burst can be assigned a connection count or a validated benchmark arm.",
+    "Canonical minute data begins at04:50Z; absent earlier data is not proof of an idle chain.",
+    "The importer floors all stored timestamps to60 seconds (backend/updater.py:141); window_size=1 cannot restore individual blocks or seconds. Requested subminute boundaries cannot be reproduced exactly.",
+    "Displayed minute TPS is canonical imported logical transactions, not verified run completion or offered load. No current final proof/drain result was supplied by the public API.",
+    "The illustrative plateau windows below were chosen from visually sustained portions after initial peaks. They are observations, not official test measurement windows or proof of capacity.",
+    "work_time_real counters include non-duration values and nested timers; existing other-work subtraction is invalid. No stacked totals are used here. Direct native_execute, native_commit, batch_serialize and validation durations are kept separate.",
+    "Data queried with nonexistent stats names is merged as zero by /api/stats. These placeholders must not be reported as observed zero gas or total execution time."
+  ],
+  "canonical_observations": {
+    "minute_rows": 89,
+    "peak_minute_logical_tps": 74011.73333333334,
+    "peak_minute_utc": "2026-09-08T05:11:00Z",
+    "unlabelled_load_bursts": 5,
+    "illustrative_plateaus": [
+      {
+        "first_minute_utc": "2026-09-08T05:13:00Z",
+        "last_minute_utc": "2026-09-08T05:21:00Z",
+        "minute_buckets": 9,
+        "canonical_logical_tps_mean": 49583.7037037037,
+        "canonical_logical_tps_min": 47618.4,
+        "canonical_logical_tps_max": 52016.8,
+        "canonical_basechain_blocks_per_s_mean": 23.55185185185185,
+        "accepted_block_transactions_mean": 2105.3299811439347,
+        "accepted_block_transactions_max": 14912.0,
+        "accepted_block_bytes_per_transfer": 84.45127590623302,
+        "native_execute_wall_us_per_transfer": 1.8401495112820117,
+        "native_commit_wall_us_per_transfer": 6.159293739812156,
+        "native_batch_serialize_wall_us_per_transfer": 0.9108003092925082,
+        "external_wait_ms_per_accepted_block": 101.48459915147703,
+        "validate_ms_per_accepted_block": 24.255933846637333,
+        "native_first_work_wait_ms_per_accepted_block": 50.655318038969206,
+        "native_fragment_refill_wait_ms_per_accepted_block": 35.480464016341934,
+        "native_post_commit_idle_wait_ms_per_accepted_block": 15.321671904462612,
+        "native_producer_drain_wait_ms_per_accepted_block": 0.0,
+        "round_native_coalescing_wait_ms_per_accepted_block": 0.0
+      },
+      {
+        "first_minute_utc": "2026-09-08T05:28:00Z",
+        "last_minute_utc": "2026-09-08T05:35:00Z",
+        "minute_buckets": 8,
+        "canonical_logical_tps_mean": 48609.6,
+        "canonical_logical_tps_min": 44856.0,
+        "canonical_logical_tps_max": 51473.333333333336,
+        "canonical_basechain_blocks_per_s_mean": 20.666666666666668,
+        "accepted_block_transactions_mean": 2353.8855761482673,
+        "accepted_block_transactions_max": 14544.0,
+        "accepted_block_bytes_per_transfer": 84.12395149104537,
+        "native_execute_wall_us_per_transfer": 1.6987496799229898,
+        "native_commit_wall_us_per_transfer": 4.672562373937586,
+        "native_batch_serialize_wall_us_per_transfer": 0.8933774697279043,
+        "external_wait_ms_per_accepted_block": 120.98239494359386,
+        "validate_ms_per_accepted_block": 26.70444409750202,
+        "native_first_work_wait_ms_per_accepted_block": 95.4211830177276,
+        "native_fragment_refill_wait_ms_per_accepted_block": 13.854300664786459,
+        "native_post_commit_idle_wait_ms_per_accepted_block": 11.699600926672048,
+        "native_producer_drain_wait_ms_per_accepted_block": 0.0,
+        "round_native_coalescing_wait_ms_per_accepted_block": 0.0
+      },
+      {
+        "first_minute_utc": "2026-09-08T05:42:00Z",
+        "last_minute_utc": "2026-09-08T05:48:00Z",
+        "minute_buckets": 7,
+        "canonical_logical_tps_mean": 51019.961904761905,
+        "canonical_logical_tps_min": 47739.73333333333,
+        "canonical_logical_tps_max": 52733.333333333336,
+        "canonical_basechain_blocks_per_s_mean": 16.835714285714285,
+        "accepted_block_transactions_mean": 3030.5134142897487,
+        "accepted_block_transactions_max": 13120.0,
+        "accepted_block_bytes_per_transfer": 80.13324159951573,
+        "native_execute_wall_us_per_transfer": 1.6148357550912085,
+        "native_commit_wall_us_per_transfer": 4.375541233251402,
+        "native_batch_serialize_wall_us_per_transfer": 0.8583826574999944,
+        "external_wait_ms_per_accepted_block": 152.389401299068,
+        "validate_ms_per_accepted_block": 31.985727054504366,
+        "native_first_work_wait_ms_per_accepted_block": 129.23870361479803,
+        "native_fragment_refill_wait_ms_per_accepted_block": 12.05039522733691,
+        "native_post_commit_idle_wait_ms_per_accepted_block": 11.093164077944085,
+        "native_producer_drain_wait_ms_per_accepted_block": 0.0,
+        "round_native_coalescing_wait_ms_per_accepted_block": 0.0
+      },
+      {
+        "first_minute_utc": "2026-09-08T05:56:00Z",
+        "last_minute_utc": "2026-09-08T06:02:00Z",
+        "minute_buckets": 7,
+        "canonical_logical_tps_mean": 51652.49523809524,
+        "canonical_logical_tps_min": 49419.46666666667,
+        "canonical_logical_tps_max": 52752.8,
+        "canonical_basechain_blocks_per_s_mean": 15.230952380952381,
+        "accepted_block_transactions_mean": 3391.73,
+        "accepted_block_transactions_max": 17328.0,
+        "accepted_block_bytes_per_transfer": 78.74227348580223,
+        "native_execute_wall_us_per_transfer": 1.5818898559879473,
+        "native_commit_wall_us_per_transfer": 4.29303238133637,
+        "native_batch_serialize_wall_us_per_transfer": 0.8474680048972061,
+        "external_wait_ms_per_accepted_block": 169.39135640625003,
+        "validate_ms_per_accepted_block": 34.716652343750006,
+        "native_first_work_wait_ms_per_accepted_block": 147.33747890625003,
+        "native_fragment_refill_wait_ms_per_accepted_block": 11.219514687500004,
+        "native_post_commit_idle_wait_ms_per_accepted_block": 10.826837812500006,
+        "native_producer_drain_wait_ms_per_accepted_block": 0.0,
+        "round_native_coalescing_wait_ms_per_accepted_block": 0.0
+      },
+      {
+        "first_minute_utc": "2026-09-08T06:10:00Z",
+        "last_minute_utc": "2026-09-08T06:17:00Z",
+        "minute_buckets": 8,
+        "canonical_logical_tps_mean": 51106.433333333334,
+        "canonical_logical_tps_min": 48765.333333333336,
+        "canonical_logical_tps_max": 56937.6,
+        "canonical_basechain_blocks_per_s_mean": 15.941666666666666,
+        "accepted_block_transactions_mean": 3205.8062157221207,
+        "accepted_block_transactions_max": 18432.0,
+        "accepted_block_bytes_per_transfer": 79.52378401131664,
+        "native_execute_wall_us_per_transfer": 1.5946296922077274,
+        "native_commit_wall_us_per_transfer": 4.321678143079383,
+        "native_batch_serialize_wall_us_per_transfer": 0.8512698378301581,
+        "external_wait_ms_per_accepted_block": 157.9746923478715,
+        "validate_ms_per_accepted_block": 33.26219783233219,
+        "native_first_work_wait_ms_per_accepted_block": 135.862594280491,
+        "native_fragment_refill_wait_ms_per_accepted_block": 11.259452990336897,
+        "native_post_commit_idle_wait_ms_per_accepted_block": 10.845211935231136,
+        "native_producer_drain_wait_ms_per_accepted_block": 0.0,
+        "round_native_coalescing_wait_ms_per_accepted_block": 0.0
+      }
+    ]
+  },
+  "native_chart_classification": {
+    "native_applied_nonzero_minute_rows": 0,
+    "native_per_block_nonzero_minute_rows": 0,
+    "native_bytes_per_transfer_rows": 0,
+    "observed_transactions_equal_native_microbatch_accepted_all_rows": true,
+    "observed_transactions_equal_16_times_ext_accepted_all_rows": true,
+    "explanation": "Existing native fallback requires transactions == ext_msgs_accepted and gas==0. Signed16-child NTRN parents have16 logical transactions per accepted external envelope, so all nonempty native rows are omitted from native-only charts. Native accepted counter provides independent evidence of logical count; do not hardcode16 in the fix.",
+    "real_aggregate_example": {
+      "bucket_utc": "2026-09-08T05:18:00Z",
+      "aggregation": "entire stored60-second minute; this is not a per-block fixture",
+      "transactions_sum": 2857104.0,
+      "accepted_external_parent_sum": 178569.0,
+      "native_microbatch_accepted_sum": 2857104.0,
+      "accepted_block_count": 1424.0,
+      "native_execute_wall_s_sum": 5.345592,
+      "native_commit_wall_s_sum": 18.195367999999988,
+      "gas": null,
+      "block_id": null
+    }
+  },
+  "parallel_trie_observations": {
+    "max_microbatch_unique_accounts": 64.0,
+    "max_microbatch_logical_inputs": 512.0,
+    "staged_histogram_totals": {
+      "native_staged_updates_le64": 98002.0,
+      "native_staged_updates_65_80": 7661.0,
+      "native_staged_updates_81_128": 18145.0,
+      "native_staged_updates_129_256": 64918.0,
+      "native_staged_updates_257_511": 0.0,
+      "native_staged_updates_512": 0.0,
+      "native_staged_updates_gt512": 0.0,
+      "native_staged_workers_1": 188726.0,
+      "native_staged_workers_2": 0.0,
+      "native_staged_workers_4": 0.0,
+      "native_staged_workers_8": 0.0,
+      "native_staged_workers_other": 0.0
+    },
+    "configured_parallel_threshold_updates": 512,
+    "conclusion": "All188726 observed staged-trie builds used one worker. No checkpoint contained more than256 updates. Increasing executor threads alone does not activate this stage."
+  },
+  "unavailable_metrics": {
+    "BLOCK_gas": "not exported by this importer; merged zero is a placeholder",
+    "BLOCK_collate_work_time_real_total": "explicitly consumed but not stored by this importer",
+    "BLOCK_collate_work_time_real_native_deferral_nonce_mismatch": "incorrect name; actual emitted name ends state_nonce_mismatch_entries and was subsequently queried",
+    "BLOCK_collate_work_time_real_native_branch_nonce_floor_hits": "not an emitted collation field; placeholder zero ignored",
+    "individual_block_details": "no public route; storage contains60-second aggregated records"
+  },
+  "client_static_profile": {
+    "profile": "server48",
+    "container_cpu_quota": 40,
+    "container_memory": "48g",
+    "workers": 10,
+    "signers": 32,
+    "scheduler_threads": 43,
+    "inflight_logical_limit": 262144,
+    "global_initial_cwnd_logical": 32768,
+    "global_max_cwnd_logical": 65536,
+    "canonical_backlog_limit": 2097120,
+    "source_backlog_limit": 128,
+    "submit_batch_physical_bodies": 64,
+    "submit_coalesce_ms": 20,
+    "queries_per_client": 64,
+    "rate_limit_enabled": false,
+    "credits_by_connection_count": [
+      {
+        "connections": 10,
+        "global_initial_cwnd_logical": 32768,
+        "global_max_cwnd_logical": 65536,
+        "per_client_initial_cwnd_range": [
+          3276,
+          3277
+        ],
+        "per_client_max_cwnd_range": [
+          6553,
+          6554
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_initial_window_range": [
+          64,
+          64
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_max_window_range": [
+          64,
+          64
+        ]
+      },
+      {
+        "connections": 50,
+        "global_initial_cwnd_logical": 32768,
+        "global_max_cwnd_logical": 65536,
+        "per_client_initial_cwnd_range": [
+          655,
+          656
+        ],
+        "per_client_max_cwnd_range": [
+          1310,
+          1311
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_initial_window_range": [
+          40,
+          41
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_max_window_range": [
+          64,
+          64
+        ]
+      },
+      {
+        "connections": 100,
+        "global_initial_cwnd_logical": 32768,
+        "global_max_cwnd_logical": 65536,
+        "per_client_initial_cwnd_range": [
+          327,
+          328
+        ],
+        "per_client_max_cwnd_range": [
+          655,
+          656
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_initial_window_range": [
+          20,
+          20
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_max_window_range": [
+          40,
+          41
+        ]
+      },
+      {
+        "connections": 300,
+        "global_initial_cwnd_logical": 32768,
+        "global_max_cwnd_logical": 65536,
+        "per_client_initial_cwnd_range": [
+          109,
+          110
+        ],
+        "per_client_max_cwnd_range": [
+          218,
+          219
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_initial_window_range": [
+          6,
+          6
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_max_window_range": [
+          13,
+          13
+        ]
+      },
+      {
+        "connections": 500,
+        "global_initial_cwnd_logical": 32768,
+        "global_max_cwnd_logical": 65536,
+        "per_client_initial_cwnd_range": [
+          65,
+          66
+        ],
+        "per_client_max_cwnd_range": [
+          131,
+          132
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_initial_window_range": [
+          4,
+          4
+        ],
+        "maximum_full_16_child_parents_per_rpc_at_max_window_range": [
+          8,
+          8
+        ]
+      }
+    ],
+    "meaning": "More connections divide the existing logical window; they do not multiply it. Smaller per-client credits can reduce native parents per RPC and increase admission overhead. Actual current runtime settings and counters are needed to establish whether this limit is binding."
+  },
+  "validator_static_profile": {
+    "cpu_quota": 44,
+    "scheduler_threads": 40,
+    "native_executor_threads": 8,
+    "native_collator_selected_logical_queue_limit": 18432,
+    "native_physical_transport_window": 1024,
+    "payment_lanes": 4,
+    "work_driven_max_tps": true,
+    "meaning": "Budgets are upper bounds. Four shard collations, serialized actor stages, dormant parallel-trie thresholds and waits do not automatically consume48cores. Work-driven basechain production skips target-rate sleeps; configured300ms is not a fixed basechain TPS cap in that mode."
+  },
+  "bottleneck_inference": [
+    "Sustained observed production is about48.6k\u201351.7k logicalTPS in the chosen windows despite distinct unlabelled bursts; this does not establish a10vs300 causal comparison.",
+    "Native execution is1.58\u20131.84 wall microseconds/transfer while collation commonly waits101\u2013169ms per block for incoming eligible work. This points toward ingestion/scheduling/credit availability as the next measurement target, rather than raw native-transfer execution or physical link bandwidth.",
+    "Later bursts mostly wait for first work (for example134.602ms of157.471ms total external wait at06:14). That await follows an empty local queue; it does not identify whether B is underfeeding, A admission is slow, snapshot retries are delaying messages, or the producer actor is waiting to publish already pending work.",
+    "At9a587bc1 A rejects asynchronous NTRN admission when whole masterchain snapshot ID changes and also on source-account revisions. Previous invalid test retry counts cannot establish the current rate of those races. Measure current not_ready_by_reason, RPC RTT, client logical credits and server admission timings before changing these correctness guards.",
+    "Mean accepted blocks contain only2.1k\u20133.4k logical transfers in the selected plateaus even though some reach18432. The queue ceiling is not a demonstrated universal per-block saturation constraint.",
+    "Accepted block data is roughly79\u201384bytes per logical transfer in those windows, consistent with only about32\u201334Mbps of block data at50kTPS; this is block serialization, not a measurement of client wire bytes or total network utilization."
+  ],
+  "recommended_next_measurement": {
+    "first": "Collect current runtime-settings.json, final generator.json, summary.json, source image IDs and exact start/end timestamps for10and300connections; preserve complete cohort/proof/drain validity and separate current observations from older invalid arms.",
+    "controlled_credit_test": "Hold source count, workers10, signers32, images and10-minute window constant at a modest connection count such as10or50. Compare32768/65536 versus65536/131072 global initial/maxCWND under the262144inflight bound. Change only those credits; do not simultaneously add connections. Keep the higher setting only if repeated valid canonicalTPS increases with sufficient offered load.",
+    "measure": "Record offered/admitted/canonicalTPS, not_ready_by_reason, retries, RTTpercentiles, active/ready/inflight counts, totalCWND and cwnd_cap_limited_acks, client/query caps, issue holds, wire_batch_avg_size, canonical backlog/lag, generator CPU throttling, and A external-wait breakdown. Capture per-shard producer pending/work-age and admission snapshot-vs-revision causes if ingress waits remain dominant.",
+    "followup": "Only after attribution consider bounded snapshot-config caching/revalidation or reducing hot-path client scans. Benchmark staged-trie1/2/4/8worker tiers at64\u2013512updates before lowering the dormant512threshold; leave ingress checkpoint retention default-off pending evidence."
+  },
+  "source_lines": {
+    "global_worker_distribution": "lite-client/native-load-generator.cpp:1278",
+    "per_client_window_distribution": "lite-client/native-load-generator.cpp:3092",
+    "linear_client_selection": "lite-client/native-load-generator.cpp:3913",
+    "intact_signed_run_batch_credit": "lite-client/native-load-generator.cpp:4151;lite-client/native-load-generator-policy.hpp:667",
+    "scheduler_threads": "lite-client/native-load-generator.cpp:6175",
+    "native_queue_empty_and_wait_classification": "validator/impl/collator.cpp:5429",
+    "parallel_staged_trie_threshold": "validator/impl/collator.cpp:5091",
+    "microbatch_account_histogram": "validator/interfaces/validator-manager.h:401",
+    "external_wait_counter_names": "validator/interfaces/validator-manager.h:144",
+    "emitted_native_acceptance_counters": "validator/interfaces/validator-manager.h:494",
+    "snapshot_guard": "validator/impl/ext-message-pool.cpp:1237",
+    "account_revision_guard": "validator/impl/ext-message-pool.cpp:3841",
+    "work_driven_pacing": "validator/consensus/block-producer.cpp:207",
+    "queue_and_checkpoint_bounds": "validator/consensus/utils.h:125",
+    "client_profile": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark/remote/native-remote-load.env:1",
+    "runner_profile_override": "/home/neodix/gitProjects/MyLocalTonDocker/benchmark/remote/run-remote-load.sh:229",
+    "validator_profile": "/home/neodix/gitProjects/MyLocalTonDocker/.env.physical:56",
+    "session_stats_storage_precision": "backend/updater.py:141 at097428e",
+    "session_stats_native_classifier": "backend/updater.py:223 at097428e",
+    "session_stats_total_discard": "backend/updater.py:357 at097428e"
+  }
+}

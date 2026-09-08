@@ -1,0 +1,176 @@
+{
+  "verified_at_utc": "2026-09-08T07:14:12.241040+00:00",
+  "source_repository": "https://github.com/neodix42/session-stats",
+  "source_branch": "side",
+  "source_revision": "97c4f771047aa4a970b5582347413346fdfbf8bb",
+  "current_side_head": "97c4f771047aa4a970b5582347413346fdfbf8bb",
+  "workflow": {
+    "conclusion": "success",
+    "headSha": "97c4f771047aa4a970b5582347413346fdfbf8bb",
+    "jobs": [
+      {
+        "completedAt": "2026-09-08T07:13:01Z",
+        "conclusion": "success",
+        "databaseId": 101969891136,
+        "name": "build-and-push",
+        "startedAt": "2026-09-08T07:09:44Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Check out repository",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Python",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Test native session stats",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up QEMU",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Set up Docker Buildx",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Prepare image tag",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Login to GitHub Container Registry",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Build and push",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Build and push",
+            "number": 13,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Login to GitHub Container Registry",
+            "number": 14,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Docker Buildx",
+            "number": 15,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up QEMU",
+            "number": 16,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Set up Python",
+            "number": 17,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Check out repository",
+            "number": 18,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 19,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/neodix42/session-stats/actions/runs/34197972988/job/101969891136"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/neodix42/session-stats/actions/runs/34197972988"
+  },
+  "ci_test_counts": [
+    16
+  ],
+  "image": "ghcr.io/neodix42/ton-session-stats",
+  "tag": "side",
+  "manifest_digest": "sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+  "immutable_pull_reference": "ghcr.io/neodix42/ton-session-stats@sha256:ae8cb9d45e841791f51dd82baa8db3e9288b70608467eba35776df55965c0f67",
+  "anonymous_registry_access_verified": true,
+  "registry_tag_unchanged_during_verification": true,
+  "platforms": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "manifest_digest": "sha256:51931d498425325c48536b3d4a1b9dd3898186c502b93f754705ba0c28d319bb",
+      "config_digest": "sha256:9c975e0a15a7773d2a7949efe22de635ee6fe708e6a57103f561f09a335434b2",
+      "created": "2026-09-08T07:10:28.449179161Z",
+      "config_labels": {},
+      "provenance": [
+        {
+          "attestation_manifest_digest": "sha256:05276c5105068fd57f85b57127270266c0f72eae290de068a176ef32295d7857",
+          "statement_blob_digest": "sha256:89d7d6dec3d017a1ef1c3b45cd30b0935c90d514d21972a770a1c8d429548979",
+          "predicate_type": "https://slsa.dev/provenance/v1",
+          "source_revision": "97c4f771047aa4a970b5582347413346fdfbf8bb",
+          "verified_source_revision_paths": [
+            "/predicate/buildDefinition/externalParameters/request/root/request/args/vcs:revision",
+            "/predicate/runDetails/metadata/buildkit_metadata/vcs/revision"
+          ],
+          "subject_matches_platform_digest": true
+        }
+      ]
+    },
+    {
+      "os": "linux",
+      "architecture": "arm64",
+      "manifest_digest": "sha256:37aaa45419c8a0a5d671a744d7b8376adbc72bd06446c190c9ef00dda4e447ef",
+      "config_digest": "sha256:286d0e06ae9737cc3a462f333b949ec1e9bd037c5715aa966eb267de5c91e3f7",
+      "created": "2026-09-08T07:12:40.33161456Z",
+      "config_labels": {},
+      "provenance": [
+        {
+          "attestation_manifest_digest": "sha256:4238ca9853646845b694a69120e64237cdf14ce45676483183015caef07599b7",
+          "statement_blob_digest": "sha256:f94855a0f890094fccd76e7a5b5bd08f5e27effe2b00a1977a8d7139967b47e0",
+          "predicate_type": "https://slsa.dev/provenance/v1",
+          "source_revision": "97c4f771047aa4a970b5582347413346fdfbf8bb",
+          "verified_source_revision_paths": [
+            "/predicate/buildDefinition/externalParameters/request/root/request/args/vcs:revision",
+            "/predicate/runDetails/metadata/buildkit_metadata/vcs/revision"
+          ],
+          "subject_matches_platform_digest": true
+        }
+      ]
+    }
+  ],
+  "verification_scope": "GitHub workflow, public registry content digests and platform source attestations; no remote running-container inspection or Docker pull performed"
+}
