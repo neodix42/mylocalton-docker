@@ -17,7 +17,14 @@ REQUIRED_KEYS = ('total.ext_msg_batch_admission', 'total.ext_msg_batch_diagnosti
                  'total.native_signature_executor')
 RECONCILIATION_KEY = 'total.ext_msg_native_reconciliation'
 RECONCILIATION_DIAGNOSTIC_KEY = 'total.ext_msg_native_reconciliation_diagnostics'
-KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY)
+PUBLICATION_KEY = 'total.ext_msg_native_publication'
+KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY)
+PUBLICATION_COUNTERS = {
+    'groups', 'ingress_wakes', 'alarm_wakes', 'target_releases', 'timeout_releases',
+    'bypass_releases', 'cancelled_groups', 'wait_samples', 'wait_sum_s',
+    'batches', 'messages', 'logical', 'live_batches', 'live_messages', 'live_logical',
+    'live_lt512', 'live_512_2047', 'live_ge2048',
+}
 ADMISSION_COUNTERS = {
     'batches', 'messages', 'accepted', 'rejected', 'account_lookups',
     'shard_state_requests', 'shard_manager_waits', 'shard_fetches', 'shard_cache_hits',
@@ -52,6 +59,7 @@ ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_RECONCILIATION_PROFILE',
             'TON_KEYRING_PREPARED_SIGNING', 'TON_OVERLAY_LOCAL_SIGNATURE_REUSE',
             'TON_NATIVE_CANDIDATE_METADATA_PROJECTION',
+            'TON_NATIVE_STAGED_TRIE_DIRECT', 'TON_NATIVE_PUBLICATION_GROUPING',
             'TON_NATIVE_VALIDATION_SIGNATURE_THREADS',
             'TON_NATIVE_COLLATOR_QUEUE_LIMIT', 'TON_SIMPLEX_MAX_TPS', 'SIMPLEX_TARGET_RATE_MS',
             'TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS', 'TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS',
@@ -119,6 +127,8 @@ def deltas(before, after):
             if group == RECONCILIATION_KEY and key not in RECONCILIATION_COUNTERS:
                 continue
             if group == RECONCILIATION_DIAGNOSTIC_KEY and key not in RECONCILIATION_DIAGNOSTIC_COUNTERS:
+                continue
+            if group == PUBLICATION_KEY and key not in PUBLICATION_COUNTERS:
                 continue
             new = after[group].get(key)
             if new is None or new < old:

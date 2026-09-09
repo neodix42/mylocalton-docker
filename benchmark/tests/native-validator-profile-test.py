@@ -99,6 +99,20 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.parse_stats(m.KEYS[2]+' calls:1\n'+m.KEYS[2]+' calls:2')
 
+    def test_publication_deltas_exclude_configuration_and_lifetime_maximum(self):
+        before, after = self.stats(1), self.stats(2)
+        for sample, n in ((before, 1), (after, 2)):
+            sample.update(m.parse_stats(
+                f'{m.PUBLICATION_KEY} enabled:1 target_logical:2048 max_delay_s:0.001 '
+                f'groups:{n*10} wait_samples:{n*10} wait_sum_s:{n*0.01} wait_max_s:{10-n} '
+                f'live_batches:{n*20} live_logical:{n*20480}'))
+        delta, errors = m.deltas(before, after)
+        self.assertFalse(errors)
+        self.assertEqual(delta[m.PUBLICATION_KEY], dict(groups=10, wait_samples=10,
+                         wait_sum_s=0.01, live_batches=20, live_logical=20480))
+        del after[m.PUBLICATION_KEY]
+        self.assertIn('missing:' + m.PUBLICATION_KEY, m.deltas(before, after)[1])
+
     def test_reconciliation_group_is_optional_for_older_recordings(self):
         summary = self.summary_between(self.stats(1), self.stats(2))
         self.assertFalse(summary['errors'])
