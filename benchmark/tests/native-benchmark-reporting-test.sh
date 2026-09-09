@@ -29,6 +29,7 @@ command -v jq >/dev/null 2>&1 || {
 "$wrapper" --self-test-native-payment-lanes-manifest
 
 "$wrapper" --self-test-strict-genesis-reuse
+python3 "$script_dir/native-container-runtime-env-test.py"
 
 # Admission diagnostics are additive: unavailable old-image fields never become
 # plausible zeroes, and cumulative maxima/gauges never become counter deltas.

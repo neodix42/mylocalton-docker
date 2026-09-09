@@ -3581,7 +3581,7 @@ docker inspect genesis "$container_name" session-stats |
       version:(.Config.Labels["org.opencontainers.image.version"] // null)
     },
     benchmark_environment: [.Config.Env[] | select(test(
-      "^(GENESIS_VERBOSITY|GENESIS_HEARTBEAT_SECONDS|ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|NATIVE_(TRANSFER_RUNS|PAYMENT_LANES|PAYMENT_LANE|LOAD_|SPAM_)[^=]*|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
+      "^(GENESIS_VERBOSITY|GENESIS_HEARTBEAT_SECONDS|ACTUAL_MIN_SPLIT|MIN_SPLIT|MAX_SPLIT|TON_SIMPLEX_[^=]+|TON_NATIVE_[^=]+|TON_KEYRING_PREPARED_SIGNING|TON_OVERLAY_LOCAL_SIGNATURE_REUSE|NATIVE_(TRANSFER_RUNS|PAYMENT_LANES|PAYMENT_LANE|LOAD_|SPAM_)[^=]*|SIMPLEX_[^=]+|BLOCK_(SIZE|GAS|LIMIT)[^=]*)="
     ))]
   }]' >"$runtime_file"
 
