@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import io
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -74,6 +75,20 @@ def summary(a, count):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_measurement_duration_accepts_only_bounded_floating_point_noise(self):
+        for duration in (1, 180, 600, 4294967295):
+            ulp = math.ulp(float(duration))
+            for offset in (0, -1, 1, -8, 8):
+                with self.subTest(duration=duration, offset=offset):
+                    self.assertTrue(sweep.measurement_duration_matches(duration + offset * ulp, duration))
+            for offset in (-9, 9):
+                with self.subTest(duration=duration, offset=offset):
+                    self.assertFalse(sweep.measurement_duration_matches(duration + offset * ulp, duration))
+        for elapsed in (None, '600', True, False, float('nan'), float('inf'), -float('inf'),
+                        0, 599, 600 - 1e-8, 600 + 1e-8, 599.999, 10**1000, -(10**1000)):
+            with self.subTest(elapsed=elapsed):
+                self.assertFalse(sweep.measurement_duration_matches(elapsed, 600))
+
     def test_supported_depth_profiles_and_watchdog(self):
         for depth, readiness, retries in [(1, 360, 128), (2, 900, 128), (3, 1800, 256)]:
             with self.subTest(depth=depth):
@@ -194,6 +209,29 @@ class AcceptanceTests(unittest.TestCase):
 
     def assess(self, s):
         return sweep.assess(s, self.a, 10, self.frozen, 0)
+
+    def test_completed_600_second_run_roundoff_preserves_other_assessment_gates(self):
+        a = options('--duration', '600')
+        original = summary(a, 10)
+        rounded = copy.deepcopy(original)
+        rounded['generator']['final']['measure_elapsed_s'] = 600.0000000000001
+        result = sweep.assess(rounded, a, 10, self.frozen, 0)
+        self.assertTrue(result['continue_safe'])
+        self.assertEqual(result['stop_reasons'], [])
+        self.assertEqual(result['measure_elapsed_s'], 600.0000000000001)
+        for path, value in [(['acceptance', 'chain_correctness_valid'], False),
+                            (['generator', 'final', 'canonical_backlog_after_drain'], 16),
+                            (['generator', 'final', 'steady_offered'], 1),
+                            (['strict_image_reuse', 'valid'], False),
+                            (['run', 'benchmark_exit_code'], 3)]:
+            bad = copy.deepcopy(rounded)
+            item = bad
+            for key in path[:-1]: item = item[key]
+            item[path[-1]] = value
+            with self.subTest(path=path):
+                result = sweep.assess(bad, a, 10, self.frozen, 0)
+                self.assertFalse(result['continue_safe'])
+                self.assertFalse(result['capacity_claim_allowed'])
 
     def test_eight_lane_rows_override_claimed_acceptance(self):
         a = options('--lane-depth', '3')

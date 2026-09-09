@@ -57,6 +57,16 @@ def share(total, index, count):
     return total // count + (index < total % count)
 
 
+def measurement_duration_matches(elapsed, expected):
+    # Subtracting worker measurement deadlines may leave a few representable doubles
+    # (e.g. 600.0000000000001). Permit only floating-point representation noise,
+    # with no relative tolerance that could admit a materially shorter run.
+    if type(elapsed) is int:
+        return elapsed == expected
+    return (type(elapsed) is float and math.isfinite(elapsed) and
+            math.isclose(elapsed, expected, rel_tol=0.0, abs_tol=8 * math.ulp(float(expected))))
+
+
 def connection_list(values):
     result = []
     for value in values:
@@ -334,7 +344,7 @@ def assess(summary, a, count, frozen, wrapper_exit):
               ('canonical_logical_tps', 'canonical_chain_measure_avg_tps')]}
     check(all(type(v) in (int, float) and math.isfinite(v) and v > 0 for v in rates.values()), 'missing_or_invalid_rates')
     elapsed = f.get('measure_elapsed_s')
-    check(type(elapsed) in (int, float) and elapsed == a.duration, 'measurement_duration')
+    check(measurement_duration_matches(elapsed, a.duration), 'measurement_duration')
     for count_key, rate_key in [('steady_offered', 'steady_offered_avg_tps'),
                                 ('steady_mempool_accepted', 'steady_mempool_accept_avg_tps')]:
         logical, rate = f.get(count_key), f.get(rate_key)
