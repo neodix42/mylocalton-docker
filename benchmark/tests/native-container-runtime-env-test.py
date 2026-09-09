@@ -29,7 +29,8 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
     def test_cpu_feature_flags_present_in_both_modes(self):
         for value in ('0', '1'):
             expected = [f'TON_KEYRING_PREPARED_SIGNING={value}',
-                        f'TON_OVERLAY_LOCAL_SIGNATURE_REUSE={value}']
+                        f'TON_OVERLAY_LOCAL_SIGNATURE_REUSE={value}',
+                        f'TON_NATIVE_CANDIDATE_METADATA_PROJECTION={value}']
             with self.subTest(value=value):
                 self.assertEqual(captured_environment(expected), expected)
 

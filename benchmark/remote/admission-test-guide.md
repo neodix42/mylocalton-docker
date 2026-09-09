@@ -178,9 +178,11 @@ constitute a canonical TPS improvement. Keep the best repeatable valid result.
 
 ### Profile-led signing experiments (9 September)
 
-The new local CPU candidates are `TON_KEYRING_PREPARED_SIGNING=0|1` and
-`TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0|1`. Both remain default-off while their
-correctness tests and separate 600-second desktop comparisons are evaluated.
+The local CPU candidates are `TON_KEYRING_PREPARED_SIGNING=0|1` and
+`TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0|1`. Prepared signing remains off.
+The completed September 9 overlay A/B/B/A comparison averaged 57,673 versus
+60,040 canonical logical TPS (+4.10%), with full proof/drain and fixed images.
+Only `.env.desktop` enables that winner; global/physical defaults remain off.
 The first reuses an immutable prepared Ed25519 key inside its owning keyring
 signer. The second targets only cryptographic evidence from a successful local
 broadcast-signing callback; incoming messages retain signature verification.
@@ -192,3 +194,17 @@ before starting an arm, and retain canonical proof/drain and strict-reuse checks
 The profiler records both flags in the container identity. Keep topology, client
 load, 20 ms coalescing and candidate timeouts fixed. A sampled CPU share is an
 optimization opportunity, not an expected percentage TPS improvement.
+
+### Strict candidate metadata projection
+
+`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0|1` is a separate default-off
+experiment. For direct native runs it extracts each checked parent hash and
+source/nonce interval without building the flattened execution entries and
+derived account table. It retains strict field, count, tree and canonical-root
+validation; scalar versions use the original parser. It adds no cross-candidate
+cache and changes no fork, nonce-floor or account-state validation policy.
+
+The profiler and wrapper record the flag. Use a new image implementing it, and
+compare 0/1 using that same prebuilt image with local signature reuse fixed at
+the selected setting. Keep 600-second measurements and 20 ms coalescing. Do not
+enable this candidate on production solely because Compose accepts its variable.
