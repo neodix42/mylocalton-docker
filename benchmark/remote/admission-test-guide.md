@@ -14,11 +14,14 @@ Update the `native-payment-lanes-step6` MyLocalTonDocker branch on A. Wait for t
 to finish successfully for the intended `master` revision containing the selected
 features. A merged commit or running workflow is not a published image. Record
 that successful run's full 40-character source SHA as `TON_EXPECTED_REVISION`.
-The release submitted for this rollout is
+The release published and verified on 9 September 2026 is
 [`8c97aa23f1e2859651f4a85c6f6609016b42b0da`](https://github.com/corton-nommander/ton/commit/8c97aa23f1e2859651f4a85c6f6609016b42b0da),
 with [publication run 34357000846](https://github.com/corton-nommander/ton/actions/runs/34357000846).
-Verify that run's successful completion before using this SHA; submission alone
-does not confirm publication.
+Both architecture jobs passed the native tests and binary revision checks.
+The [release receipt](reports/native-publication-20260909.json) records the verified
+multiarchitecture digest and matching `master`, `latest` and immutable revision
+tags. Rolling tags can advance later; the expected-revision check below prevents
+silently selecting a different release. Production benchmarking remains pending.
 Apply these entries to A's existing `.env`; preserve its project name, mounted
 database, eight-lane depth/split values, funded accounts, endpoints, resource
 limits and TTL settings:
@@ -42,7 +45,7 @@ directory on A, pull the latest published master and prepare both wrappers from
 its immutable digest, requiring the verified workflow revision before startup:
 
 ```sh
-export TON_EXPECTED_REVISION=PUT_FULL_SUCCESSFUL_WORKFLOW_HEAD_SHA_HERE
+export TON_EXPECTED_REVISION=8c97aa23f1e2859651f4a85c6f6609016b42b0da
 bash prepare-native-images.sh --env-file .env \
   --expected-revision "$TON_EXPECTED_REVISION"
 docker compose --env-file .env \

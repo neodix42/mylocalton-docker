@@ -1,0 +1,80 @@
+{
+  "schema": "native-production-release-v1",
+  "verified_at": "2026-09-09T14:16:54.217554+00:00",
+  "ton_revision": "8c97aa23f1e2859651f4a85c6f6609016b42b0da",
+  "mylocalton_configuration_revision": "d75ed6dc3c2bbfb504b7aae21a0c935087e0dfef",
+  "mylocalton_branch": "native-payment-lanes-step6",
+  "workflow": {
+    "url": "https://github.com/corton-nommander/ton/actions/runs/34357000846",
+    "conclusion": "success",
+    "jobs": {
+      "registry-access": "success",
+      "build-amd64": "success",
+      "build-arm64": "success",
+      "merge": "success"
+    }
+  },
+  "image_repository": "ghcr.io/corton-nommander/ton",
+  "verified_tags": {
+    "sha-8c97aa23f1e2859651f4a85c6f6609016b42b0da": "sha256:05a524a2af9aa6217083fc743df066ea516f6e07a33a0f52e2e0e42b560f44e5",
+    "master": "sha256:05a524a2af9aa6217083fc743df066ea516f6e07a33a0f52e2e0e42b560f44e5",
+    "latest": "sha256:05a524a2af9aa6217083fc743df066ea516f6e07a33a0f52e2e0e42b560f44e5"
+  },
+  "architectures": {
+    "arm64": {
+      "manifest_digest": "sha256:94b33820b48b5e22eafd6af53316d46d9d113e78cf1db18321b27811bed45f17",
+      "config_digest": "sha256:7c4fa4c5aa21610cf9ee1c894ea18f8f7da7f380f287b4c1ac288aa6d5081283",
+      "os": "linux",
+      "architecture": "arm64",
+      "revision": "8c97aa23f1e2859651f4a85c6f6609016b42b0da",
+      "source": "https://github.com/corton-nommander/ton",
+      "created": "2026-09-09T17:25:35+04:00",
+      "layer_count": 29,
+      "layer_bytes_fetched": 0
+    },
+    "amd64": {
+      "manifest_digest": "sha256:913deeaea4f8e139a0dd73ea378e89dda0451d80baaa240b5c32bd339bec9b1d",
+      "config_digest": "sha256:3404ac4d01970fb8eda702deee53a2e74eb17f4f10b3ce6c3718c7a45c63d752",
+      "os": "linux",
+      "architecture": "amd64",
+      "revision": "8c97aa23f1e2859651f4a85c6f6609016b42b0da",
+      "source": "https://github.com/corton-nommander/ton",
+      "created": "2026-09-09T17:25:35+04:00",
+      "layer_count": 29,
+      "layer_bytes_fetched": 0
+    }
+  },
+  "verification": {
+    "manifest_and_config_sha256_checked": true,
+    "rolling_index_bytes_identical": true,
+    "native_tests_and_runtime_revision_checks": "passed in both GitHub architecture jobs",
+    "local_image_layers_downloaded": false
+  },
+  "production_benchmark": {
+    "status": "not_run",
+    "duration_s": 600,
+    "connections": 10,
+    "submit_coalesce_ms": 20,
+    "remote_profile": "server48",
+    "workers": 10,
+    "signers": 32,
+    "cpu_limit": 40,
+    "memory_limit": "48g",
+    "existing_lanes": 8,
+    "selected_flags": {
+      "TON_NATIVE_CANDIDATE_METADATA_PROJECTION": 1,
+      "TON_OVERLAY_LOCAL_SIGNATURE_REUSE": 1,
+      "TON_NATIVE_ADMISSION_CONFIG_CACHE": 1,
+      "TON_NATIVE_RECONCILIATION_PROFILE": 1,
+      "TON_KEYRING_PREPARED_SIGNING": 0,
+      "TON_NATIVE_ADMISSION_SHARD_SHARING": 0,
+      "TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH": 0
+    },
+    "reason": "SSH authentication unavailable and remote client endpoint not provided",
+    "canonical_tps": null
+  },
+  "limitations": [
+    "Rolling tags describe their value at verified_at; freeze the image digest for paired measurements.",
+    "No production deployment or TPS measurement was performed for this release receipt."
+  ]
+}
