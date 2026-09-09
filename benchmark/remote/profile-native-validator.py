@@ -34,7 +34,7 @@ RECONCILIATION_COUNTERS = {
     'expiry_suffix_events', 'expiry_suffix_pruned', 'exact_retry_preserved_stale_revision',
 }
 ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
-            'TON_NATIVE_ADMISSION_SHARED_FETCH', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
+            'TON_NATIVE_ADMISSION_SHARD_SHARING', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
             'TON_NATIVE_VALIDATION_SIGNATURE_THREADS',
             'TON_NATIVE_COLLATOR_QUEUE_LIMIT', 'TON_SIMPLEX_MAX_TPS', 'SIMPLEX_TARGET_RATE_MS',
             'TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS', 'TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS',
@@ -92,7 +92,8 @@ def deltas(before, after):
         values = {}
         for key, old in before[group].items():
             if key in ('active_batches', 'config_cache_enabled') or key.endswith('_enabled') or \
-                    'peak' in key or 'max_' in key or key.endswith('_max_s') or key.endswith('_active'):
+                    'peak' in key or 'max_' in key or key.endswith('_max_s') or key.endswith('_active') or \
+                    key in ('shard_shared_waiters', 'shard_shared_table_limit', 'shard_shared_waiters_per_key_limit'):
                 continue
             # Only documented admission/executor counters, not sequence numbers
             # or gauges in the broader pool-admission statistics key.
