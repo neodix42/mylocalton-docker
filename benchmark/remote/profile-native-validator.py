@@ -18,7 +18,8 @@ REQUIRED_KEYS = ('total.ext_msg_batch_admission', 'total.ext_msg_batch_diagnosti
 RECONCILIATION_KEY = 'total.ext_msg_native_reconciliation'
 RECONCILIATION_DIAGNOSTIC_KEY = 'total.ext_msg_native_reconciliation_diagnostics'
 PUBLICATION_KEY = 'total.ext_msg_native_publication'
-KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY)
+BATCH_DISPATCH_KEY = 'total.ext_msg_batch_dispatch'
+KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY, BATCH_DISPATCH_KEY)
 PUBLICATION_COUNTERS = {
     'groups', 'ingress_wakes', 'alarm_wakes', 'target_releases', 'timeout_releases',
     'bypass_releases', 'cancelled_groups', 'wait_samples', 'wait_sum_s',
@@ -54,9 +55,37 @@ RECONCILIATION_DIAGNOSTIC_COUNTERS = {
 } | set(RECONCILIATION_APPLY_OUTCOMES) | {
     stage + suffix for stage in RECONCILIATION_STAGE_PREFIXES for suffix in ('_samples', '_sum_s')
 }
+# Keep the historical required reconciliation schema unchanged. Each extension
+# is optional for old recordings, but complete and stable once observed.
+RECONCILIATION_CHUNK_STAGES = ('grouping_slice', 'account_slice', 'yield_wait')
+RECONCILIATION_CHUNK_COUNTERS = {'grouping_yields', 'account_yields'} | {
+    stage + suffix for stage in RECONCILIATION_CHUNK_STAGES for suffix in ('_samples', '_sum_s')
+}
+BATCH_DISPATCH_COUNTERS = {'batches', 'messages', 'late_batches', 'wait_samples', 'wait_sum_s'}
+LOCALITY_COUNTERS = {'locality_calls', 'locality_outputs', 'locality_destination_visits',
+                     'locality_destination_queries', 'locality_dedup_hits', 'locality_shard_queries'}
+OPTIONAL_SCHEMAS = {
+    'batch_dispatch': {
+        'group': BATCH_DISPATCH_KEY, 'whole_group': True,
+        'configuration': {'profile_enabled': 'flag'},
+        'counters': BATCH_DISPATCH_COUNTERS, 'stages': ('wait',),
+    },
+    'reconciliation_chunks': {
+        'group': RECONCILIATION_DIAGNOSTIC_KEY,
+        'configuration': {'profile_enabled': 'flag', 'chunks_enabled': 'flag',
+                          'group_chunk_sources': 'positive_integer', 'account_chunk_sources': 'positive_integer',
+                          'chunk_budget_s': 'positive_number'},
+        'counters': RECONCILIATION_CHUNK_COUNTERS, 'stages': RECONCILIATION_CHUNK_STAGES,
+    },
+    'locality': {
+        'group': REQUIRED_KEYS[1], 'configuration': {'locality_fastpath_enabled': 'flag'},
+        'counters': LOCALITY_COUNTERS, 'stages': (),
+    },
+}
 ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_ADMISSION_SHARD_SHARING', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
             'TON_NATIVE_RECONCILIATION_PROFILE',
+            'TON_NATIVE_RECONCILIATION_CHUNKS', 'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH',
             'TON_KEYRING_PREPARED_SIGNING', 'TON_OVERLAY_LOCAL_SIGNATURE_REUSE',
             'TON_NATIVE_CANDIDATE_METADATA_PROJECTION',
             'TON_NATIVE_STAGED_TRIE_DIRECT', 'TON_NATIVE_PUBLICATION_GROUPING',
@@ -126,9 +155,12 @@ def deltas(before, after):
                 continue
             if group == RECONCILIATION_KEY and key not in RECONCILIATION_COUNTERS:
                 continue
-            if group == RECONCILIATION_DIAGNOSTIC_KEY and key not in RECONCILIATION_DIAGNOSTIC_COUNTERS:
+            if group == RECONCILIATION_DIAGNOSTIC_KEY and key not in \
+                    RECONCILIATION_DIAGNOSTIC_COUNTERS | RECONCILIATION_CHUNK_COUNTERS:
                 continue
             if group == PUBLICATION_KEY and key not in PUBLICATION_COUNTERS:
+                continue
+            if group == BATCH_DISPATCH_KEY and key not in BATCH_DISPATCH_COUNTERS:
                 continue
             new = after[group].get(key)
             if new is None or new < old:
@@ -137,6 +169,92 @@ def deltas(before, after):
                 values[key] = new - old
         changes[group] = values
     return changes, errors
+
+
+def valid_schema_value(value, kind):
+    if kind in ('counter', 'positive_integer', 'flag'):
+        return type(value) is int and (value in (0, 1) if kind == 'flag' else
+                                      value > 0 if kind == 'positive_integer' else value >= 0)
+    return type(value) in (int, float) and (type(value) is int or math.isfinite(value)) and \
+        (value > 0 if kind == 'positive_number' else value >= 0)
+
+
+def summarize_optional_schema(samples, name, counter_errors):
+    """Validate every observed sample, including intermediate resets/config changes."""
+    definition = OPTIONAL_SCHEMAS[name]
+    group, configuration = definition['group'], definition['configuration']
+    stages, counters = definition['stages'], definition['counters']
+    required = set(configuration) | counters | {stage + '_max_s' for stage in stages}
+    markers = required - {'profile_enabled'}
+    rows = [sample['stats'].get(group, {}) for sample in samples]
+    present = [group in sample['stats'] if definition.get('whole_group') else bool(markers & row.keys())
+               for sample, row in zip(samples, rows)]
+    result = {'available': any(present), 'valid': False, 'configuration': {},
+              'counter_deltas': {}, 'stage_mean_ms': {}, 'errors': []}
+    if not result['available']:
+        return result
+    errors = result['errors']
+    for index, (row, exists) in enumerate(zip(rows, present)):
+        if not exists:
+            errors.append(f'missing_optional_schema:{name}:sample_{index}')
+            continue
+        for key in sorted(required):
+            if key not in row:
+                errors.append(f'missing_optional_field:{name}.{key}:sample_{index}')
+                continue
+            kind = configuration.get(key, 'number' if key.endswith(('_sum_s', '_max_s')) else 'counter')
+            if not valid_schema_value(row[key], kind):
+                errors.append(f'invalid_optional_field:{name}.{key}:sample_{index}')
+    for index, (old, new) in enumerate(zip(rows, rows[1:]), 1):
+        for key in configuration:
+            if key in old and key in new and old[key] != new[key]:
+                errors.append(f'optional_configuration_changed:{name}.{key}:sample_{index}')
+        for key in sorted(counters):
+            if key in old and key in new and valid_schema_value(old[key], 'number') and \
+                    valid_schema_value(new[key], 'number') and new[key] < old[key]:
+                errors.append(f'optional_counter_reset:{name}.{key}:sample_{index}')
+    if errors:
+        return result
+    result['configuration'] = {key: rows[0][key] for key in configuration}
+    values = {key: rows[-1][key] - rows[0][key] for key in counters}
+    result['counter_deltas'] = values
+    for stage in stages:
+        count, seconds = values[stage + '_samples'], values[stage + '_sum_s']
+        if not count and seconds:
+            errors.append(f'timing_sum_without_samples:{name}.{stage}')
+        if result['configuration'].get('profile_enabled') == 0 and (count or seconds):
+            errors.append(f'timing_while_profile_disabled:{name}.{stage}')
+    if name == 'batch_dispatch':
+        if values['late_batches'] > values['batches'] or values['wait_samples'] > values['batches']:
+            errors.append('dispatch_outcomes_exceed_entered_batches')
+    if name == 'reconciliation_chunks' and result['configuration']['chunks_enabled'] == 0:
+        if values['grouping_yields'] or values['account_yields'] or values['yield_wait_samples'] or values['yield_wait_sum_s']:
+            errors.append('reconciliation_yields_while_chunks_disabled')
+    if name == 'locality':
+        if values['locality_destination_visits'] != values['locality_destination_queries'] + values['locality_dedup_hits']:
+            errors.append('locality_visits_do_not_match_queries_and_hits')
+        if values['locality_outputs'] < values['locality_destination_visits']:
+            errors.append('locality_visits_exceed_presented_outputs')
+        source_queries = values['locality_shard_queries'] - values['locality_destination_queries']
+        if not 0 <= source_queries <= values['locality_calls']:
+            errors.append('locality_source_queries_outside_call_population')
+        if result['configuration']['locality_fastpath_enabled'] == 0 and values['locality_dedup_hits']:
+            errors.append('locality_hits_while_fastpath_disabled')
+    if errors or counter_errors:
+        return result
+    result['valid'] = True
+    result['stage_mean_ms'] = {
+        stage: values[stage + '_sum_s'] * 1000 / values[stage + '_samples']
+        for stage in stages if values[stage + '_samples'] > 0
+    }
+    if name == 'batch_dispatch':
+        result['late_batch_fraction'] = values['late_batches'] / values['batches'] if values['batches'] else None
+    if name == 'locality':
+        visits, calls = values['locality_destination_visits'], values['locality_calls']
+        result['destination_hit_fraction'] = values['locality_dedup_hits'] / visits if visits else None
+        result['destination_queries_per_call'] = values['locality_destination_queries'] / calls if calls else None
+        result['shard_queries_per_call'] = values['locality_shard_queries'] / calls if calls else None
+    return result
 
 
 def summarize_reconciliation(before, after, changes, counter_errors):
@@ -210,8 +328,9 @@ def summarize(samples):
     result['errors'].extend(errors)
     diagnostic = changes.get(KEYS[1], {})
     result['diagnostics_available'] = all(k in usable[0]['stats'] and k in usable[-1]['stats'] for k in REQUIRED_KEYS)
-    result['stage_mean_ms'] = {k[:-8]: diagnostic.get(k[:-8] + '_sum_s', 0) * 1000 / n
-                               for k, n in diagnostic.items() if k.endswith('_samples') and n > 0}
+    result['stage_mean_ms'] = {k[:-8]: diagnostic[k[:-8] + '_sum_s'] * 1000 / n
+                               for k, n in diagnostic.items() if k.endswith('_samples') and n > 0
+                               and k[:-8] + '_sum_s' in diagnostic}
     hits, misses = diagnostic.get('config_cache_hits', 0), diagnostic.get('config_cache_misses', 0)
     result['config_cache_hit_fraction'] = hits / (hits + misses) if hits + misses else None
     not_ready = diagnostic.get('not_ready_total', 0)
@@ -223,12 +342,37 @@ def summarize(samples):
         diagnostic.get('not_ready_snapshot_changed', 0) / completed if completed else None)
     result['reconciliation'] = summarize_reconciliation(usable[0]['stats'], usable[-1]['stats'], changes, errors)
     result['errors'].extend(result['reconciliation']['errors'])
-    if errors or result['reconciliation']['errors']:
+    for name in OPTIONAL_SCHEMAS:
+        result[name] = summarize_optional_schema(usable, name, errors)
+        result['errors'].extend(result[name]['errors'])
+    result['batch_dispatch']['semantics'] = (
+        'Manager dispatch to first pool entry; separate from pool-entry residence and not total liteserver queue latency. '
+        'Wall-time means use only completed wait_samples with their matching wait_sum_s; late_batches counts entry after the original deadline.')
+    result['reconciliation_chunks']['semantics'] = (
+        'grouping_sum_s is active grouping slices excluding explicit yield waits; grouping_samples still counts whole passes. '
+        'grouping_slice and account_slice use their own completed-slice sample counts; yield_wait counts resumed yields. '
+        'Yield starts and resumed samples may cross interval boundaries. Slice clocks include OS preemption and are not exclusive CPU. '
+        'The budget is cooperative and checked between complete source operations, not a hard scheduling deadline.')
+    result['locality']['semantics'] = (
+        'Calls include repeated checks before/after awaits or snapshot refresh, not unique messages or admitted transfers. '
+        'Presented output slots can remain unvisited after early failure. Visits equal destination queries plus same-call reuse hits; '
+        'shard queries also include source lookups. Ratios use this locality-call population only.')
+    if errors or result['reconciliation']['errors'] or any(result[name]['errors'] for name in OPTIONAL_SCHEMAS):
         # A reset/partial schema must never appear to be a valid attribution.
         result['stage_mean_ms'] = {}
         result['config_cache_hit_fraction'] = None
         result['snapshot_changed_fraction_of_not_ready'] = None
         result['snapshot_changed_fraction_of_completed_inputs'] = None
+        result['reconciliation']['valid'] = False
+        result['reconciliation']['stage_mean_ms'] = {}
+        result['reconciliation']['apply_outcome_fractions'] = {}
+        result['reconciliation']['apply_effects_fraction'] = None
+        for name in OPTIONAL_SCHEMAS:
+            result[name]['valid'] = False
+            result[name]['stage_mean_ms'] = {}
+            for key in ('late_batch_fraction', 'destination_hit_fraction', 'destination_queries_per_call',
+                        'shard_queries_per_call'):
+                result[name].pop(key, None)
     return result
 
 
@@ -263,7 +407,7 @@ def capture_dashboard(base, start, end, output):
         'canonical': ('rate', ['BLOCK_APPLIED_native_transfers', 'BLOCK_APPLIED_transactions', 'BLOCK_APPLIED_blocks']),
         'packing': ('avg', ['BLOCK_native_transfers', 'BLOCK_size', 'BLOCK_native_bytes_per_transfer']),
         'collation': ('avg', ['BLOCK_collate_work_time_real_' + x for x in
-                              ('native_execute', 'native_commit', 'state_merkle_update')]),
+                              ('native_execute', 'native_commit', 'create_state_merkle_update')]),
         'validation': ('avg', ['BLOCK_validate_work_time_real_' + x for x in
                                ('native_signature_verify', 'native_state_replay', 'native_account_load',
                                 'native_account_materialize', 'native_state_dictionary_check', 'state_merkle_update')])}

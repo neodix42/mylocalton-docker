@@ -288,3 +288,52 @@ images remain local desktop artifacts. Server A uses the separately published
 portable master image and the preparation/receipt checks above. The complete record and maintenance
 limitations are in the TON repository's
 [metadata report](https://github.com/corton-nommander/ton/blob/master/doc/native-candidate-metadata-cycles-2026-09-09.md).
+
+### Pool dispatch, reconciliation slices and locality checks
+
+The isolated pool experiments expose two independent default-off switches:
+`TON_NATIVE_RECONCILIATION_CHUNKS=0|1` and
+`TON_NATIVE_ADMISSION_LOCALITY_FASTPATH=0|1`. Both the profiler identity and
+wrapper environment capture preserve them. Use a supporting prebuilt image;
+compare one switch at a time with fixed workload, resources and all other flags.
+`TON_NATIVE_RECONCILIATION_PROFILE=1` enables the additional wall clocks and
+should stay fixed across both arms.
+
+The optional `batch_dispatch` summary measures manager dispatch to first entry
+in the pool actor. Its `wait` mean uses its own sample count and seconds-to-ms
+conversion. The existing admission `residence` timer starts inside the pool;
+queue wait is reported separately, and neither is total liteserver latency.
+Dispatch-entry and completed-batch populations can cross interval boundaries,
+so do not add their means as though they described the same set of calls.
+
+Optional `reconciliation_chunks` diagnostics record grouping/account yields,
+the configured 256/64-source bounds and the cooperative 0.5ms budget. The budget
+is checked between complete source operations; one operation or scheduler delay
+can exceed it. `grouping_sum_s` now accumulates active grouping slices excluding
+explicit yield waits, while `grouping_samples` continues to count whole passes.
+The `grouping_slice`, `account_slice` and `yield_wait` means each use their own
+completed sample count. Yield starts and resumptions can straddle interval
+boundaries. These are elapsed clocks, including OS preemption, not CPU counters.
+
+Optional `locality` diagnostics count repeated locality checks, including checks
+before/after asynchronous work or snapshot refresh. They are not counts of unique
+messages or accepted transfers. Destination visits equal actual destination
+queries plus same-call reuse hits; presented output slots can exceed visits after
+an early failure. Shard-query counts also include the source lookup. Ratios use
+this locality-call population, independently of admission or canonical TPS.
+
+Older recordings without these optional schemas remain supported. Once a schema
+appears, every sample must contain its complete fields and stable configuration.
+Missing fields, counter resets and configuration changes suppress derived
+attribution, including changes that occur and recover between the first and last
+sample. Budgets, flags and lifetime maxima are never subtracted as counters;
+zero timing samples produce an unavailable mean rather than a fabricated zero.
+Dashboard collation uses `create_state_merkle_update`, while validation retains
+its separate `state_merkle_update` metric name.
+
+Offline verification, run outside performance measurement windows:
+
+```sh
+python3 benchmark/tests/native-validator-profile-test.py
+python3 benchmark/tests/native-container-runtime-env-test.py
+```

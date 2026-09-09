@@ -43,6 +43,13 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
                     'NATIVE_PAYMENT_LANE_DEPTH=2', 'ACTUAL_MIN_SPLIT=2']
         self.assertEqual(captured_environment(expected), expected)
 
+    def test_pool_candidate_flags_are_preserved_in_both_modes(self):
+        for value in ('0', '1'):
+            expected = [f'TON_NATIVE_RECONCILIATION_CHUNKS={value}',
+                        f'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH={value}']
+            with self.subTest(value=value):
+                self.assertEqual(captured_environment(expected), expected)
+
     def test_exact_new_names_only_and_unrelated_values_excluded(self):
         values = ['PREFIX_TON_KEYRING_PREPARED_SIGNING=1',
                   'TON_KEYRING_PREPARED_SIGNING_EXTRA=1',

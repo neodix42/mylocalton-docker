@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import json
+import copy
+import io
 import sys
 sys.dont_write_bytecode = True
 
@@ -46,6 +48,37 @@ class ProfileTests(unittest.TestCase):
     def summary_between(self, before, after):
         return m.summarize([{'stats':before, 'stats_started_unix_s':1},
                             {'stats':after, 'stats_finished_unix_s':3}])
+
+    def dispatch_stats(self, n, profiling=True):
+        stats = self.stats(n)
+        stats[m.BATCH_DISPATCH_KEY] = dict(profile_enabled=int(profiling), batches=4*n, messages=64*n,
+            late_batches=n, wait_samples=3*n if profiling else 0, wait_sum_s=0.006*n if profiling else 0,
+            wait_max_s=10-n)
+        return stats
+
+    def chunk_stats(self, n, profiling=True, enabled=True):
+        stats = self.reconciliation_stats(n, profiling)
+        row = stats[m.RECONCILIATION_DIAGNOSTIC_KEY]
+        row.update(dict.fromkeys(m.RECONCILIATION_CHUNK_COUNTERS, 0))
+        row.update(chunks_enabled=int(enabled), group_chunk_sources=256, account_chunk_sources=64,
+                   chunk_budget_s=0.0005, grouping_yields=2*n if enabled else 0,
+                   account_yields=4*n if enabled else 0)
+        for stage in m.RECONCILIATION_CHUNK_STAGES:
+            row[stage + '_max_s'] = 10-n
+        if profiling:
+            row.update(grouping_samples=n, grouping_sum_s=0.006*n,
+                       grouping_slice_samples=3*n, grouping_slice_sum_s=0.006*n,
+                       account_slice_samples=5*n, account_slice_sum_s=0.015*n,
+                       yield_wait_samples=6*n if enabled else 0, yield_wait_sum_s=0.024*n if enabled else 0)
+        return stats
+
+    def locality_stats(self, n, enabled=True):
+        stats = self.stats(n)
+        queries, hits = (5*n, 15*n) if enabled else (20*n, 0)
+        stats[m.KEYS[1]].update(locality_fastpath_enabled=int(enabled), locality_calls=2*n,
+            locality_outputs=32*n, locality_destination_visits=20*n,
+            locality_destination_queries=queries, locality_dedup_hits=hits, locality_shard_queries=queries+2*n)
+        return stats
 
     def test_deltas_have_correct_units_and_exclude_gauges(self):
         first, last = self.stats(1), self.stats(3)
@@ -185,6 +218,183 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(summary['reconciliation']['apply_outcome_fractions'], {})
         self.assertIsNone(summary['reconciliation']['apply_effects_fraction'])
 
+    def test_old_recordings_do_not_require_dispatch_chunks_or_locality(self):
+        for factory in (self.stats, self.reconciliation_stats):
+            summary = self.summary_between(factory(1), factory(2))
+            self.assertFalse(summary['errors'])
+            for name in m.OPTIONAL_SCHEMAS:
+                self.assertFalse(summary[name]['available'])
+                self.assertFalse(summary[name]['valid'])
+                self.assertEqual(summary[name]['stage_mean_ms'], {})
+        self.assertNotIn('account_yields', m.RECONCILIATION_DIAGNOSTIC_COUNTERS)
+        self.assertNotIn('grouping_slice_samples', m.RECONCILIATION_DIAGNOSTIC_COUNTERS)
+
+    def test_dispatch_wait_has_own_population_and_seconds_to_ms_units(self):
+        summary = self.summary_between(self.dispatch_stats(1), self.dispatch_stats(2))
+        self.assertFalse(summary['errors'])
+        queue = summary['batch_dispatch']
+        self.assertTrue(queue['valid'])
+        self.assertAlmostEqual(queue['stage_mean_ms']['wait'], 2)
+        self.assertEqual(queue['late_batch_fraction'], 0.25)
+        self.assertEqual(summary['stage_mean_ms']['residence'], 250)
+        self.assertEqual(queue['counter_deltas']['messages'], 64)
+        self.assertNotIn('profile_enabled', summary['counter_deltas'][m.BATCH_DISPATCH_KEY])
+        self.assertNotIn('wait_max_s', summary['counter_deltas'][m.BATCH_DISPATCH_KEY])
+
+    def test_zero_or_disabled_dispatch_timings_are_unavailable_not_zero_latency(self):
+        same = self.dispatch_stats(1)
+        result = self.summary_between(same, same)['batch_dispatch']
+        self.assertTrue(result['valid'])
+        self.assertEqual(result['stage_mean_ms'], {})
+        self.assertIsNone(result['late_batch_fraction'])
+        result = self.summary_between(self.dispatch_stats(1, False), self.dispatch_stats(2, False))
+        self.assertFalse(result['errors'])
+        self.assertTrue(result['batch_dispatch']['valid'])
+        self.assertEqual(result['batch_dispatch']['stage_mean_ms'], {})
+        before, after = self.dispatch_stats(1), self.dispatch_stats(2)
+        after[m.BATCH_DISPATCH_KEY]['wait_samples'] = before[m.BATCH_DISPATCH_KEY]['wait_samples']
+        result = self.summary_between(before, after)
+        self.assertIn('timing_sum_without_samples:batch_dispatch.wait', result['errors'])
+        self.assertFalse(result['batch_dispatch']['valid'])
+
+    def test_chunk_means_use_slice_counts_and_whole_pass_grouping_stays_separate(self):
+        summary = self.summary_between(self.chunk_stats(1), self.chunk_stats(2))
+        self.assertFalse(summary['errors'])
+        chunks = summary['reconciliation_chunks']
+        self.assertTrue(chunks['valid'])
+        self.assertEqual(chunks['configuration']['chunk_budget_s'], 0.0005)
+        self.assertAlmostEqual(summary['reconciliation']['stage_mean_ms']['grouping'], 6)
+        for name, expected in [('grouping_slice', 2), ('account_slice', 3), ('yield_wait', 4)]:
+            self.assertAlmostEqual(chunks['stage_mean_ms'][name], expected)
+        delta = summary['counter_deltas'][m.RECONCILIATION_DIAGNOSTIC_KEY]
+        self.assertEqual(delta['grouping_yields'], 2)
+        for excluded in ('chunks_enabled', 'group_chunk_sources', 'account_chunk_sources',
+                         'chunk_budget_s', 'grouping_slice_max_s', 'account_slice_max_s', 'yield_wait_max_s'):
+            self.assertNotIn(excluded, delta)
+
+    def test_chunks_profile_off_still_counts_yields_and_disabled_mode_never_yields(self):
+        for profiling, enabled in ((False, True), (True, False), (False, False)):
+            with self.subTest(profiling=profiling, enabled=enabled):
+                summary = self.summary_between(self.chunk_stats(1, profiling, enabled),
+                                               self.chunk_stats(2, profiling, enabled))
+                self.assertFalse(summary['errors'])
+                self.assertTrue(summary['reconciliation_chunks']['valid'])
+                if not profiling:
+                    self.assertEqual(summary['reconciliation_chunks']['stage_mean_ms'], {})
+        before, after = self.chunk_stats(1, True, False), self.chunk_stats(2, True, False)
+        after[m.RECONCILIATION_DIAGNOSTIC_KEY]['account_yields'] = 1
+        summary = self.summary_between(before, after)
+        self.assertIn('reconciliation_yields_while_chunks_disabled', summary['errors'])
+
+    def test_optional_partial_schemas_and_flag_changes_cannot_make_attribution(self):
+        factories = {'batch_dispatch': self.dispatch_stats, 'reconciliation_chunks': self.chunk_stats,
+                     'locality': self.locality_stats}
+        for name, factory in factories.items():
+            definition = m.OPTIONAL_SCHEMAS[name]
+            group = definition['group']
+            field = sorted(definition['counters'])[0]
+            flag = next(key for key, kind in definition['configuration'].items() if kind == 'flag')
+            for fault in ('both_missing_field', 'new_schema', 'missing_schema', 'reset', 'flag_change'):
+                with self.subTest(name=name, fault=fault):
+                    before, after = factory(1), factory(2)
+                    if fault == 'both_missing_field':
+                        del before[group][field]; del after[group][field]
+                    elif fault in ('new_schema', 'missing_schema'):
+                        endpoint = before if fault == 'new_schema' else after
+                        for key in definition['counters'] | set(definition['configuration']) | {
+                                stage + '_max_s' for stage in definition['stages']}:
+                            endpoint[group].pop(key, None)
+                        if definition.get('whole_group'):
+                            del endpoint[group]
+                    elif fault == 'reset':
+                        # Choose a known nonzero counter to make reset observable.
+                        key = next(key for key in definition['counters'] if before[group][key] > 0)
+                        after[group][key] = 0
+                    else:
+                        after[group][flag] = 1-before[group][flag]
+                    summary = self.summary_between(before, after)
+                    self.assertTrue(summary['errors'])
+                    self.assertFalse(summary[name]['valid'])
+                    self.assertEqual(summary[name]['stage_mean_ms'], {})
+                    self.assertEqual(summary['stage_mean_ms'], {})
+
+    def test_optional_intermediate_reset_missing_schema_or_config_change_is_visible(self):
+        for name, factory in [('batch_dispatch', self.dispatch_stats),
+                              ('reconciliation_chunks', self.chunk_stats), ('locality', self.locality_stats)]:
+            definition = m.OPTIONAL_SCHEMAS[name]; group = definition['group']
+            for fault in ('reset_then_recover', 'missing_middle', 'changed_then_restored'):
+                with self.subTest(name=name, fault=fault):
+                    first, middle, last = factory(1), factory(2), factory(3)
+                    if fault == 'reset_then_recover':
+                        key = next(key for key in definition['counters'] if first[group][key] > 0)
+                        middle[group][key] = 0
+                    elif fault == 'missing_middle':
+                        del middle[group]
+                    else:
+                        key = next(iter(definition['configuration']))
+                        middle[group][key] = 1-first[group][key]
+                    summary = m.summarize([{'stats': row, 'stats_started_unix_s': i,
+                                            'stats_finished_unix_s': i+0.1}
+                                           for i, row in enumerate((first, middle, last), 1)])
+                    self.assertTrue(summary['errors'])
+                    self.assertFalse(summary[name]['valid'])
+                    self.assertEqual(summary[name]['stage_mean_ms'], {})
+
+    def test_chunk_budget_must_be_positive_and_stable_without_being_subtracted(self):
+        for key, value in [('chunk_budget_s', 0), ('chunk_budget_s', 0.001),
+                           ('group_chunk_sources', 0), ('account_chunk_sources', 63),
+                           ('account_chunk_sources', 64.5)]:
+            with self.subTest(key=key, value=value):
+                before, after = self.chunk_stats(1), self.chunk_stats(2)
+                after[m.RECONCILIATION_DIAGNOSTIC_KEY][key] = value
+                summary = self.summary_between(before, after)
+                self.assertTrue(summary['errors'])
+                self.assertFalse(summary['reconciliation_chunks']['valid'])
+                self.assertNotIn(key, summary['counter_deltas'][m.RECONCILIATION_DIAGNOSTIC_KEY])
+
+    def test_locality_ratios_use_repeated_check_population_and_enforce_partition(self):
+        before, after = self.locality_stats(1), self.locality_stats(2)
+        summary = self.summary_between(before, after)
+        self.assertFalse(summary['errors'])
+        locality = summary['locality']
+        self.assertTrue(locality['valid'])
+        self.assertEqual(locality['destination_hit_fraction'], 0.75)
+        self.assertEqual(locality['destination_queries_per_call'], 2.5)
+        self.assertEqual(locality['shard_queries_per_call'], 3.5)
+        for field, value in [('locality_destination_visits', 41), ('locality_outputs', 1),
+                             ('locality_shard_queries', 30), ('locality_calls', 3.5)]:
+            with self.subTest(field=field):
+                broken = copy.deepcopy(after); broken[m.KEYS[1]][field] = value
+                invalid = self.summary_between(before, broken)
+                self.assertTrue(invalid['errors'])
+                self.assertFalse(invalid['locality']['valid'])
+                self.assertNotIn('destination_hit_fraction', invalid['locality'])
+        summary = self.summary_between(self.locality_stats(1, False), self.locality_stats(2, False))
+        self.assertFalse(summary['errors'])
+        self.assertEqual(summary['locality']['destination_hit_fraction'], 0)
+        same = self.locality_stats(1)
+        self.assertIsNone(self.summary_between(same, same)['locality']['destination_hit_fraction'])
+
+    def test_missing_stage_sum_does_not_fabricate_zero_mean(self):
+        before, after = self.stats(1), self.stats(2)
+        del before[m.KEYS[1]]['residence_sum_s']; del after[m.KEYS[1]]['residence_sum_s']
+        self.assertNotIn('residence', self.summary_between(before, after)['stage_mean_ms'])
+
+    def test_dashboard_uses_distinct_collation_and_validation_merkle_names(self):
+        urls = []
+        def response(url, **kwargs):
+            urls.append(url)
+            return io.StringIO('[]')
+        with tempfile.TemporaryDirectory() as directory, patch.object(m.urllib.request, 'urlopen', side_effect=response):
+            self.assertFalse(m.capture_dashboard('http://example.invalid', 100, 200, Path(directory)))
+        requested = [m.urllib.parse.parse_qs(m.urllib.parse.urlsplit(url).query)['stats'][0].split(',') for url in urls]
+        collation = next(row for row in requested if any('BLOCK_collate_' in item for item in row))
+        validation = next(row for row in requested if any('BLOCK_validate_' in item for item in row))
+        self.assertIn('BLOCK_collate_work_time_real_create_state_merkle_update', collation)
+        self.assertNotIn('BLOCK_collate_work_time_real_state_merkle_update', collation)
+        self.assertIn('BLOCK_validate_work_time_real_state_merkle_update', validation)
+        self.assertNotIn('BLOCK_validate_work_time_real_create_state_merkle_update', validation)
+
     def test_thread_pid_reuse_and_counter_reset_are_not_cpu_work(self):
         def sample(t, cpu, start=1):
             return {'observed_unix_s':t,'resources':{'threads':{'123':{
@@ -207,6 +417,7 @@ class ProfileTests(unittest.TestCase):
         record={'Id':'id','Image':'sha256:image','RestartCount':0,
                 'State':{'Running':True,'StartedAt':'start','Pid':7},'HostConfig':{},
                 'Config':{'Env':['TON_NATIVE_ADMISSION_CONFIG_CACHE=1','TON_NATIVE_RECONCILIATION_PROFILE=1',
+                                 'TON_NATIVE_RECONCILIATION_CHUNKS=1','TON_NATIVE_ADMISSION_LOCALITY_FASTPATH=0',
                                  'TON_KEYRING_PREPARED_SIGNING=1','TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0',
                                  'TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1',
                                  'PRIVATE_KEY=secret','TOKEN=secret']}}
@@ -214,6 +425,8 @@ class ProfileTests(unittest.TestCase):
             value=m.identity('genesis')
         self.assertEqual(value['environment'],{'TON_NATIVE_ADMISSION_CONFIG_CACHE':'1',
                                               'TON_NATIVE_RECONCILIATION_PROFILE':'1',
+                                              'TON_NATIVE_RECONCILIATION_CHUNKS':'1',
+                                              'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH':'0',
                                               'TON_KEYRING_PREPARED_SIGNING':'1',
                                               'TON_OVERLAY_LOCAL_SIGNATURE_REUSE':'0',
                                               'TON_NATIVE_CANDIDATE_METADATA_PROJECTION':'1'})
