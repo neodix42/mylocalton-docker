@@ -197,8 +197,8 @@ optimization opportunity, not an expected percentage TPS improvement.
 
 ### Strict candidate metadata projection
 
-`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0|1` is a separate default-off
-experiment. For direct native runs it extracts each checked parent hash and
+`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0|1` remains off in global and
+physical-server defaults; the measured desktop preset now enables it. For direct native runs it extracts each checked parent hash and
 source/nonce interval without building the flattened execution entries and
 derived account table. It retains strict field, count, tree and canonical-root
 validation; scalar versions use the original parser. It adds no cross-candidate
@@ -208,3 +208,17 @@ The profiler and wrapper record the flag. Use a new image implementing it, and
 compare 0/1 using that same prebuilt image with local signature reuse fixed at
 the selected setting. Keep 600-second measurements and 20 ms coalescing. Do not
 enable this candidate on production solely because Compose accepts its variable.
+
+The four September 9 metadata runs observed control TPS 59,784.97 / 60,618.60
+and candidate TPS 61,380.86 / 62,537.54: means **60,201.79→61,959.20 (+2.92%)**.
+All proof, drain and image checks passed. Both candidates beat both controls;
+mean sampled validator CPU was 4.59% lower. Rebuildable-cache cleanup preceded
+the last control, so this is a disclosed desktop observation and selection,
+not an uninterrupted identical-host experiment or a capacity claim.
+
+`.env.desktop` pins the existing local `admission-local-7b73cdb1` images and keeps
+overlay reuse 1, configuration cache 1, metadata projection 1, and prepared
+signing/sharing/refresh 0. Use Compose `--no-build --pull never`; these native-CPU
+images have not been published for Server A. The complete record and maintenance
+limitations are in the TON repository's
+[metadata report](https://github.com/corton-nommander/ton/blob/master/doc/native-candidate-metadata-cycles-2026-09-09.md).
