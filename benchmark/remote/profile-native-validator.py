@@ -16,7 +16,8 @@ import urllib.request
 REQUIRED_KEYS = ('total.ext_msg_batch_admission', 'total.ext_msg_batch_diagnostics',
                  'total.native_signature_executor')
 RECONCILIATION_KEY = 'total.ext_msg_native_reconciliation'
-KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY,)
+RECONCILIATION_DIAGNOSTIC_KEY = 'total.ext_msg_native_reconciliation_diagnostics'
+KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY)
 ADMISSION_COUNTERS = {
     'batches', 'messages', 'accepted', 'rejected', 'account_lookups',
     'shard_state_requests', 'shard_manager_waits', 'shard_fetches', 'shard_cache_hits',
@@ -33,8 +34,22 @@ RECONCILIATION_COUNTERS = {
     'rebased_reservations', 'unaffordable_tail_pruned', 'stale_uncommitted_tail_pruned',
     'expiry_suffix_events', 'expiry_suffix_pruned', 'exact_retry_preserved_stale_revision',
 }
+RECONCILIATION_STAGE_PREFIXES = ('registration', 'grouping', 'manager_wait', 'lookup', 'unpack', 'apply', 'wake')
+RECONCILIATION_APPLY_OUTCOMES = ('apply_errors', 'apply_first_observation', 'apply_nonce_advanced',
+                                'apply_balance_only_changed', 'apply_unchanged')
+RECONCILIATION_DIAGNOSTIC_COUNTERS = {
+    'snapshot_finishes', 'snapshot_errors', 'register_source_visits', 'register_tracked_visits',
+    'group_source_visits', 'group_shards', 'account_lookups', 'account_empty',
+    'account_unpack_failures', 'account_kind_failures', 'account_balance_failures',
+    'apply_calls', 'apply_stale_lt', 'apply_effects', 'apply_balance_increased', 'apply_balance_decreased',
+    'pending_reservations_before_apply_sum', 'reservation_prefix_entries', 'messages_purged',
+    'reservation_rebases', 'tail_prunes',
+} | set(RECONCILIATION_APPLY_OUTCOMES) | {
+    stage + suffix for stage in RECONCILIATION_STAGE_PREFIXES for suffix in ('_samples', '_sum_s')
+}
 ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_ADMISSION_SHARD_SHARING', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
+            'TON_NATIVE_RECONCILIATION_PROFILE',
             'TON_NATIVE_VALIDATION_SIGNATURE_THREADS',
             'TON_NATIVE_COLLATOR_QUEUE_LIMIT', 'TON_SIMPLEX_MAX_TPS', 'SIMPLEX_TARGET_RATE_MS',
             'TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS', 'TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS',
@@ -101,6 +116,8 @@ def deltas(before, after):
                 continue
             if group == RECONCILIATION_KEY and key not in RECONCILIATION_COUNTERS:
                 continue
+            if group == RECONCILIATION_DIAGNOSTIC_KEY and key not in RECONCILIATION_DIAGNOSTIC_COUNTERS:
+                continue
             new = after[group].get(key)
             if new is None or new < old:
                 errors.append('counter_reset_or_missing:' + group + '.' + key)
@@ -108,6 +125,60 @@ def deltas(before, after):
                 values[key] = new - old
         changes[group] = values
     return changes, errors
+
+
+def summarize_reconciliation(before, after, changes, counter_errors):
+    """Use only the reconciliation-local apply denominator, never legacy admission progress."""
+    group = RECONCILIATION_DIAGNOSTIC_KEY
+    result = {'available': group in before and group in after, 'valid': False,
+              'profile_enabled': None, 'stage_mean_ms': {}, 'apply_outcome_counts': {},
+              'apply_outcome_fractions': {}, 'apply_outcomes_match_calls': None,
+              'apply_effects_fraction': None, 'errors': [],
+              'semantics': 'Reconciliation calls only. Outcomes partition apply_calls; balance changes '
+                           'and effects overlap these outcomes. Unchanged account facts can still require '
+                           'expiry/prefix work. Legacy sources_advanced includes admission progress. '
+                           'Manager waiting is wall time, not CPU time. Missing timings are not zero work.'}
+    if not result['available']:
+        return result
+    errors = result['errors']
+    first, last = before[group], after[group]
+    for key in sorted(RECONCILIATION_DIAGNOSTIC_COUNTERS - (first.keys() & last.keys())):
+        errors.append('missing_reconciliation_counter:' + key)
+    flags = (first.get('profile_enabled'), last.get('profile_enabled'))
+    if any(flag not in (0, 1) for flag in flags):
+        errors.append('invalid_reconciliation_profile_flag')
+    elif flags[0] != flags[1]:
+        errors.append('reconciliation_profile_changed')
+    else:
+        result['profile_enabled'] = bool(flags[0])
+    values = changes.get(group, {})
+    outcome_keys = set(RECONCILIATION_APPLY_OUTCOMES) | {'apply_calls'}
+    if outcome_keys <= values.keys():
+        outcomes = {key: values[key] for key in RECONCILIATION_APPLY_OUTCOMES}
+        result['apply_outcome_counts'] = outcomes
+        result['apply_outcomes_match_calls'] = sum(outcomes.values()) == values['apply_calls']
+        if not result['apply_outcomes_match_calls']:
+            errors.append('reconciliation_apply_outcomes_do_not_match_calls')
+    if values.get('apply_stale_lt', 0) > values.get('apply_errors', 0):
+        errors.append('reconciliation_stale_lt_exceeds_errors')
+    if values.get('apply_effects', 0) > values.get('apply_calls', 0) - values.get('apply_errors', 0):
+        errors.append('reconciliation_effects_exceed_successful_calls')
+    if result['profile_enabled'] is False and any(values.get(stage + '_samples', 0)
+                                                 for stage in RECONCILIATION_STAGE_PREFIXES):
+        errors.append('reconciliation_timing_samples_while_profile_disabled')
+    if counter_errors or errors:
+        return result
+    result['valid'] = True
+    result['stage_mean_ms'] = {
+        stage: values[stage + '_sum_s'] * 1000 / values[stage + '_samples']
+        for stage in RECONCILIATION_STAGE_PREFIXES if values[stage + '_samples'] > 0
+    }
+    calls = values['apply_calls']
+    if calls:
+        result['apply_outcome_fractions'] = {key: count / calls
+                                             for key, count in result['apply_outcome_counts'].items()}
+        result['apply_effects_fraction'] = values['apply_effects'] / calls
+    return result
 
 
 def summarize(samples):
@@ -138,7 +209,9 @@ def summarize(samples):
     completed = admissions.get('accepted', 0) + admissions.get('rejected', 0)
     result['snapshot_changed_fraction_of_completed_inputs'] = (
         diagnostic.get('not_ready_snapshot_changed', 0) / completed if completed else None)
-    if errors:
+    result['reconciliation'] = summarize_reconciliation(usable[0]['stats'], usable[-1]['stats'], changes, errors)
+    result['errors'].extend(result['reconciliation']['errors'])
+    if errors or result['reconciliation']['errors']:
         # A reset/partial schema must never appear to be a valid attribution.
         result['stage_mean_ms'] = {}
         result['config_cache_hit_fraction'] = None

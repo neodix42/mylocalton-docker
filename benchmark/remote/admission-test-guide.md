@@ -106,6 +106,38 @@ and cannot replace B's proof-checked final result.
 
 ## Read the evidence before selecting another treatment
 
+### Optional reconciliation timing
+
+With a validator image containing the reconciliation diagnostics, set
+`TON_NATIVE_RECONCILIATION_PROFILE=1` in A's selected environment file before a
+diagnostic restart. Compose passes this setting to genesis; the default remains
+`0`. Use the existing strict-reuse recreation command only after B has drained,
+then wait for healthy, advancing blocks. Keep the setting identical for both
+arms, and start the usual read-only sampler:
+
+```sh
+sudo python3 benchmark/remote/profile-native-validator.py \
+  --container genesis --duration 1200 --interval 30 \
+  --output "$HOME/profile-reconciliation-01"
+```
+
+The new `summary.json.reconciliation` section reports lookup/unpack/application
+stage means and account-outcome fractions using only reconciliation's own
+`apply_calls`. It verifies that first observations, nonce advances, balance-only
+changes, unchanged accounts and errors sum to those calls. A reset, missing
+counter, changed timing flag or unmatched outcomes suppresses derived attribution.
+The new stats group is optional when reading older recordings.
+
+Outcome/work counters remain available with timing disabled; missing stage
+means do not mean zero work. Balance changes and mutation effects overlap the
+exclusive outcomes. An unchanged account can still require expiry and reservation
+processing. Do not divide the older `sources_advanced` counter by reconciliation
+lookups: admission also increments that historical counter. The sampler excludes
+the timing-enable gauge and lifetime maxima from counter differences, and records
+the configured flag in `identity.json`.
+
+### Existing admission and block evidence
+
 A writes `identity.json`, `samples.jsonl`, raw `stats-*.txt`, `summary.json`, and
 optional dashboard canonical/packing/collation/validation files. The summary
 includes cache hit rate, configuration/stage wall times, snapshot-change fractions

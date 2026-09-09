@@ -23,6 +23,30 @@ class ProfileTests(unittest.TestCase):
             f'residence_max_s:{n} active_batches:{10-n} peak_active_batches:10',
             f'{m.KEYS[2]} calls:{n} threads_created:{n*8} residence_sum_s:{n*0.001}']))
 
+    def reconciliation_stats(self, n, profiling=True):
+        stats = self.stats(n)
+        counters = dict.fromkeys(m.RECONCILIATION_DIAGNOSTIC_COUNTERS, 0)
+        counters.update(profile_enabled=int(profiling), account_lookups=150*n,
+                        account_kind_failures=50*n, apply_calls=100*n, apply_errors=n,
+                        apply_stale_lt=n, apply_first_observation=n, apply_nonce_advanced=20*n,
+                        apply_balance_only_changed=5*n, apply_unchanged=73*n, apply_effects=26*n,
+                        apply_balance_increased=5*n, apply_balance_decreased=20*n,
+                        pending_reservations_before_apply_sum=500*n, reservation_prefix_entries=400*n,
+                        lookup_max_s=10-n, apply_max_s=10-n)
+        if profiling:
+            counters.update(lookup_samples=150*n, lookup_sum_s=0.03*n,
+                            apply_samples=100*n, apply_sum_s=0.1*n)
+        encoded = m.RECONCILIATION_DIAGNOSTIC_KEY + ' ' + ' '.join(f'{k}:{v}' for k,v in counters.items())
+        stats.update(m.parse_stats(encoded))
+        # The historical counter has mixed origins; this must never enter the
+        # new account-outcome fractions or a supposed useful-read ratio.
+        stats[m.RECONCILIATION_KEY] = dict(account_lookups=150*n, sources_advanced=100000*n)
+        return stats
+
+    def summary_between(self, before, after):
+        return m.summarize([{'stats':before, 'stats_started_unix_s':1},
+                            {'stats':after, 'stats_finished_unix_s':3}])
+
     def test_deltas_have_correct_units_and_exclude_gauges(self):
         first, last = self.stats(1), self.stats(3)
         d, errors = m.deltas(first, last)
@@ -75,6 +99,78 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.parse_stats(m.KEYS[2]+' calls:1\n'+m.KEYS[2]+' calls:2')
 
+    def test_reconciliation_group_is_optional_for_older_recordings(self):
+        summary = self.summary_between(self.stats(1), self.stats(2))
+        self.assertFalse(summary['errors'])
+        self.assertFalse(summary['reconciliation']['available'])
+        self.assertFalse(summary['reconciliation']['valid'])
+        self.assertEqual(summary['reconciliation']['stage_mean_ms'], {})
+        self.assertEqual(summary['reconciliation']['apply_outcome_fractions'], {})
+
+    def test_reconciliation_stage_means_and_outcomes_use_matching_scope(self):
+        before, after = self.reconciliation_stats(1), self.reconciliation_stats(2)
+        summary = self.summary_between(before, after)
+        self.assertFalse(summary['errors'])
+        result = summary['reconciliation']
+        self.assertTrue(result['available'])
+        self.assertTrue(result['valid'])
+        self.assertTrue(result['profile_enabled'])
+        self.assertTrue(result['apply_outcomes_match_calls'])
+        self.assertAlmostEqual(result['stage_mean_ms']['lookup'], 0.2)
+        self.assertAlmostEqual(result['stage_mean_ms']['apply'], 1)
+        self.assertAlmostEqual(result['apply_outcome_fractions']['apply_nonce_advanced'], 0.2)
+        self.assertAlmostEqual(result['apply_outcome_fractions']['apply_unchanged'], 0.73)
+        self.assertAlmostEqual(result['apply_effects_fraction'], 0.26)
+        delta = summary['counter_deltas'][m.RECONCILIATION_DIAGNOSTIC_KEY]
+        self.assertEqual(delta['reservation_prefix_entries'], 400)
+        for gauge in ('profile_enabled', 'lookup_max_s', 'apply_max_s'):
+            self.assertNotIn(gauge, delta)
+
+    def test_reconciliation_timing_off_preserves_outcomes_and_detects_flag_change(self):
+        before, after = self.reconciliation_stats(1, False), self.reconciliation_stats(2, False)
+        summary = self.summary_between(before, after)
+        self.assertFalse(summary['errors'])
+        self.assertTrue(summary['reconciliation']['valid'])
+        self.assertFalse(summary['reconciliation']['profile_enabled'])
+        self.assertEqual(summary['reconciliation']['stage_mean_ms'], {})
+        self.assertAlmostEqual(summary['reconciliation']['apply_outcome_fractions']['apply_nonce_advanced'], 0.2)
+        after[m.RECONCILIATION_DIAGNOSTIC_KEY]['profile_enabled'] = 1
+        summary = self.summary_between(before, after)
+        self.assertIn('reconciliation_profile_changed', summary['errors'])
+        self.assertFalse(summary['reconciliation']['valid'])
+        self.assertEqual(summary['reconciliation']['apply_outcome_fractions'], {})
+
+    def test_reconciliation_partial_reset_or_unmatched_outcomes_clear_attribution(self):
+        group = m.RECONCILIATION_DIAGNOSTIC_KEY
+        for fault in ('missing_group', 'missing_counter', 'reset', 'outcome_mismatch', 'stale_lt_subset'):
+            with self.subTest(fault=fault):
+                before, after = self.reconciliation_stats(1), self.reconciliation_stats(2)
+                if fault == 'missing_group':
+                    del after[group]
+                elif fault == 'missing_counter':
+                    del before[group]['apply_unchanged']
+                elif fault == 'reset':
+                    after[group]['lookup_sum_s'] = 0
+                elif fault == 'outcome_mismatch':
+                    after[group]['apply_unchanged'] -= 1
+                else:
+                    after[group]['apply_stale_lt'] += 1
+                summary = self.summary_between(before, after)
+                self.assertTrue(summary['errors'])
+                self.assertFalse(summary['reconciliation']['valid'])
+                self.assertEqual(summary['reconciliation']['stage_mean_ms'], {})
+                self.assertEqual(summary['reconciliation']['apply_outcome_fractions'], {})
+                self.assertIsNone(summary['reconciliation']['apply_effects_fraction'])
+
+    def test_reconciliation_zero_calls_is_not_zero_percent_useful_work(self):
+        same = self.reconciliation_stats(1)
+        summary = self.summary_between(same, same)
+        self.assertFalse(summary['errors'])
+        self.assertTrue(summary['reconciliation']['valid'])
+        self.assertTrue(summary['reconciliation']['apply_outcomes_match_calls'])
+        self.assertEqual(summary['reconciliation']['apply_outcome_fractions'], {})
+        self.assertIsNone(summary['reconciliation']['apply_effects_fraction'])
+
     def test_thread_pid_reuse_and_counter_reset_are_not_cpu_work(self):
         def sample(t, cpu, start=1):
             return {'observed_unix_s':t,'resources':{'threads':{'123':{
@@ -96,10 +192,12 @@ class ProfileTests(unittest.TestCase):
     def test_identity_whitelists_configuration_without_exporting_secrets(self):
         record={'Id':'id','Image':'sha256:image','RestartCount':0,
                 'State':{'Running':True,'StartedAt':'start','Pid':7},'HostConfig':{},
-                'Config':{'Env':['TON_NATIVE_ADMISSION_CONFIG_CACHE=1','PRIVATE_KEY=secret','TOKEN=secret']}}
+                'Config':{'Env':['TON_NATIVE_ADMISSION_CONFIG_CACHE=1','TON_NATIVE_RECONCILIATION_PROFILE=1',
+                                 'PRIVATE_KEY=secret','TOKEN=secret']}}
         with patch.object(m,'command',return_value=json.dumps([record])):
             value=m.identity('genesis')
-        self.assertEqual(value['environment'],{'TON_NATIVE_ADMISSION_CONFIG_CACHE':'1'})
+        self.assertEqual(value['environment'],{'TON_NATIVE_ADMISSION_CONFIG_CACHE':'1',
+                                              'TON_NATIVE_RECONCILIATION_PROFILE':'1'})
         self.assertNotIn('secret',json.dumps(value))
 
     def test_engine_pid_must_belong_to_inspected_container(self):
