@@ -177,7 +177,9 @@ def image_metadata(reference, allow_missing=False):
             'image has no immutable SHA256 ID')
     require(isinstance(raw.get('Architecture'), str) and raw['Architecture'] and raw.get('Os') == 'linux',
             'generator image must identify its Linux OS and architecture')
-    return {'reference': reference, 'id': raw['Id'], 'architecture': raw['Architecture'], 'os': raw['Os']}
+    revision = (raw.get('Config', {}).get('Labels') or {}).get('org.opencontainers.image.revision')
+    return {'reference': reference, 'id': raw['Id'], 'architecture': raw['Architecture'], 'os': raw['Os'],
+            'revision': revision}
 
 
 def compose_configuration(args):
@@ -228,11 +230,30 @@ def require_local_docker():
             'image builds require a local Unix Docker endpoint; select a local context or use --image with a prebuilt image')
 
 
+def require_matching_revision(image, source_revision):
+    revision = image.get('revision')
+    require(isinstance(revision, str) and re.fullmatch(r'[0-9a-f]{40}', revision),
+            'selected generator image lacks a full TON org.opencontainers.image.revision label; '
+            'run prepare-native-images.sh for the running genesis revision, or start-native-genesis.sh '
+            'to update both images before exporting; strict reuse never pulls or builds')
+    require(revision == source_revision,
+            f'selected generator TON revision {revision} differs from running genesis {source_revision}; '
+            'prepare a matching generator with prepare-native-images.sh, or update both images with '
+            'start-native-genesis.sh before exporting; strict reuse never pulls or builds')
+
+
 def prepare_image(args, source_image_id):
+    source = docker_json(['image', 'inspect', source_image_id])
+    require(source.get('Id') == source_image_id, 'running genesis image inspection returned a different image ID')
+    labels = source.get('Config', {}).get('Labels') or {}
+    revision = labels.get('org.opencontainers.image.revision')
+    require(isinstance(revision, str) and re.fullmatch(r'[0-9a-f]{40}', revision),
+            'running genesis lacks a full TON source revision; use start-native-genesis.sh before exporting')
     if args.image is not None:
         image = image_metadata(args.image, allow_missing=True)
         require(image is not None, 'explicit --image is missing locally; build or load that exact image separately, '
                 'or omit --image to prepare the generator from the published TON base')
+        require_matching_revision(image, revision)
         print('Using explicit local generator image: ' + args.image, flush=True)
         return image
     reference, _, _ = compose_configuration(args)
@@ -240,14 +261,10 @@ def prepare_image(args, source_image_id):
     if args.no_build_image:
         require(image is not None, 'configured generator image is missing locally and --no-build-image forbids preparation; '
                 'rerun without --no-build-image to fetch the published TON base and build the client')
+        require_matching_revision(image, revision)
         print('Strict reuse of generator image ID: ' + image['id'], flush=True)
         return image
     require_local_docker()
-    source = docker_json(['image', 'inspect', source_image_id])
-    labels = source.get('Config', {}).get('Labels') or {}
-    revision = labels.get('org.opencontainers.image.revision')
-    require(isinstance(revision, str) and re.fullmatch(r'[0-9a-f]{40}', revision),
-            'running genesis lacks a full TON source revision; use start-native-genesis.sh before exporting')
     helper = REPO_DIR / 'prepare-native-images.sh'
     require(helper.is_file() and not helper.is_symlink(), 'prepare-native-images.sh is missing; update the MyLocalTonDocker checkout')
     print('Preparing the client from the published TON image, matching the running genesis revision.', flush=True)
@@ -270,6 +287,7 @@ def prepare_image(args, source_image_id):
         image = image_metadata(reference)
         require(prepared.get('reference') == reference and prepared.get('id') == image['id'],
                 'prepared client image differs from the configured image')
+        require_matching_revision(image, revision)
     print('Frozen generator image ID: ' + image['id'], flush=True)
     return image
 

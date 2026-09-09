@@ -1,41 +1,99 @@
 # Admission and block-overhead tests on A/B
 
-This treatment adds exact-masterchain-state configuration caching and diagnostics.
-It does not establish a new optimal TPS setting. Keep four lanes as the historical
-reference and retain the existing eight-lane state for diagnosis. Compare cache
-and thread settings on the **same topology** before another lane comparison.
+The physical preset enables the selected desktop improvements: strict candidate
+metadata projection and local overlay signature reuse, with configuration caching
+and reconciliation timing on. Production throughput must be measured separately.
+Keep four lanes as the historical reference and retain the existing eight-lane
+state. Compare settings on the **same topology** before another lane comparison.
 Never change an existing eight-lane database's depth/split values to 2.
 
 ## Prepare once, before measurement
 
-Pull the updated `native-payment-lanes-step6` MyLocalTonDocker branch on A.
-The TON code is currently in [draft PR #4](https://github.com/corton-nommander/ton/pull/4);
-the existing `master` image does not contain this treatment yet. Wait for the
-[isolated image build](https://github.com/corton-nommander/ton/actions/runs/34231105092)
-to succeed, then select these two image variables in A's existing `.env`:
+Update the `native-payment-lanes-step6` MyLocalTonDocker branch on A. Wait for the
+[TON image workflow](https://github.com/corton-nommander/ton/actions/workflows/docker-ubuntu-branch-image.yml)
+to finish successfully for the intended `master` revision containing the selected
+features. A merged commit or running workflow is not a published image. Record
+that successful run's full 40-character source SHA as `TON_EXPECTED_REVISION`.
+The release submitted for this rollout is
+[`8c97aa23f1e2859651f4a85c6f6609016b42b0da`](https://github.com/corton-nommander/ton/commit/8c97aa23f1e2859651f4a85c6f6609016b42b0da),
+with [publication run 34357000846](https://github.com/corton-nommander/ton/actions/runs/34357000846).
+Verify that run's successful completion before using this SHA; submission alone
+does not confirm publication.
+Apply these entries to A's existing `.env`; preserve its project name, mounted
+database, eight-lane depth/split values, funded accounts, endpoints, resource
+limits and TTL settings:
 
 ```dotenv
-TON_BRANCH=native-admission-profile-20260908
-NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:native-admission-profile-20260908
+TON_BRANCH=master
+TON_IMAGE=ghcr.io/corton-nommander/ton
+NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:master
+TON_BUILD_PULL=true
+TON_NATIVE_ADMISSION_CONFIG_CACHE=1
+TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1
+TON_OVERLAY_LOCAL_SIGNATURE_REUSE=1
+TON_NATIVE_RECONCILIATION_PROFILE=1
+TON_KEYRING_PREPARED_SIGNING=0
+TON_NATIVE_ADMISSION_SHARD_SHARING=0
+TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0
 ```
 
-Keep all database, lane, account and endpoint settings unchanged. After the PR
-is merged and the corresponding master image passes its checks, the normal
-`TON_BRANCH=master` setup can select this implementation. Stop/drain B's current
-test before upgrading A with:
+Stop and drain B's current test before maintenance. From the MyLocalTonDocker
+directory on A, pull the latest published master and prepare both wrappers from
+its immutable digest, requiring the verified workflow revision before startup:
 
 ```sh
-bash start-native-genesis.sh --env-file .env
+export TON_EXPECTED_REVISION=PUT_FULL_SUCCESSFUL_WORKFLOW_HEAD_SHA_HERE
+bash prepare-native-images.sh --env-file .env \
+  --expected-revision "$TON_EXPECTED_REVISION"
+docker compose --env-file .env \
+  up -d --no-deps --no-build --pull never genesis
 ```
 
-The launcher refreshes the published TON base and builds both derived wrappers.
-It preserves the database; keep `.env` pointed at the existing eight-lane state.
-Wait for healthy, advancing blocks. Export a new client bundle from the prepared
-image and import it on B using the normal private transfer procedure:
+Preparation rebuilds both genesis and the generator from that same registry
+digest, even when an older local `:master` generator exists. A revision mismatch
+stops preparation; verify the newer successful workflow before selecting another
+expected SHA. Compose preserves the existing database. Wait for healthy, advancing
+blocks, then verify the receipt against the resolved services and running genesis:
+
+```sh
+python3 - <<'PYIMAGES'
+import json, os, pathlib, re, subprocess
+def docker_json(*args):
+    return json.loads(subprocess.check_output(['docker', *args], text=True))
+expected = os.environ['TON_EXPECTED_REVISION']
+assert re.fullmatch(r'[0-9a-f]{40}', expected), 'Use the full successful workflow SHA'
+receipt = json.loads(pathlib.Path('.native-images.json').read_text())
+assert receipt['schema'] == 'native-images-v1'
+assert receipt['base']['revision'] == expected
+config = docker_json('compose', '--env-file', '.env', '--profile',
+                     'native-load-generator', 'config', '--format', 'json')
+genesis = docker_json('inspect', 'genesis')[0]
+assert genesis['State']['Running'] and genesis['State']['Health']['Status'] == 'healthy'
+for service in ('genesis', 'native-load-generator'):
+    saved = receipt['services'][service]
+    assert config['services'][service]['image'] == saved['reference'], service + ': configured image changed'
+    image = docker_json('image', 'inspect', saved['reference'])[0]
+    assert image['Id'] == saved['id'], service + ': prepared tag changed'
+    assert saved['revision'] == image['Config']['Labels']['org.opencontainers.image.revision'] == expected
+    if service == 'genesis':
+        assert genesis['Image'] == image['Id'], 'Running genesis differs from the prepared image'
+print('Verified matching prepared/running images at revision', expected)
+PYIMAGES
+```
+
+Only after this check, export the prepared generator and import the bundle on B
+using the normal private transfer procedure:
 
 ```sh
 bash benchmark/remote/export-native-client.sh --env-file .env --no-build-image
 ```
+
+`--no-build-image` freezes the existing configured generator. The updated exporter
+requires full, matching TON revision labels on the generator and running genesis;
+it rejects a stale or unlabeled generator without rebuilding. The receipt check
+above additionally binds this rollout to its prepared image IDs and expected
+workflow revision. Run B's importer in a new client directory
+and use its newly pinned image, preserving old results and source-reuse checks.
 
 The updated binary is necessary for A's new counters/cache/thread control.
 The updated host runner supplies B's new diagnostics and coalescing override.
@@ -57,6 +115,8 @@ immutable client image and record A's image/process identity with the sampler.
 | Maximum admission queries per client / coalescing | 64 / 20ms |
 | A admission/state executor threads | 8 |
 | A NTRN block-signature threads | 8 initially; independent 1/2/4/8 screen later |
+| A configuration cache / metadata projection / overlay reuse | 1 / 1 / 1 |
+| A reconciliation timing / prepared signing / sharing / refresh | 1 / 0 / 0 / 0 |
 | Candidate timeout / finalize reserve | Retain 8000ms / 1000ms |
 | Ingress checkpoint retention | 0 |
 
@@ -64,14 +124,7 @@ Keep 24,576 sources and the exported lane depth fixed. These are controlled
 starting settings, not a measured optimum. Successful drain/proof checks remain
 required before account reuse. An invalid arm must not be relabelled a capacity win.
 
-## Compare the cache using one prebuilt image
-
-For the uncached control on A, after B has stopped cleanly:
-
-```sh
-TON_NATIVE_ADMISSION_CONFIG_CACHE=0 TON_NATIVE_VALIDATION_SIGNATURE_THREADS=8 \
-docker compose --env-file .env up -d --no-deps --no-build --pull never --force-recreate genesis
-```
+## Measure the selected configuration
 
 Wait for healthy, advancing blocks before each arm. In a separate terminal on A,
 start the read-only sampler before starting B:
@@ -79,7 +132,7 @@ start the read-only sampler before starting B:
 ```sh
 sudo python3 benchmark/remote/profile-native-validator.py \
   --container genesis --duration 1200 --interval 30 \
-  --dashboard-url http://127.0.0.1:18000 --output "$HOME/profile-cache-off-01"
+  --dashboard-url http://127.0.0.1:18000 --output "$HOME/profile-selected-01"
 ```
 
 On B, from the newly imported client directory:
@@ -89,12 +142,21 @@ bash run-remote-load.sh --connections 10 --duration 600 --warmup 60 \
   --initial-cwnd 32768 --max-cwnd 65536 --submit-coalesce-ms 20
 ```
 
-For the cached treatment, repeat the A recreation with
-`TON_NATIVE_ADMISSION_CONFIG_CACHE=1`, use a new sampler output directory and run
-the identical B command. Repeat **off/on/on/off**, recreating and settling A
-consistently even between the two on arms. Recreation changes process identity;
-the image, database, settings other than the cache flag and workload stay fixed.
-Do not change flags while a measured arm is running.
+For an optional matched production comparison of metadata projection, stop and
+drain B, then prepare the control without pulling or rebuilding either image:
+
+```sh
+TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0 \
+docker compose --env-file .env up -d --no-deps --no-build --pull never --force-recreate genesis
+```
+
+Wait for healthy, advancing blocks, use a new sampler output directory and run
+the identical B command. Repeat with `TON_NATIVE_CANDIDATE_METADATA_PROJECTION=1`
+for the treatment. Use **off/on/on/off**, recreating and settling A consistently
+even between the two on arms. Recreation changes process identity; the image,
+database, settings other than the metadata flag and workload stay fixed. The
+shell override applies to that recreation only; restore the selected `.env`
+configuration after the final arm has drained. Do not change flags during an arm.
 
 The sampler starts no services and never stops the validator. Ctrl-C stops only
 sampling and saves partial evidence. It requires a local Docker Unix socket and
@@ -110,8 +172,8 @@ and cannot replace B's proof-checked final result.
 
 With a validator image containing the reconciliation diagnostics, set
 `TON_NATIVE_RECONCILIATION_PROFILE=1` in A's selected environment file before a
-diagnostic restart. Compose passes this setting to genesis; the default remains
-`0`. Use the existing strict-reuse recreation command only after B has drained,
+diagnostic restart. The physical rollout preset already sets it to `1`; the
+Compose fallback remains `0`. Use the existing strict-reuse recreation command only after B has drained,
 then wait for healthy, advancing blocks. Keep the setting identical for both
 arms, and start the usual read-only sampler:
 
@@ -169,11 +231,9 @@ Choose only one next treatment:
   hard in-flight and proof/backlog caps fixed. More sockets alone do not increase
   global credit.
 
-If snapshot-change rejection is a material fraction of completed input attempts,
-use its residence/stage timings to justify a subsequent bounded refresh and full
-revalidation under the original deadline. That behavioral change remains deferred
-until these runs establish the cause; the current image preserves the exact-state
-guard. Cache hits alone, more blocks, high CPU usage or high admission TPS do not
+The bounded snapshot-refresh implementation is available but remains off: its
+desktop screen reduced not-ready retries without improving TPS. Request sharing
+also remains off after its separate screen. Cache hits alone, more blocks, high CPU usage or high admission TPS do not
 constitute a canonical TPS improvement. Keep the best repeatable valid result.
 
 ### Profile-led signing experiments (9 September)
@@ -182,7 +242,8 @@ The local CPU candidates are `TON_KEYRING_PREPARED_SIGNING=0|1` and
 `TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0|1`. Prepared signing remains off.
 The completed September 9 overlay A/B/B/A comparison averaged 57,673 versus
 60,040 canonical logical TPS (+4.10%), with full proof/drain and fixed images.
-Only `.env.desktop` enables that winner; global/physical defaults remain off.
+The physical rollout preset now also enables overlay reuse; its eight-lane
+production result remains to be measured. The C++/Compose fallback stays off.
 The first reuses an immutable prepared Ed25519 key inside its owning keyring
 signer. The second targets only cryptographic evidence from a successful local
 broadcast-signing callback; incoming messages retain signature verification.
@@ -197,8 +258,9 @@ optimization opportunity, not an expected percentage TPS improvement.
 
 ### Strict candidate metadata projection
 
-`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0|1` remains off in global and
-physical-server defaults; the measured desktop preset now enables it. For direct native runs it extracts each checked parent hash and
+`TON_NATIVE_CANDIDATE_METADATA_PROJECTION=0|1` remains off in the C++/Compose
+fallback; the measured desktop and authorized physical rollout presets enable it.
+For direct native runs it extracts each checked parent hash and
 source/nonce interval without building the flattened execution entries and
 derived account table. It retains strict field, count, tree and canonical-root
 validation; scalar versions use the original parser. It adds no cross-candidate
@@ -219,6 +281,7 @@ not an uninterrupted identical-host experiment or a capacity claim.
 `.env.desktop` pins the existing local `admission-local-7b73cdb1` images and keeps
 overlay reuse 1, configuration cache 1, metadata projection 1, and prepared
 signing/sharing/refresh 0. Use Compose `--no-build --pull never`; these native-CPU
-images have not been published for Server A. The complete record and maintenance
+images remain local desktop artifacts. Server A uses the separately published
+portable master image and the preparation/receipt checks above. The complete record and maintenance
 limitations are in the TON repository's
 [metadata report](https://github.com/corton-nommander/ton/blob/master/doc/native-candidate-metadata-cycles-2026-09-09.md).

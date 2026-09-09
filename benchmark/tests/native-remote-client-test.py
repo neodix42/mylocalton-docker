@@ -28,6 +28,7 @@ BUILT_IMAGE_ID = 'sha256:' + 'e' * 64
 BASE_REFERENCE = 'ghcr.io/corton-nommander/ton:master'
 BASE_DIGEST = 'ghcr.io/corton-nommander/ton@sha256:' + '9' * 64
 BASE_IMAGE_ID = 'sha256:' + '8' * 64
+GENESIS_IMAGE_ID = 'sha256:' + 'f' * 64
 SOURCE_REVISION = 'c' * 40
 SOURCE_OFFSET, SOURCES, ALL_SOURCES = 4, 32, 40
 
@@ -42,6 +43,7 @@ configured_image='native-client:compose-fixture'
 base_reference='ghcr.io/corton-nommander/ton:master'
 base_digest='ghcr.io/corton-nommander/ton@sha256:'+'9'*64
 base_id='sha256:'+'8'*64
+genesis_image_id='sha256:'+'f'*64
 revision='c'*40
 if args[:1]==['pull']:
  if scenario.get('pull_fails'):raise SystemExit('synthetic registry pull failure')
@@ -72,8 +74,13 @@ if args[:2] == ['image','inspect'] or args[:1] == ['inspect']:
    if scenario.get('base_digest_identity_mismatch') and args[-1]==base_digest:image['Id']='sha256:'+'7'*64
   elif args[-1] in (configured_image,'validator:compose-fixture') and (root/'built').exists():
    image['Config']['Labels']['org.opencontainers.image.revision']=scenario.get('derived_revision',revision)
+  elif args[-1]==genesis_image_id:
+   image['Config']['Labels']['org.opencontainers.image.revision']=scenario.get('source_revision',revision)
+  else:
+   image['Config']['Labels']['org.opencontainers.image.revision']=scenario.get('client_revision',revision)
+   if scenario.get('missing_client_revision'):image['Config']['Labels'].pop('org.opencontainers.image.revision')
   print(json.dumps([image])); sys.exit()
- container = {'Id':'d'*64,'Name':'/fixture-genesis','Image':'sha256:'+'a'*64,'RestartCount':0,
+ container = {'Id':'d'*64,'Name':'/fixture-genesis','Image':genesis_image_id,'RestartCount':0,
   'State':{'Running':True,'ExitCode':0,'StartedAt':'2026-09-07T00:00:00Z'},
   'Config':{'Image':'native-client:offline-fixture','Env':['NATIVE_PAYMENT_LANE_DEPTH=2']}}
  runs = json.loads((root/'runs.json').read_text()) if (root/'runs.json').exists() else []
@@ -327,6 +334,19 @@ class RemoteTests(unittest.TestCase):
                            '--sources',SOURCES,'--source-offset',SOURCE_OFFSET,'--output',self.bundle,
                            '--no-image',*args,success=success)
 
+    def export_reused_image(self, mode, success=True):
+        if mode == 'configured':
+            return self.export_detected_image('--no-build-image', success=success)
+        return self.invoke('export-native-client.sh', '--non-interactive', '--server-ip', '203.0.113.7',
+                           '--container', 'fixture-genesis', '--sources', SOURCES,
+                           '--source-offset', SOURCE_OFFSET, '--output', self.bundle, '--no-image',
+                           '--image', IMAGE_ID if mode == 'immutable' else IMAGE_REF, success=success)
+
+    def assert_reuse_did_not_prepare_or_publish_images(self):
+        self.assertEqual(self.compose_calls('build'), [])
+        self.assertFalse(any(call[:1] in (['pull'], ['build']) or call[:2] == ['image', 'save']
+                             for call in self.calls()))
+
     def compose_calls(self, action):
         return [call for call in self.calls() if call[:1]==['compose'] and action in call]
 
@@ -554,6 +574,61 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(self.compose_calls('build'),[])
         self.assertFalse(self.bundle.exists())
         self.assertEqual(list(self.root.glob('.bundle*')),[])
+
+    def test_reused_images_require_matching_revision_and_record_it(self):
+        for mode in ('configured', 'explicit', 'immutable'):
+            with self.subTest(mode=mode):
+                self.bundle = self.root / ('bundle-' + mode)
+                self.export_reused_image(mode)
+                manifest = json.loads((self.bundle / 'export-manifest.json').read_text())
+                self.assertEqual(manifest['image']['revision'], SOURCE_REVISION)
+                self.assertEqual(manifest['image']['id'], IMAGE_ID)
+                self.assertEqual(manifest['source_container']['image_id'], GENESIS_IMAGE_ID)
+                self.assert_reuse_did_not_prepare_or_publish_images()
+        self.assertIn(['image', 'inspect', GENESIS_IMAGE_ID], self.calls())
+
+    def test_reused_images_reject_mismatched_revision_without_partial_export(self):
+        self.scenario(client_revision='b' * 40)
+        for mode in ('configured', 'explicit', 'immutable'):
+            with self.subTest(mode=mode):
+                result = self.export_reused_image(mode, success=False)
+                self.assertIn('differs from running genesis', result.stderr)
+                self.assertIn('prepare-native-images.sh', result.stderr)
+                self.assertIn('strict reuse never pulls or builds', result.stderr)
+                self.assertFalse(self.bundle.exists())
+                self.assertEqual(list(self.root.glob('.bundle*')), [])
+                self.assert_reuse_did_not_prepare_or_publish_images()
+
+    def test_reused_images_reject_missing_or_malformed_generator_revision(self):
+        for label in ({'missing_client_revision': True}, {'client_revision': None},
+                      {'client_revision': 'c' * 8}, {'client_revision': 'C' * 40}):
+            self.scenario(**label)
+            for mode in ('configured', 'explicit', 'immutable'):
+                with self.subTest(label=label, mode=mode):
+                    result = self.export_reused_image(mode, success=False)
+                    self.assertIn('selected generator image lacks a full TON', result.stderr)
+                    self.assertIn('start-native-genesis.sh', result.stderr)
+                    self.assertFalse(self.bundle.exists())
+                    self.assertEqual(list(self.root.glob('.bundle*')), [])
+                    self.assert_reuse_did_not_prepare_or_publish_images()
+
+    def test_reused_images_require_versioned_running_genesis(self):
+        self.scenario(source_revision=None)
+        for mode in ('configured', 'explicit', 'immutable'):
+            with self.subTest(mode=mode):
+                result = self.export_reused_image(mode, success=False)
+                self.assertIn('running genesis lacks a full TON source revision', result.stderr)
+                self.assertIn('start-native-genesis.sh', result.stderr)
+                self.assertFalse(self.bundle.exists())
+                self.assert_reuse_did_not_prepare_or_publish_images()
+
+    def test_registry_preparation_can_replace_an_unversioned_old_generator(self):
+        self.scenario(client_revision=None, build_new_id=True)
+        self.export_detected_image()
+        self.assert_only_generator_builds()
+        manifest = json.loads((self.bundle / 'export-manifest.json').read_text())
+        self.assertEqual(manifest['image']['revision'], SOURCE_REVISION)
+        self.assertEqual(manifest['image']['id'], BUILT_IMAGE_ID)
 
     def test_failed_generator_build_cleans_up_without_export(self):
         self.scenario(missing_configured_image=True,build_fails=True)
