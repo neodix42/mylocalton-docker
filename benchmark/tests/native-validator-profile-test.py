@@ -47,6 +47,27 @@ class ProfileTests(unittest.TestCase):
         _,errors=m.deltas(a,b)
         self.assertIn('missing:'+m.KEYS[2],errors)
 
+    def test_shard_fetch_and_reconciliation_deltas_exclude_current_state(self):
+        before, after = self.stats(1), self.stats(2)
+        for sample, n in [(before, 1), (after, 2)]:
+            sample[m.KEYS[0]].update(shard_fetches=100*n, shard_cache_fill_races=94*n,
+                                     shard_cache_entries=10-n, pinned_mc_seqno=500-n)
+            sample[m.RECONCILIATION_KEY] = dict(account_lookups=200*n, sources_advanced=30*n,
+                                               pending_sources=10-n, tracked_messages=20-n,
+                                               last_mc_seqno=500-n)
+            sample[m.KEYS[1]].update(shared_fetch_active=10-n, shared_fetch_enabled=1)
+        delta, errors = m.deltas(before, after)
+        self.assertFalse(errors)
+        self.assertEqual(delta[m.KEYS[0]]['shard_fetches'], 100)
+        self.assertEqual(delta[m.KEYS[0]]['shard_cache_fill_races'], 94)
+        self.assertEqual(delta[m.RECONCILIATION_KEY], dict(account_lookups=200, sources_advanced=30))
+        self.assertNotIn('shard_cache_entries', delta[m.KEYS[0]])
+        self.assertNotIn('pinned_mc_seqno', delta[m.KEYS[0]])
+        self.assertNotIn('shared_fetch_active', delta[m.KEYS[1]])
+        self.assertNotIn('shared_fetch_enabled', delta[m.KEYS[1]])
+        del after[m.RECONCILIATION_KEY]
+        self.assertIn('missing:'+m.RECONCILIATION_KEY, m.deltas(before, after)[1])
+
     def test_invalid_or_duplicate_counters_rejected(self):
         for tail in ('calls:nan','calls:inf','calls:-1','calls:1 calls:2'):
             with self.subTest(tail=tail),self.assertRaises(ValueError):

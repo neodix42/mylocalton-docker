@@ -13,9 +13,28 @@ import time
 import urllib.parse
 import urllib.request
 
-KEYS = ('total.ext_msg_batch_admission', 'total.ext_msg_batch_diagnostics',
-        'total.native_signature_executor')
+REQUIRED_KEYS = ('total.ext_msg_batch_admission', 'total.ext_msg_batch_diagnostics',
+                 'total.native_signature_executor')
+RECONCILIATION_KEY = 'total.ext_msg_native_reconciliation'
+KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY,)
+ADMISSION_COUNTERS = {
+    'batches', 'messages', 'accepted', 'rejected', 'account_lookups',
+    'shard_state_requests', 'shard_manager_waits', 'shard_fetches', 'shard_cache_hits',
+    'shard_cache_fills', 'shard_cache_fill_races', 'shard_cache_fill_conflicts',
+    'shard_cache_generation_resets', 'shard_cache_stale_generation_fill_skips',
+    'shard_cache_wrong_id', 'shard_cache_invalid_header', 'shard_miss_errors',
+    'shard_fetch_errors', 'shard_manager_wait_errors', 'shard_manager_wait_timeouts',
+    'shard_manager_wait_notready', 'shard_manager_wait_other_errors',
+    'shard_manager_wait_late_results',
+}
+RECONCILIATION_COUNTERS = {
+    'runs', 'state_fetches', 'account_lookups', 'sources_advanced', 'messages_purged',
+    'failures', 'unchanged_state_skips', 'unchanged_top_skips', 'unchanged_source_skips',
+    'rebased_reservations', 'unaffordable_tail_pruned', 'stale_uncommitted_tail_pruned',
+    'expiry_suffix_events', 'expiry_suffix_pruned', 'exact_retry_preserved_stale_revision',
+}
 ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
+            'TON_NATIVE_ADMISSION_SHARED_FETCH', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
             'TON_NATIVE_VALIDATION_SIGNATURE_THREADS',
             'TON_NATIVE_COLLATOR_QUEUE_LIMIT', 'TON_SIMPLEX_MAX_TPS', 'SIMPLEX_TARGET_RATE_MS',
             'TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS', 'TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS',
@@ -65,16 +84,21 @@ def deltas(before, after):
     """Compare counters, never subtract lifetime maxima or current gauges."""
     changes, errors = {}, []
     for group in KEYS:
+        if group not in REQUIRED_KEYS and group not in before and group not in after:
+            continue  # Older recordings need not contain optional attribution.
         if group not in before or group not in after:
             errors.append('missing:' + group)
             continue
         values = {}
         for key, old in before[group].items():
-            if key in ('active_batches', 'config_cache_enabled') or 'peak' in key or 'max_' in key or key.endswith('_max_s'):
+            if key in ('active_batches', 'config_cache_enabled') or key.endswith('_enabled') or \
+                    'peak' in key or 'max_' in key or key.endswith('_max_s') or key.endswith('_active'):
                 continue
             # Only documented admission/executor counters, not sequence numbers
             # or gauges in the broader pool-admission statistics key.
-            if group == KEYS[0] and key not in ('batches', 'messages', 'accepted', 'rejected'):
+            if group == KEYS[0] and key not in ADMISSION_COUNTERS:
+                continue
+            if group == RECONCILIATION_KEY and key not in RECONCILIATION_COUNTERS:
                 continue
             new = after[group].get(key)
             if new is None or new < old:
@@ -101,7 +125,7 @@ def summarize(samples):
                   end_unix_s=usable[-1]['stats_finished_unix_s'], counter_deltas=changes)
     result['errors'].extend(errors)
     diagnostic = changes.get(KEYS[1], {})
-    result['diagnostics_available'] = all(k in usable[0]['stats'] and k in usable[-1]['stats'] for k in KEYS)
+    result['diagnostics_available'] = all(k in usable[0]['stats'] and k in usable[-1]['stats'] for k in REQUIRED_KEYS)
     result['stage_mean_ms'] = {k[:-8]: diagnostic.get(k[:-8] + '_sum_s', 0) * 1000 / n
                                for k, n in diagnostic.items() if k.endswith('_samples') and n > 0}
     hits, misses = diagnostic.get('config_cache_hits', 0), diagnostic.get('config_cache_misses', 0)
