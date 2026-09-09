@@ -510,8 +510,29 @@ verify that they expose the intended capacity and enough free disk before a
 sustained run. Check NUMA and sibling topology with
 `lscpu -e=CPU,NODE,SOCKET,CORE` before adding explicit affinity; the current
 server profile allows scheduling across all CPUs exposed to Docker.
-`.env.desktop` may still be used as a local, untracked override, but the
-documented benchmark and its metadata use `.env.physical`.
+The tracked `.env.desktop` selects the September 9 local four-lane reference;
+the physical-server procedure above uses `.env.physical`. The desktop preset
+pins existing CPU-specific local images from TON source `be235e03`, with
+`TON_OVERLAY_LOCAL_SIGNATURE_REUSE=1`. Four matched 600-second / 20-ms runs
+averaged 57,673 TPS with reuse off and 60,040 with it on (+4.10%). This is a
+desktop observation, without independent offered-load margin or a production
+capacity claim. Other admission/signing experiments remain off. Docker Desktop
+uses a 64 GiB VM allocation; the former 99,840 MiB allocation caused host OOM
+on this 128 GB workstation and is excluded from the final comparison.
+
+On this desktop, reuse the already prepared images and existing database:
+
+```bash
+docker compose --env-file .env.desktop \
+  up -d --no-deps --no-build --pull never genesis
+```
+
+Wait for genesis to become healthy before running the desktop sweep. Do not use
+`start-native-genesis.sh` for these local tags: it deliberately pulls a registry
+base and rebuilds wrappers. These desktop images are not published registry
+artifacts; physical deployments retain their own image settings and eight-lane
+database. Full evidence is in the TON checkout's
+`doc/native-admission-cycles-2026-09-09.md`.
 
 The profile leaves optional services disabled so an ordinary `up` cannot
 accidentally start load. The conservative local Compose workload retains its 60-second ramp, 60-second
