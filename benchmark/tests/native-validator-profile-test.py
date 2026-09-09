@@ -193,11 +193,14 @@ class ProfileTests(unittest.TestCase):
         record={'Id':'id','Image':'sha256:image','RestartCount':0,
                 'State':{'Running':True,'StartedAt':'start','Pid':7},'HostConfig':{},
                 'Config':{'Env':['TON_NATIVE_ADMISSION_CONFIG_CACHE=1','TON_NATIVE_RECONCILIATION_PROFILE=1',
+                                 'TON_KEYRING_PREPARED_SIGNING=1','TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0',
                                  'PRIVATE_KEY=secret','TOKEN=secret']}}
         with patch.object(m,'command',return_value=json.dumps([record])):
             value=m.identity('genesis')
         self.assertEqual(value['environment'],{'TON_NATIVE_ADMISSION_CONFIG_CACHE':'1',
-                                              'TON_NATIVE_RECONCILIATION_PROFILE':'1'})
+                                              'TON_NATIVE_RECONCILIATION_PROFILE':'1',
+                                              'TON_KEYRING_PREPARED_SIGNING':'1',
+                                              'TON_OVERLAY_LOCAL_SIGNATURE_REUSE':'0'})
         self.assertNotIn('secret',json.dumps(value))
 
     def test_engine_pid_must_belong_to_inspected_container(self):

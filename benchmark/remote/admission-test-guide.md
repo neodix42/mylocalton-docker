@@ -175,3 +175,20 @@ revalidation under the original deadline. That behavioral change remains deferre
 until these runs establish the cause; the current image preserves the exact-state
 guard. Cache hits alone, more blocks, high CPU usage or high admission TPS do not
 constitute a canonical TPS improvement. Keep the best repeatable valid result.
+
+### Profile-led signing experiments (9 September)
+
+The new local CPU candidates are `TON_KEYRING_PREPARED_SIGNING=0|1` and
+`TON_OVERLAY_LOCAL_SIGNATURE_REUSE=0|1`. Both remain default-off while their
+correctness tests and separate 600-second desktop comparisons are evaluated.
+The first reuses an immutable prepared Ed25519 key inside its owning keyring
+signer. The second targets only cryptographic evidence from a successful local
+broadcast-signing callback; incoming messages retain signature verification.
+Neither changes the client wire format. Check the built revision before testing:
+Compose forwarding a variable does not prove an older image implements it.
+
+Use a single prebuilt image, change one flag at a time, restart/settle genesis
+before starting an arm, and retain canonical proof/drain and strict-reuse checks.
+The profiler records both flags in the container identity. Keep topology, client
+load, 20 ms coalescing and candidate timeouts fixed. A sampled CPU share is an
+optimization opportunity, not an expected percentage TPS improvement.
