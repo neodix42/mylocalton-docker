@@ -966,6 +966,62 @@ native_payment_lanes_manifest_summary_self_test() {
          .durable.lane_count == false' <<<"$checks" >/dev/null
 }
 
+parse_validator_stat() {
+  local input_file=$1 stat_name=$2 line
+  # Diagnostic groups may extend a legacy key with a suffix. Select the last
+  # exact first-field key, not a substring in another key or a log message.
+  line=$(awk -v stat_name="$stat_name" '$1 == stat_name { line = $0 } END { print line }' \
+    "$input_file" 2>/dev/null || true)
+  if [[ -z $line ]]; then
+    printf '{}\n'
+    return
+  fi
+  awk '
+    BEGIN { printf "{"; separator = "" }
+    {
+      for (i = 1; i <= NF; ++i) {
+        token = $i
+        gsub(/[,;]/, "", token)
+        count = split(token, parts, ":")
+        if (count == 2 && parts[1] ~ /^[A-Za-z_][A-Za-z0-9_]*$/ &&
+            parts[2] ~ /^[0-9]+([.][0-9]+)?$/) {
+          printf "%s\"%s\":%s", separator, parts[1], parts[2]
+          separator = ","
+        }
+      }
+    }
+    END { print "}" }
+  ' <<<"$line"
+}
+
+parse_validator_stat_self_test() (
+  local test_dir stat_name result
+  test_dir=$(mktemp -d)
+  trap 'rm -rf -- "$test_dir"' EXIT
+  stat_name=total.ext_msg_native_reconciliation
+  printf '%s\n' \
+    "console preamble mentions $stat_name ignored:90" \
+    "${stat_name}_diagnostics apply_calls:101" \
+    "$stat_name tracked_candidates:11 sources_advanced:12" \
+    "  $stat_name tracked_candidates:21; sources_advanced:22, ratio:1.5" \
+    "${stat_name}_diagnostics apply_calls:999" \
+    "console log contains $stat_name ignored:777" >"$test_dir/stats.txt"
+  result=$(parse_validator_stat "$test_dir/stats.txt" "$stat_name")
+  jq -e '. == {tracked_candidates:21, sources_advanced:22, ratio:1.5}' <<<"$result" >/dev/null
+  result=$(parse_validator_stat "$test_dir/stats.txt" "${stat_name}_diagnostics")
+  jq -e '. == {apply_calls:999}' <<<"$result" >/dev/null
+  [[ $(parse_validator_stat "$test_dir/stats.txt" total.ext_msg_native) == '{}' ]]
+  [[ $(parse_validator_stat "$test_dir/missing.txt" "$stat_name") == '{}' ]]
+
+  # Tabs/leading whitespace are harmless, but a later empty exact sample must
+  # remain empty instead of silently falling back to an earlier complete one.
+  printf '\t %s\ttracked_candidates:31\n' "$stat_name" >>"$test_dir/stats.txt"
+  result=$(parse_validator_stat "$test_dir/stats.txt" "$stat_name")
+  jq -e '. == {tracked_candidates:31}' <<<"$result" >/dev/null
+  printf '%s\n' "$stat_name" "${stat_name}_diagnostics apply_calls:1000" >>"$test_dir/stats.txt"
+  [[ $(parse_validator_stat "$test_dir/stats.txt" "$stat_name") == '{}' ]]
+)
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 benchmark_jq_dir=$script_dir/benchmark/jq
 
@@ -978,6 +1034,10 @@ case "${1:-}" in
     ;;
   --self-test-actor-stats-sleep)
     actor_stats_sleep_seconds_self_test
+    exit 0
+    ;;
+  --self-test-validator-stat)
+    parse_validator_stat_self_test
     exit 0
     ;;
   --self-test-strict-genesis-reuse)
@@ -1963,31 +2023,6 @@ collect_validator_actor_stats() {
     esac
   done
   rm -f -- "$sample_raw" "$sample_record"
-}
-
-parse_validator_stat() {
-  local input_file=$1 stat_name=$2 line
-  line=$(grep -F "$stat_name" "$input_file" 2>/dev/null | tail -n 1 || true)
-  if [[ -z $line ]]; then
-    printf '{}\n'
-    return
-  fi
-  awk '
-    BEGIN { printf "{"; separator = "" }
-    {
-      for (i = 1; i <= NF; ++i) {
-        token = $i
-        gsub(/[,;]/, "", token)
-        count = split(token, parts, ":")
-        if (count == 2 && parts[1] ~ /^[A-Za-z_][A-Za-z0-9_]*$/ &&
-            parts[2] ~ /^[0-9]+([.][0-9]+)?$/) {
-          printf "%s\"%s\":%s", separator, parts[1], parts[2]
-          separator = ","
-        }
-      }
-    }
-    END { print "}" }
-  ' <<<"$line"
 }
 
 collect_host_stats() {
