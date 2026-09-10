@@ -14,6 +14,7 @@ Defaults:
   RESULT_DIR  benchmark-results/<UTC timestamp>
 
 Run this script itself with sudo when Docker requires root access. Optional:
+  BENCHMARK_COMPOSE_PROJECT=mylocalton-desktop # explicit existing benchmark project
   BENCHMARK_HOST_SAMPLE_SECONDS=1
   BENCHMARK_DETAIL_SAMPLE_SECONDS=5
   BENCHMARK_THREAD_SAMPLE_SECONDS=5
@@ -27,6 +28,52 @@ Run this script itself with sudo when Docker requires root access. Optional:
   BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=0|1 # opt-in validator control; unset is a no-op
 EOF
 }
+
+benchmark_project_name_valid() {
+  [[ ${1:-} =~ ^[a-z0-9][a-z0-9_-]*$ ]]
+}
+
+set_benchmark_compose_command() {
+  # Keep the file and project explicit: ordinary inherited Compose selectors
+  # cannot redirect this wrapper to a different stack.
+  compose=(docker compose -f "$script_dir/docker-compose.yaml" --project-directory "$script_dir" \
+    --project-name "$benchmark_compose_project" --env-file "$env_file")
+}
+
+benchmark_container_projects_match() {
+  local expected=$1 rows=$2 name project service
+  while IFS=$'\t' read -r name project service; do
+    case "$name" in
+      genesis|native-load-generator|session-stats)
+        if [[ $project != "$expected" || $service != "$name" ]]; then
+          echo "benchmark container $name does not belong to Compose project $expected/service $name" >&2
+          return 2
+        fi
+        ;;
+    esac
+  done <<<"$rows"
+}
+
+benchmark_compose_project_self_test() (
+  local name
+  for name in mylocalton-desktop mlt-native-20260910 a 9test name_with_underscores; do
+    benchmark_project_name_valid "$name"
+  done
+  for name in '' UpperCase -bad _bad 'has space' 'path/name' 'a;exit' $'a\nb'; do
+    ! benchmark_project_name_valid "$name"
+  done
+  local script_dir='/tmp/fixture checkout' env_file='/tmp/fixture env'
+  local benchmark_compose_project=mlt-native-20260910
+  local COMPOSE_PROJECT_NAME=ignored COMPOSE_FILE=/tmp/ignored.yaml
+  set_benchmark_compose_command
+  [[ ${compose[6]} == --project-name && ${compose[7]} == mlt-native-20260910 ]]
+  [[ ${compose[3]} == '/tmp/fixture checkout/docker-compose.yaml' && ${compose[9]} == '/tmp/fixture env' ]]
+  benchmark_container_projects_match "$benchmark_compose_project" \
+    $'genesis\tmlt-native-20260910\tgenesis\nsession-stats\tmlt-native-20260910\tsession-stats\nunrelated\tother\tapp'
+  benchmark_container_projects_match "$benchmark_compose_project" ''
+  ! benchmark_container_projects_match "$benchmark_compose_project" $'genesis\told-project\tgenesis' 2>/dev/null
+  ! benchmark_container_projects_match "$benchmark_compose_project" $'genesis\tmlt-native-20260910\tother' 2>/dev/null
+)
 
 resolve_ext_messages_broadcast_setting() {
   local is_set=${1:-0} value=${2:-}
@@ -1044,6 +1091,10 @@ case "${1:-}" in
     strict_genesis_reuse_self_test
     exit 0
     ;;
+  --self-test-compose-project)
+    benchmark_compose_project_self_test
+    exit 0
+    ;;
   --self-test-container-image-metadata-fallback)
     container_image_metadata_fallback_self_test
     exit 0
@@ -1059,6 +1110,11 @@ case "${1:-}" in
 esac
 
 env_file=${1:-.env.physical}
+benchmark_compose_project=${BENCHMARK_COMPOSE_PROJECT-mylocalton-desktop}
+if ! benchmark_project_name_valid "$benchmark_compose_project"; then
+  echo "BENCHMARK_COMPOSE_PROJECT must match [a-z0-9][a-z0-9_-]*" >&2
+  exit 2
+fi
 run_id=$(date -u +%Y%m%dT%H%M%SZ)
 result_dir=${2:-benchmark-results/$run_id}
 if [[ $env_file != /* ]]; then
@@ -1171,12 +1227,13 @@ test -r "$benchmark_jq_dir/native-benchmark-lib.jq" || {
   exit 2
 }
 
-# The benchmark uses fixed container names and its fresh-cycle companion
-# deletes state for this exact project. Pin both selectors here as well so an
-# inherited COMPOSE_FILE/COMPOSE_PROJECT_NAME cannot redirect the subsequent
-# non-destructive run after the guarded deletion boundary.
-compose=(docker compose -f "$script_dir/docker-compose.yaml" --project-directory "$script_dir" \
-  --project-name mylocalton-desktop --env-file "$env_file")
+# This non-destructive runner accepts an explicit benchmark project; the fresh
+# destructive companion separately pins its original project and rejects an
+# override before any Docker call. Fixed container names still require ownership.
+set_benchmark_compose_command
+benchmark_container_projects=$(docker ps -a \
+  --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}')
+benchmark_container_projects_match "$benchmark_compose_project" "$benchmark_container_projects"
 compose_environment=$("${compose[@]}" config --environment)
 ton_image=$(awk -F= '$1 == "TON_IMAGE" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 ton_branch=$(awk -F= '$1 == "TON_BRANCH" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
@@ -3677,6 +3734,7 @@ jq -n \
   --argjson compose_service_hashes "$compose_service_hashes" \
   --arg docker_version "$docker_version" \
   --arg compose_version "$compose_version" \
+  --arg compose_project "$benchmark_compose_project" \
   --arg docker_cgroup_driver "$docker_cgroup_driver" \
   --arg docker_cgroup_version "$docker_cgroup_version" \
   --arg kernel "$(uname -srmo)" \
@@ -3699,7 +3757,7 @@ jq -n \
     $git_revision,$git_dirty,
     source:{root:$git_root,revision:$git_revision,branch:$git_branch,describe:$git_describe,
             dirty:$git_dirty,status_sha256:$git_status_sha256,diff_sha256:$git_diff_sha256},
-    compose:{config_sha256:$compose_config_sha256,service_hashes:$compose_service_hashes,
+    compose:{project:$compose_project,config_sha256:$compose_config_sha256,service_hashes:$compose_service_hashes,
              version:$compose_version},
     docker:{version:$docker_version,cgroup_driver:$docker_cgroup_driver,
             cgroup_version:$docker_cgroup_version},

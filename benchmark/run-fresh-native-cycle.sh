@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# This destructive helper owns one fixed allowlisted project. Reject a custom
+# non-destructive runner selector before building or deleting any resources.
+if [[ ${BENCHMARK_COMPOSE_PROJECT-mylocalton-desktop} != mylocalton-desktop ]]; then
+  echo "fresh cycle only supports BENCHMARK_COMPOSE_PROJECT=mylocalton-desktop" >&2
+  exit 2
+fi
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 docker_repo=$(cd "$script_dir/.." && pwd)
 ton_repo=${TON_SOURCE_REPO:-/home/neodix/gitProjects/corton-nommander-ton-sidechain}
@@ -183,5 +190,5 @@ benchmark_args=("$env_file")
 if [[ -n $result_dir ]]; then
   benchmark_args+=("$result_dir")
 fi
-exec env BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_RECREATE_GENESIS=0 \
+exec env BENCHMARK_COMPOSE_PROJECT=mylocalton-desktop BENCHMARK_IMAGES_PREBUILT=1 BENCHMARK_RECREATE_GENESIS=0 \
   ./run-native-benchmark.sh "${benchmark_args[@]}"

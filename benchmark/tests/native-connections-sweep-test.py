@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -75,6 +76,47 @@ def summary(a, count):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_explicit_project_is_used_in_compose_child_environment_and_plan(self):
+        with patch.dict(os.environ, {'BENCHMARK_COMPOSE_PROJECT': 'env-project',
+                                     'COMPOSE_PROJECT_NAME': 'ignored', 'COMPOSE_FILE': '/ignored.yaml'}):
+            self.assertEqual(options().compose_project, 'env-project')
+            a = options('--compose-project', 'mlt-native-20260910')
+        environment = sweep.settings(a, 10)
+        command = sweep.compose_command(a, environment)
+        index = command.index('--project-name')
+        self.assertEqual(command[index + 1], 'mlt-native-20260910')
+        self.assertIn('BENCHMARK_COMPOSE_PROJECT=mlt-native-20260910', command)
+        self.assertEqual(sweep.plan(a)['compose_project'], 'mlt-native-20260910')
+        self.assertEqual(sweep.plan(a)['common_environment']['BENCHMARK_COMPOSE_PROJECT'], 'mlt-native-20260910')
+        with patch.dict(os.environ, clear=True):
+            self.assertEqual(options().compose_project, 'mylocalton-desktop')
+
+    def test_invalid_project_fails_before_any_docker_or_workload(self):
+        for value in ['', 'UpperCase', '-bad', '_bad', 'has space', 'path/name', 'a;exit', 'a\nb']:
+            with self.subTest(value=value), self.assertRaises(sweep.EvidenceError):
+                options('--compose-project=' + value)
+        # These actual shell entrypoints must reject before checking any
+        # Docker prerequisites or considering fresh-cycle deletion/builds.
+        with tempfile.TemporaryDirectory() as directory:
+            docker = Path(directory) / 'docker'
+            marker = Path(directory) / 'docker-called'
+            docker.write_text('#!/bin/sh\nprintf called > "$TEST_DOCKER_MARKER"\nexit 99\n')
+            docker.chmod(0o755)
+            for script, value in [('run-native-benchmark.sh', 'bad/name'),
+                                  ('benchmark/run-fresh-native-cycle.sh', 'mlt-native-20260910'),
+                                  ('benchmark/run-fresh-native-cycle.sh', '')]:
+                result = subprocess.run(['bash', str(sweep.ROOT / script)],
+                                        env=dict(os.environ, BENCHMARK_COMPOSE_PROJECT=value,
+                                                 PATH=directory + os.pathsep + os.environ['PATH'],
+                                                 TEST_DOCKER_MARKER=str(marker)),
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn('BENCHMARK_COMPOSE_PROJECT', result.stderr)
+                self.assertFalse(marker.exists(), 'project rejection reached Docker')
+        result = subprocess.run(['bash', str(sweep.ROOT / 'run-native-benchmark.sh'), '--self-test-compose-project'],
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_measurement_duration_accepts_only_bounded_floating_point_noise(self):
         for duration in (1, 180, 600, 4294967295):
             ulp = math.ulp(float(duration))

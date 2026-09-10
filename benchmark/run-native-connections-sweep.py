@@ -82,6 +82,8 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--connections', nargs='+', default=['10,50,100'])
     p.add_argument('--env-file', type=Path, default=ROOT / '.env.physical')
+    p.add_argument('--compose-project', default=os.environ.get('BENCHMARK_COMPOSE_PROJECT', 'mylocalton-desktop'),
+                   help='explicit existing benchmark project; defaults to BENCHMARK_COMPOSE_PROJECT or mylocalton-desktop')
     p.add_argument('--output', type=Path)
     p.add_argument('--plan-only', action='store_true', help='validate and print plan without Docker or workload')
     p.add_argument('--global-config', default='/usr/share/data/global.config.json',
@@ -101,6 +103,8 @@ def parser():
 
 
 def validate_options(a):
+    require(re.fullmatch(r'[a-z0-9][a-z0-9_-]*', a.compose_project) is not None,
+            'benchmark Compose project must match [a-z0-9][a-z0-9_-]*')
     a.connections = connection_list(a.connections)
     for name in ['workers', 'signers', 'sources', 'initial_cwnd', 'max_cwnd', 'inflight',
                  'backlog', 'source_backlog', 'query_cap', 'batch_size', 'duration', 'drain']:
@@ -155,6 +159,7 @@ def settings(a, count):
         'BENCHMARK_IMAGES_PREBUILT': 1, 'BENCHMARK_STRICT_IMAGE_REUSE': 1,
         'BENCHMARK_STRICT_GENESIS_REUSE': 1, 'BENCHMARK_RECREATE_GENESIS': 0,
         'TON_BUILD_PULL': 'false', 'COMPOSE_PROFILES': '',
+        'BENCHMARK_COMPOSE_PROJECT': a.compose_project,
         'NATIVE_LOAD_GLOBAL_CONFIG': a.global_config,
         'NATIVE_LOAD_CONNECTIONS': count, 'NATIVE_LOAD_WORKERS': a.effective_workers,
         'NATIVE_LOAD_SIGNERS': a.signers, 'NATIVE_LOAD_SOURCES': a.sources,
@@ -182,7 +187,7 @@ def profile_command(a, env, command):
 
 def compose_command(a, env):
     return profile_command(a, env, ['docker', 'compose', '-f', ROOT / 'docker-compose.yaml',
-                           '--project-directory', ROOT, '--project-name', 'mylocalton-desktop',
+                           '--project-directory', ROOT, '--project-name', a.compose_project,
                            '--env-file', a.env_file, '--profile', 'native-load-generator',
                            '--profile', 'session-stats', 'config', '--format', 'json'])
 
@@ -433,6 +438,7 @@ def run_arm(command, log_path, timeout):
 
 def plan(a):
     return {'schema': 'native-connections-sweep-plan-v1', 'connection_counts': a.connections,
+            'compose_project': a.compose_project,
             'requested_workers': a.workers, 'effective_workers': a.effective_workers,
             'load_mode': 'bounded_unpaced' if a.target_tps == 0 else 'paced',
             'env_file': str(a.env_file), 'env_sha256': sha(a.env_file.read_bytes()),
