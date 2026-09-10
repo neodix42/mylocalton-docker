@@ -75,6 +75,81 @@ benchmark_compose_project_self_test() (
   ! benchmark_container_projects_match "$benchmark_compose_project" $'genesis\tmlt-native-20260910\tother' 2>/dev/null
 )
 
+owned_generator_id_from_inspect() {
+  jq -er --arg project "$benchmark_compose_project" --arg old "$generator_before_id" '
+    if type == "array" and length == 1 then .[0] else null end |
+    select(.Name == "/native-load-generator" and
+      .Config.Labels["com.docker.compose.project"] == $project and
+      .Config.Labels["com.docker.compose.service"] == "native-load-generator") |
+    .Id | select(type == "string" and test("^[0-9a-f]{64}$") and . != $old)'
+}
+
+capture_owned_generator() {
+  [[ $generator_launch_attempted == 1 ]] || return 2
+  if [[ -z $generator_cleanup_id ]]; then
+    generator_cleanup_id=$(timeout --signal=TERM --kill-after=1s 8s \
+      docker inspect "$container_name" | owned_generator_id_from_inspect) || return 2
+  fi
+  # The unique result directory is owned by this wrapper invocation. A sweep
+  # can use this receipt even when a later inspect/name lookup stops responding.
+  jq -n --arg schema native-benchmark-generator-owner-v1 \
+    --arg project "$benchmark_compose_project" --arg container_id "$generator_cleanup_id" \
+    --arg previous_container_id "$generator_before_id" \
+    '{$schema,$project,$container_id,$previous_container_id,service:"native-load-generator"}' \
+    >"$result_dir/generator-owner.json.tmp" &&
+    mv -- "$result_dir/generator-owner.json.tmp" "$result_dir/generator-owner.json"
+}
+
+stop_owned_generator() {
+  [[ $generator_launch_attempted == 1 ]] || return 0
+  if [[ -z $generator_cleanup_id ]]; then
+    capture_owned_generator || true
+  fi
+  if [[ ! $generator_cleanup_id =~ ^[0-9a-f]{64}$ ]]; then
+    echo "generator ownership unavailable; no container signalled" >&2
+    return 2
+  fi
+  timeout --signal=TERM --kill-after=1s 15s docker stop --timeout 10 "$generator_cleanup_id"
+}
+
+generator_cleanup_ownership_self_test() (
+  local benchmark_compose_project=mlt-native-20260910 generator_before_id generator_cleanup_id=
+  local generator_launch_attempted=0 container_name=native-load-generator inspect_record stopped=
+  generator_before_id=$(printf 'a%.0s' {1..64})
+  local fresh_id; fresh_id=$(printf 'b%.0s' {1..64})
+  local result_dir; result_dir=$(mktemp -d)
+  trap 'rm -rf -- "$result_dir"' EXIT
+  timeout() { shift 3; "$@"; }
+  docker() {
+    case "$1" in
+      inspect) printf '%s\n' "$inspect_record" ;;
+      stop) [[ "$2 $3" == '--timeout 10' ]] && stopped=$4 ;;
+      *) return 99 ;;
+    esac
+  }
+  stop_owned_generator
+  [[ -z $stopped ]]
+  generator_launch_attempted=1
+  inspect_record=$(jq -cn --arg id "$fresh_id" --arg project "$benchmark_compose_project" \
+    '[{Id:$id,Name:"/native-load-generator",Config:{Labels:{"com.docker.compose.project":$project,
+       "com.docker.compose.service":"native-load-generator"}}}]')
+  capture_owned_generator
+  [[ $generator_cleanup_id == "$fresh_id" ]]
+  jq -e --arg id "$fresh_id" '.container_id == $id and .project == "mlt-native-20260910"' \
+    "$result_dir/generator-owner.json" >/dev/null
+  # A replacement at the mutable name must never change the captured target.
+  inspect_record='[{"Id":"replacement","Name":"/native-load-generator"}]'
+  stop_owned_generator
+  [[ $stopped == "$fresh_id" ]]
+  generator_cleanup_id=; stopped=
+  ! stop_owned_generator 2>/dev/null
+  [[ -z $stopped ]]
+  for inspect_record in '[]' '{}' '[null]' \
+    "[{\"Id\":\"$generator_before_id\",\"Name\":\"/native-load-generator\",\"Config\":{\"Labels\":{\"com.docker.compose.project\":\"$benchmark_compose_project\",\"com.docker.compose.service\":\"native-load-generator\"}}}]"; do
+    ! owned_generator_id_from_inspect <<<"$inspect_record" >/dev/null 2>&1
+  done
+)
+
 resolve_ext_messages_broadcast_setting() {
   local is_set=${1:-0} value=${2:-}
   if [[ $is_set == 0 ]]; then
@@ -1095,6 +1170,10 @@ case "${1:-}" in
     benchmark_compose_project_self_test
     exit 0
     ;;
+  --self-test-generator-cleanup-ownership)
+    generator_cleanup_ownership_self_test
+    exit 0
+    ;;
   --self-test-container-image-metadata-fallback)
     container_image_metadata_fallback_self_test
     exit 0
@@ -1380,6 +1459,9 @@ jq -n '{attempted:false,valid:null,semantics:"unset runs do not mutate validator
 
 collector_pids=()
 actor_stats_collector_pid=
+generator_cleanup_id=
+generator_before_id=
+generator_launch_attempted=0
 interrupted=0
 ext_messages_broadcast_restore_required=0
 ext_messages_broadcast_applied=0
@@ -1816,7 +1898,7 @@ cleanup_benchmark_on_exit() {
 handle_signal() {
   interrupted=1
   echo "interrupt received; stopping native load generator" >&2
-  docker stop --timeout 10 "$container_name" >/dev/null 2>&1 || true
+  stop_owned_generator >/dev/null 2>&1 || true
 }
 
 trap handle_signal INT TERM
@@ -2526,13 +2608,35 @@ if [[ $strict_image_reuse == 1 ]] &&
   exit 3
 fi
 echo "Starting a fresh native-load-generator container"
+if [[ $interrupted -eq 1 ]]; then
+  exit 130
+fi
+generator_before_id=$(timeout --signal=TERM --kill-after=1s 8s docker ps -a --no-trunc \
+  --filter 'name=^/native-load-generator$' --format '{{.ID}}')
+if [[ -n $generator_before_id && ! $generator_before_id =~ ^[0-9a-f]{64}$ ]]; then
+  echo "cannot determine previous generator identity" >&2
+  exit 2
+fi
 generator_image_args=()
 if [[ $images_prebuilt == 1 ]]; then
   generator_image_args=(--no-build --pull never)
 fi
+if [[ $interrupted -eq 1 ]]; then
+  exit 130
+fi
+generator_launch_attempted=1
 "${compose[@]}" --profile native-load-generator up -d "${generator_image_args[@]}" --force-recreate --no-deps "$container_name"
+if ! capture_owned_generator; then
+  echo "cannot capture fresh generator identity/ownership" >&2
+  stop_owned_generator >/dev/null 2>&1 || true
+  exit 2
+fi
+if [[ $interrupted -eq 1 ]]; then
+  stop_owned_generator >/dev/null 2>&1 || true
+  exit 130
+fi
 if [[ $strict_image_reuse == 1 ]]; then
-  strict_generator_container_id=$(docker inspect -f '{{.Id}}' "$container_name")
+  strict_generator_container_id=$generator_cleanup_id
 fi
 
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -2554,7 +2658,7 @@ collector_pids+=("$!")
 echo "Native load is running; live generator JSON follows"
 
 set +e
-generator_container_exit_code=$(docker wait "$container_name" 2>"$result_dir/docker-wait.stderr.log")
+generator_container_exit_code=$(docker wait "$generator_cleanup_id" 2>"$result_dir/docker-wait.stderr.log")
 wait_status=$?
 set -e
 if [[ $wait_status -ne 0 || ! $generator_container_exit_code =~ ^[0-9]+$ ]]; then

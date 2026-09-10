@@ -26,6 +26,14 @@ The project appears in sweep `plan.json` and in `run-metadata.json` under
 empty value is rejected. Workload, strict image reuse, proof and drain checks
 are unchanged.
 
+Each wrapper records a newly created generator's immutable container ID in its
+unique result directory as `generator-owner.json`, after checking its project,
+service, name and difference from the previous container. Signal cleanup and the
+sweep's timeout fallback stop only this captured ID. A later container occupying
+the same name is not a cleanup target. Missing or invalid ownership evidence
+prevents a container stop; the sweep still reaps its own wrapper process group
+and rejects the arm. Interruption before launch does not stop an old generator.
+
 The Compose file still uses fixed container names, ports and the network name
 `mylocalton-network`. This option selects fresh project-scoped volumes; it does
 not enable two simultaneous copies of the stack. The wrapper refuses to use

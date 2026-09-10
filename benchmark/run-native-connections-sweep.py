@@ -397,8 +397,40 @@ def assess(summary, a, count, frozen, wrapper_exit):
             'canonical_backlog_sampled_peak': f.get('canonical_backlog_sampled_peak')}
 
 
+def generator_cleanup_id(receipt, project):
+    require(receipt.stat().st_size <= 4096, 'oversized generator ownership receipt')
+    owner = json.loads(receipt.read_text())
+    require(isinstance(owner, dict) and owner.get('schema') == 'native-benchmark-generator-owner-v1' and
+            owner.get('project') == project and owner.get('service') == 'native-load-generator',
+            'generator ownership receipt does not match selected project/service')
+    current, previous = owner.get('container_id'), owner.get('previous_container_id')
+    require(isinstance(current, str) and re.fullmatch(r'[0-9a-f]{64}', current) is not None and
+            isinstance(previous, str) and (not previous or re.fullmatch(r'[0-9a-f]{64}', previous)) and
+            current != previous, 'generator receipt must identify one fresh immutable container')
+    return current
+
+
+def stop_recorded_generator(receipt, project, log):
+    try:
+        container_id = generator_cleanup_id(receipt, project)
+    except (EvidenceError, OSError, ValueError, TypeError) as error:
+        log.write(('Generator ownership unavailable; no container stopped: ' + str(error) + '\n').encode())
+        log.flush()
+        return False
+    subprocess.run(['docker', 'stop', '--timeout', '10', container_id],
+                   stdout=log, stderr=log, timeout=30, check=False)
+    return True
+
+
 def run_arm(command, log_path, timeout):
     """Forward interruption to the existing wrapper, which stops only its generator."""
+    projects = [part.split('=', 1)[1] for part in command if part.startswith('BENCHMARK_COMPOSE_PROJECT=')]
+    require(len(projects) == 1 and re.fullmatch(r'[a-z0-9][a-z0-9_-]*', projects[0]) is not None,
+            'arm cleanup requires the exact selected benchmark project')
+    owner_receipt = Path(command[-1]) / 'generator-owner.json'
+    # The wrapper requires a unique empty result directory. Never authorize
+    # cleanup using a receipt left by an earlier invocation.
+    require(not owner_receipt.exists(), 'generator ownership receipt already exists before arm launch')
     with log_path.open('xb') as log:
         process = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         old_handlers = {}
@@ -422,8 +454,7 @@ def run_arm(command, log_path, timeout):
                     # The wrapper normally stops it in its signal trap. Bound a
                     # wedged wrapper as well; no validator/service/volume mutation.
                     try:
-                        subprocess.run(['docker', 'stop', '--timeout', '10', 'native-load-generator'],
-                                       stdout=log, stderr=log, timeout=30, check=False)
+                        stop_recorded_generator(owner_receipt, projects[0], log)
                     finally:
                         if process.poll() is None:
                             os.killpg(process.pid, signal.SIGKILL)

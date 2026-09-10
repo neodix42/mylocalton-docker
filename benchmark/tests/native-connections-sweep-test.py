@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 PATH = Path(__file__).resolve().parents[1] / 'run-native-connections-sweep.py'
 sys.dont_write_bytecode = True
@@ -241,6 +241,85 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn('--build', cmd)
         self.assertNotIn('--force-recreate', cmd)
         self.assertIn('env -u BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED', cmd[2])
+
+
+class CleanupTests(unittest.TestCase):
+    def owner(self, directory, **changes):
+        receipt = Path(directory) / 'generator-owner.json'
+        value = {'schema': 'native-benchmark-generator-owner-v1', 'project': 'mlt-native-20260910',
+                 'service': 'native-load-generator', 'container_id': 'b' * 64,
+                 'previous_container_id': 'a' * 64}
+        value.update(changes)
+        receipt.write_text(json.dumps(value))
+        return receipt
+
+    def test_wrapper_captures_fresh_owner_and_signal_trap_keeps_cached_id(self):
+        result = subprocess.run(['bash', str(sweep.ROOT / 'run-native-benchmark.sh'),
+                                 '--self-test-generator-cleanup-ownership'], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_sweep_stop_uses_receipt_id_without_looking_up_replacement_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = self.owner(directory)
+            with (Path(directory) / 'log').open('wb') as log, \
+                 patch.object(sweep.subprocess, 'run') as stop, \
+                 patch.object(sweep.subprocess, 'check_output', side_effect=AssertionError('mutable lookup')):
+                self.assertTrue(sweep.stop_recorded_generator(receipt, 'mlt-native-20260910', log))
+                self.assertEqual(stop.call_args.args[0], ['docker', 'stop', '--timeout', '10', 'b' * 64])
+                self.assertEqual(stop.call_args.kwargs['timeout'], 30)
+
+    def test_missing_malformed_old_or_wrong_project_receipts_never_stop_a_container(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / 'generator-owner.json'
+            with (Path(directory) / 'log').open('wb') as log, patch.object(sweep.subprocess, 'run') as stop:
+                self.assertFalse(sweep.stop_recorded_generator(receipt, 'mlt-native-20260910', log))
+                for change in ({'project': 'other'}, {'service': 'genesis'}, {'container_id': 'a' * 64},
+                               {'container_id': 'native-load-generator'}, {'previous_container_id': None}):
+                    self.owner(directory, **change)
+                    self.assertFalse(sweep.stop_recorded_generator(receipt, 'mlt-native-20260910', log))
+                for bad in ('null', '[]', 'broken', ' ' * 4097):
+                    receipt.write_text(bad)
+                    self.assertFalse(sweep.stop_recorded_generator(receipt, 'mlt-native-20260910', log))
+                stop.assert_not_called()
+
+    def test_deadline_fallback_reaps_wrapper_group_with_or_without_owner_receipt(self):
+        for receipt_available in (False, True):
+            with self.subTest(receipt_available=receipt_available), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); bundle = root / 'bundle'; clock = [0.0]; alive = [True]
+                process = Mock(pid=123, returncode=-9)
+                process.poll.side_effect = lambda: None if alive[0] else -9
+                process.wait.return_value = -9
+                def start(*args, **kwargs):
+                    if receipt_available:
+                        bundle.mkdir(); self.owner(bundle)
+                    return process
+                def advance(seconds): clock[0] += seconds
+                def kill(group, sig):
+                    self.assertEqual(group, 123); self.assertEqual(sig, sweep.signal.SIGKILL); alive[0] = False
+                a = options('--compose-project', 'mlt-native-20260910')
+                command = sweep.profile_command(a, sweep.settings(a, 10),
+                                                [sweep.ROOT / 'run-native-benchmark.sh', a.env_file, bundle])
+                with patch.object(sweep.subprocess, 'Popen', side_effect=start) as popen, \
+                     patch.object(sweep.subprocess, 'run') as stop, \
+                     patch.object(sweep.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(sweep.time, 'sleep', side_effect=advance), patch.object(sweep.os, 'killpg', side_effect=kill):
+                    self.assertEqual(sweep.run_arm(command, root / 'wrapper.log', 0), 124)
+                self.assertTrue(popen.call_args.kwargs['start_new_session'])
+                self.assertGreaterEqual(clock[0], 120)
+                if receipt_available:
+                    self.assertEqual(stop.call_args.args[0][-1], 'b' * 64)
+                else:
+                    stop.assert_not_called()
+
+    def test_preexisting_receipt_prevents_wrapper_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.owner(directory)
+            a = options('--compose-project', 'mlt-native-20260910')
+            command = sweep.profile_command(a, sweep.settings(a, 10),
+                                            [sweep.ROOT / 'run-native-benchmark.sh', a.env_file, directory])
+            with patch.object(sweep.subprocess, 'Popen') as popen, self.assertRaises(sweep.EvidenceError):
+                sweep.run_arm(command, Path(directory) / 'wrapper.log', 600)
+            popen.assert_not_called()
 
 
 class AcceptanceTests(unittest.TestCase):

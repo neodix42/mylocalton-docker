@@ -30,6 +30,7 @@ command -v jq >/dev/null 2>&1 || {
 
 "$wrapper" --self-test-strict-genesis-reuse
 "$wrapper" --self-test-compose-project
+"$wrapper" --self-test-generator-cleanup-ownership
 python3 "$script_dir/native-container-runtime-env-test.py"
 
 # Admission diagnostics are additive: unavailable old-image fields never become
