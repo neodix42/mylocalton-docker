@@ -514,7 +514,8 @@ def execute(a, host=None):
         frozen['harness_files'] = {str(p.relative_to(ROOT)): sha(p.read_bytes()) for p in [
             Path(__file__).resolve(), ROOT / 'run-native-benchmark.sh', ROOT / 'docker-compose.yaml',
             ROOT / 'benchmark/native-payment-lanes-profile.sh', ROOT / 'benchmark/jq/native-benchmark-lib.jq',
-            ROOT / 'native-load-generator/entrypoint.sh', ROOT / 'native-load-generator/payment-lanes.sh']}
+            ROOT / 'native-load-generator/entrypoint.sh', ROOT / 'native-load-generator/payment-lanes.sh',
+            ROOT / 'benchmark/remote/native_pool_owner_stats.py']}
         write_json(output / 'frozen-preflight.json', frozen)
         report['preflight_sha256'] = sha((output / 'frozen-preflight.json').read_bytes())
         for index, count in enumerate(a.connections):

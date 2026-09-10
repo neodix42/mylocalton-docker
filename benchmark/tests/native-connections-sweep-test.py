@@ -553,5 +553,22 @@ class SequentialTests(unittest.TestCase):
             self.assertIsNone(report['capacity_winner_connections'])
 
 
+
+class FrozenOwnerParserTests(unittest.TestCase):
+    def test_cleanup_parser_is_pinned_in_actual_frozen_receipt(self):
+        import ast
+        tree = ast.parse(PATH.read_text())
+        matches = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Subscript) and
+                           isinstance(target.slice, ast.Constant) and target.slice.value == 'harness_files'
+                           for target in node.targets)]
+        self.assertEqual(len(matches), 1)
+        paths = eval(compile(ast.Expression(matches[0].value.generators[0].iter), str(PATH), 'eval'),
+                     dict(sweep.__dict__))
+        relative = [str(path.relative_to(sweep.ROOT)) for path in paths]
+        self.assertEqual(relative.count('benchmark/remote/native_pool_owner_stats.py'), 1)
+        self.assertTrue(all(path.is_file() for path in paths))
+        self.assertEqual(len(relative), len(set(relative)))
+
 if __name__ == '__main__':
     unittest.main()
