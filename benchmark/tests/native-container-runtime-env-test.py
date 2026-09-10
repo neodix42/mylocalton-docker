@@ -50,6 +50,12 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(captured_environment(expected), expected)
 
+    def test_dispatch_and_actor_cpu_flags_are_exactly_captured(self):
+        for value in ('0','1'):
+            wanted=[name+'='+value for name in ('TON_NATIVE_ADMISSION_VERIFIER_BATCH',
+                'TON_NATIVE_ADMISSION_DISPATCH_PROFILE','TON_NATIVE_RECONCILIATION_COALESCE','TD_ACTOR_PROFILE_CPU')]
+            self.assertEqual(captured_environment(wanted+['TD_ACTOR_PROFILE_CPU_EXTRA=1','PREFIX_TD_ACTOR_PROFILE_CPU=1']),wanted)
+
     def test_exact_new_names_only_and_unrelated_values_excluded(self):
         values = ['PREFIX_TON_KEYRING_PREPARED_SIGNING=1',
                   'TON_KEYRING_PREPARED_SIGNING_EXTRA=1',

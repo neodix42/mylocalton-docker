@@ -19,7 +19,8 @@ RECONCILIATION_KEY = 'total.ext_msg_native_reconciliation'
 RECONCILIATION_DIAGNOSTIC_KEY = 'total.ext_msg_native_reconciliation_diagnostics'
 PUBLICATION_KEY = 'total.ext_msg_native_publication'
 BATCH_DISPATCH_KEY = 'total.ext_msg_batch_dispatch'
-KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY, BATCH_DISPATCH_KEY)
+RECONCILIATION_COALESCING_KEY = 'total.ext_msg_native_reconciliation_coalescing'
+KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY, BATCH_DISPATCH_KEY, RECONCILIATION_COALESCING_KEY)
 PUBLICATION_COUNTERS = {
     'groups', 'ingress_wakes', 'alarm_wakes', 'target_releases', 'timeout_releases',
     'bypass_releases', 'cancelled_groups', 'wait_samples', 'wait_sum_s',
@@ -64,7 +65,26 @@ RECONCILIATION_CHUNK_COUNTERS = {'grouping_yields', 'account_yields'} | {
 BATCH_DISPATCH_COUNTERS = {'batches', 'messages', 'late_batches', 'wait_samples', 'wait_sum_s'}
 LOCALITY_COUNTERS = {'locality_calls', 'locality_outputs', 'locality_destination_visits',
                      'locality_destination_queries', 'locality_dedup_hits', 'locality_shard_queries'}
+RECONCILIATION_COALESCING_STAGES = ('state_pick_age', 'pass_residence')
+RECONCILIATION_COALESCING_COUNTERS = set('notifications active_notifications coalesced_notifications registrations '
+    'registered_notifications folded_notifications empty_registered_passes pass_sources superseded_passes '
+    'generation_lag_sum'.split()) | {stage + suffix for stage in RECONCILIATION_COALESCING_STAGES
+                                  for suffix in ('_samples', '_sum_s')}
+SIGNATURE_DISPATCH_STAGES = tuple('signature_dispatch_' + stage for stage in ('queue', 'worker_wall', 'worker_cpu', 'resume'))
+SIGNATURE_DISPATCH_COUNTERS = {'signature_dispatch_' + key for key in (
+    'rounds tasks items run_items logical_transfers reply_tasks reply_items failed_tasks timeout_tasks '
+    'late_reply_tasks abandoned_tasks profiled_reply_tasks cpu_unsupported_tasks legacy_tasks legacy_results legacy_errors legacy_timeouts cache_unchecked cache_hits '
+    'cache_misses crypto_attempts crypto_successes cache_inserts cache_duplicate_inserts cache_evictions').split()} | {
+        stage + suffix for stage in SIGNATURE_DISPATCH_STAGES for suffix in ('_samples', '_sum_s')}
 OPTIONAL_SCHEMAS = {
+    'signature_dispatch': {
+        'group': REQUIRED_KEYS[1],
+        'configuration': {'signature_dispatch_batch_enabled': 'flag', 'signature_dispatch_profile_enabled': 'flag',
+                          'signature_dispatch_cpu_supported': 'flag', 'signature_dispatch_task_limit': 'positive_integer'},
+        'counters': SIGNATURE_DISPATCH_COUNTERS, 'stages': SIGNATURE_DISPATCH_STAGES,
+        'maxima': {'signature_dispatch_max_task_items': 'counter'},
+        'profile_flag': 'signature_dispatch_profile_enabled',
+    },
     'batch_dispatch': {
         'group': BATCH_DISPATCH_KEY, 'whole_group': True,
         'configuration': {'profile_enabled': 'flag'},
@@ -77,6 +97,13 @@ OPTIONAL_SCHEMAS = {
                           'chunk_budget_s': 'positive_number'},
         'counters': RECONCILIATION_CHUNK_COUNTERS, 'stages': RECONCILIATION_CHUNK_STAGES,
     },
+    'reconciliation_coalescing': {
+        'group': RECONCILIATION_COALESCING_KEY, 'whole_group': True,
+        'configuration': {'enabled': 'flag', 'profile_enabled': 'flag'},
+        'counters': RECONCILIATION_COALESCING_COUNTERS, 'stages': RECONCILIATION_COALESCING_STAGES,
+        'gauges': {'registration_pending': 'flag', 'pending_notifications': 'counter'},
+        'maxima': {'generation_lag_max': 'counter'},
+    },
     'locality': {
         'group': REQUIRED_KEYS[1], 'configuration': {'locality_fastpath_enabled': 'flag'},
         'counters': LOCALITY_COUNTERS, 'stages': (),
@@ -86,6 +113,8 @@ ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_ADMISSION_SHARD_SHARING', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
             'TON_NATIVE_RECONCILIATION_PROFILE',
             'TON_NATIVE_RECONCILIATION_CHUNKS', 'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH',
+            'TON_NATIVE_ADMISSION_VERIFIER_BATCH', 'TON_NATIVE_ADMISSION_DISPATCH_PROFILE',
+            'TON_NATIVE_RECONCILIATION_COALESCE', 'TD_ACTOR_PROFILE_CPU',
             'TON_KEYRING_PREPARED_SIGNING', 'TON_OVERLAY_LOCAL_SIGNATURE_REUSE',
             'TON_NATIVE_CANDIDATE_METADATA_PROJECTION',
             'TON_NATIVE_STAGED_TRIE_DIRECT', 'TON_NATIVE_PUBLICATION_GROUPING',
@@ -162,6 +191,10 @@ def deltas(before, after):
                 continue
             if group == BATCH_DISPATCH_KEY and key not in BATCH_DISPATCH_COUNTERS:
                 continue
+            if group == RECONCILIATION_COALESCING_KEY and key not in RECONCILIATION_COALESCING_COUNTERS:
+                continue
+            if group == REQUIRED_KEYS[1] and key.startswith('signature_dispatch_') and key not in SIGNATURE_DISPATCH_COUNTERS:
+                continue
             new = after[group].get(key)
             if new is None or new < old:
                 errors.append('counter_reset_or_missing:' + group + '.' + key)
@@ -184,7 +217,8 @@ def summarize_optional_schema(samples, name, counter_errors):
     definition = OPTIONAL_SCHEMAS[name]
     group, configuration = definition['group'], definition['configuration']
     stages, counters = definition['stages'], definition['counters']
-    required = set(configuration) | counters | {stage + '_max_s' for stage in stages}
+    gauges, maxima = definition.get('gauges', {}), definition.get('maxima', {})
+    required = set(configuration) | counters | {stage + '_max_s' for stage in stages} | set(gauges) | set(maxima)
     markers = required - {'profile_enabled'}
     rows = [sample['stats'].get(group, {}) for sample in samples]
     present = [group in sample['stats'] if definition.get('whole_group') else bool(markers & row.keys())
@@ -202,7 +236,7 @@ def summarize_optional_schema(samples, name, counter_errors):
             if key not in row:
                 errors.append(f'missing_optional_field:{name}.{key}:sample_{index}')
                 continue
-            kind = configuration.get(key, 'number' if key.endswith(('_sum_s', '_max_s')) else 'counter')
+            kind = (configuration | gauges | maxima).get(key, 'number' if key.endswith(('_sum_s', '_max_s')) else 'counter')
             if not valid_schema_value(row[key], kind):
                 errors.append(f'invalid_optional_field:{name}.{key}:sample_{index}')
     for index, (old, new) in enumerate(zip(rows, rows[1:]), 1):
@@ -216,13 +250,16 @@ def summarize_optional_schema(samples, name, counter_errors):
     if errors:
         return result
     result['configuration'] = {key: rows[0][key] for key in configuration}
+    result['gauges_at_endpoints'] = {key: [rows[0][key], rows[-1][key]] for key in gauges}
+    result['lifetime_maxima_at_endpoints'] = {key: [rows[0][key], rows[-1][key]]
+        for key in set(maxima) | {stage + '_max_s' for stage in stages}}
     values = {key: rows[-1][key] - rows[0][key] for key in counters}
     result['counter_deltas'] = values
     for stage in stages:
         count, seconds = values[stage + '_samples'], values[stage + '_sum_s']
         if not count and seconds:
             errors.append(f'timing_sum_without_samples:{name}.{stage}')
-        if result['configuration'].get('profile_enabled') == 0 and (count or seconds):
+        if result['configuration'].get(definition.get('profile_flag', 'profile_enabled')) == 0 and (count or seconds):
             errors.append(f'timing_while_profile_disabled:{name}.{stage}')
     if name == 'batch_dispatch':
         if values['late_batches'] > values['batches'] or values['wait_samples'] > values['batches']:
@@ -247,6 +284,27 @@ def summarize_optional_schema(samples, name, counter_errors):
         stage: values[stage + '_sum_s'] * 1000 / values[stage + '_samples']
         for stage in stages if values[stage + '_samples'] > 0
     }
+    if name == 'signature_dispatch':
+        replies, profiled = values['signature_dispatch_reply_tasks'], values['signature_dispatch_profiled_reply_tasks']
+        traced = sum(values['signature_dispatch_' + key] for key in ('cache_unchecked', 'cache_hits', 'cache_misses'))
+        result['reply_trace_diagnostics'] = {
+            'all_reply_tasks_profiled': replies == profiled,
+            'reply_items_equal_classified_cache_items': values['signature_dispatch_reply_items'] == traced,
+            'semantics': 'Diagnostic only; late replies overlap failed tasks. Missing/abandoned replies have no worker samples.'}
+        tasks, items = values['signature_dispatch_tasks'], values['signature_dispatch_items']
+        result['physical_items_per_dispatched_task'] = items / tasks if tasks else None
+        result['legacy_unit_path_observed'] = values['signature_dispatch_legacy_tasks'] > 0
+        result['helper_reply_population_observed'] = replies > 0
+        result['helper_completion_fraction'] = None  # Replies/errors/legacy results are overlapping or different populations.
+        result['worker_cpu_available'] = result['configuration']['signature_dispatch_profile_enabled'] == 1 and result['configuration']['signature_dispatch_cpu_supported'] == 1
+    if name == 'reconciliation_coalescing':
+        result['notification_accounting_diagnostics'] = {
+            'notifications_equal_registered_plus_pending_at_samples': all(
+                row['notifications'] == row['registered_notifications'] + row['pending_notifications'] for row in rows),
+            'registered_equals_registrations_plus_folded_delta':
+                values['registered_notifications'] == values['registrations'] + values['folded_notifications'],
+            'semantics': 'Diagnostic identities only; registration test hooks can bypass notification accounting. '
+                         'Do not compare notification counters to canonical transactions or apply effects.'}
     if name == 'batch_dispatch':
         result['late_batch_fraction'] = values['late_batches'] / values['batches'] if values['batches'] else None
     if name == 'locality':
@@ -345,6 +403,13 @@ def summarize(samples):
     for name in OPTIONAL_SCHEMAS:
         result[name] = summarize_optional_schema(usable, name, errors)
         result['errors'].extend(result[name]['errors'])
+    result['signature_dispatch']['semantics'] = (
+        'Tasks and items count verifier dispatches and physical parents within one RPC; logical_transfers counts represented children. '
+        'Reply tasks/items include late replies, which also count as failed; invalid signatures are replies, not task failures. '
+        'Legacy scalar/profile-off uses original Unit tasks: legacy errors cannot distinguish bad signatures from transport errors; helper reply/cache/clock counters remain unobserved there. '
+        'Timeout/abandonment can lack worker samples. Queue is pool dispatch to worker start; resume ends at that task pool continuation '
+        'before group join. Worker CPU/cache tracing is profile-gated; unsupported CPU is unavailable, not zero cost. '
+        'Use each stage sample denominator; clocks and task completion can cross interval boundaries.')
     result['batch_dispatch']['semantics'] = (
         'Manager dispatch to first pool entry; separate from pool-entry residence and not total liteserver queue latency. '
         'Wall-time means use only completed wait_samples with their matching wait_sum_s; late_batches counts entry after the original deadline.')
@@ -353,6 +418,12 @@ def summarize(samples):
         'grouping_slice and account_slice use their own completed-slice sample counts; yield_wait counts resumed yields. '
         'Yield starts and resumed samples may cross interval boundaries. Slice clocks include OS preemption and are not exclusive CPU. '
         'The budget is cooperative and checked between complete source operations, not a hard scheduling deadline.')
+    result['reconciliation_coalescing']['semantics'] = (
+        'Actionable notifications exclude exact successful-fingerprint skips. Coalesced notifications avoid '
+        'immediate registration while active; folded notifications are extras consumed by a registration. '
+        'State-pick age is receipt to selected pass capture; pass residence spans captured pass through coroutine return. '
+        'Clocks are wall time, not CPU. Pending state and lifetime maxima are endpoints, not counter deltas; '
+        'registration and pass completion can cross the interval boundaries.')
     result['locality']['semantics'] = (
         'Calls include repeated checks before/after awaits or snapshot refresh, not unique messages or admitted transfers. '
         'Presented output slots can remain unvisited after early failure. Visits equal destination queries plus same-call reuse hits; '
