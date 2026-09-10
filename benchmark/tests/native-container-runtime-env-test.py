@@ -56,6 +56,11 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
                 'TON_NATIVE_ADMISSION_DISPATCH_PROFILE','TON_NATIVE_RECONCILIATION_COALESCE','TD_ACTOR_PROFILE_CPU')]
             self.assertEqual(captured_environment(wanted+['TD_ACTOR_PROFILE_CPU_EXTRA=1','PREFIX_TD_ACTOR_PROFILE_CPU=1']),wanted)
 
+    def test_owner_count_is_captured_in_all_supported_modes(self):
+        for value in ('1', '2', '4'):
+            wanted = 'TON_NATIVE_POOL_OWNERS=' + value
+            self.assertEqual(captured_environment(['PREFIX_TON_NATIVE_POOL_OWNERS=4', wanted]), [wanted])
+
     def test_exact_new_names_only_and_unrelated_values_excluded(self):
         values = ['PREFIX_TON_KEYRING_PREPARED_SIGNING=1',
                   'TON_KEYRING_PREPARED_SIGNING_EXTRA=1',

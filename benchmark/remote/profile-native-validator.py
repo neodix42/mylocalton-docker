@@ -2,6 +2,7 @@
 """Read-only server-A sampler. Never builds, restarts, or changes a validator."""
 import argparse
 import datetime
+import importlib.util
 import json
 import math
 import os
@@ -12,6 +13,10 @@ import subprocess
 import time
 import urllib.parse
 import urllib.request
+
+_owner_spec = importlib.util.spec_from_file_location('native_pool_owner_stats', Path(__file__).with_name('native_pool_owner_stats.py'))
+OWNER_STATS = importlib.util.module_from_spec(_owner_spec)
+_owner_spec.loader.exec_module(OWNER_STATS)
 
 REQUIRED_KEYS = ('total.ext_msg_batch_admission', 'total.ext_msg_batch_diagnostics',
                  'total.native_signature_executor')
@@ -114,7 +119,7 @@ ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_RECONCILIATION_PROFILE',
             'TON_NATIVE_RECONCILIATION_CHUNKS', 'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH',
             'TON_NATIVE_ADMISSION_VERIFIER_BATCH', 'TON_NATIVE_ADMISSION_DISPATCH_PROFILE',
-            'TON_NATIVE_RECONCILIATION_COALESCE', 'TD_ACTOR_PROFILE_CPU',
+            'TON_NATIVE_RECONCILIATION_COALESCE', 'TD_ACTOR_PROFILE_CPU', 'TON_NATIVE_POOL_OWNERS',
             'TON_KEYRING_PREPARED_SIGNING', 'TON_OVERLAY_LOCAL_SIGNATURE_REUSE',
             'TON_NATIVE_CANDIDATE_METADATA_PROJECTION',
             'TON_NATIVE_STAGED_TRIE_DIRECT', 'TON_NATIVE_PUBLICATION_GROUPING',
@@ -146,7 +151,7 @@ def parse_stats(text):
     result = {}
     for line in text.splitlines():
         fields = line.split(None, 1)
-        if len(fields) != 2 or fields[0] not in KEYS:
+        if len(fields) != 2 or fields[0] not in KEYS and not OWNER_STATS.is_owner_key(fields[0]):
             continue
         if fields[0] in result:
             raise ValueError('duplicate statistics key')
@@ -163,11 +168,11 @@ def parse_stats(text):
     return result
 
 
-def deltas(before, after):
+def deltas(before, after, required_keys=REQUIRED_KEYS):
     """Compare counters, never subtract lifetime maxima or current gauges."""
     changes, errors = {}, []
     for group in KEYS:
-        if group not in REQUIRED_KEYS and group not in before and group not in after:
+        if group not in required_keys and group not in before and group not in after:
             continue  # Older recordings need not contain optional attribution.
         if group not in before or group not in after:
             errors.append('missing:' + group)
@@ -369,7 +374,101 @@ def summarize_reconciliation(before, after, changes, counter_errors):
     return result
 
 
-def summarize(samples):
+def summarize_owners(samples, expected_owners=None):
+    """Keep independent owner populations and one shared executor; never forge root totals."""
+    usable = [row for row in samples if row.get('stats')]
+    views = [OWNER_STATS.snapshot(row['stats'], expected_owners) for row in usable]
+    errors = [error for row in samples for error in row.get('errors', [])]
+    errors += [f'sample_{i}:' + error for i, view in enumerate(views) for error in view['errors']]
+    count = views[0]['owners'] if views else expected_owners
+    configuration = {}
+    if views and views[0]['header']:
+        configuration = {key: views[0]['header'].get(key) for key in OWNER_STATS.HEADER_CONFIG}
+    for i, view in enumerate(views):
+        if view['owners'] != count:
+            errors.append(f'owner_count_changed:sample_{i}')
+        if view['available'] != views[0]['available']:
+            errors.append(f'owner_header_availability_changed:sample_{i}')
+        for key, value in configuration.items():
+            if not view['header'] or view['header'].get(key) != value:
+                errors.append(f'owner_configuration_changed:{key}:sample_{i}')
+    if count == 1:
+        result = summarize(samples, _owner_dispatch=False)
+        result['owner_configuration'] = {'available': bool(configuration), 'configuration': configuration,
+                                         'valid': not errors, 'errors': errors}
+        result['errors'].extend(errors)
+        return result
+    result = {'schema': 'native-validator-owner-profile-v1', 'scope': 'per_owner',
+              'samples': len(samples), 'statistics_samples': len(usable),
+              'diagnostics_available': False, 'configuration': configuration, 'owners': {},
+              'errors': errors, 'semantics': 'Owner counters are separate populations. Shared signature executor appears once. '
+              'Fanout snapshots are asynchronous; no summed owner maxima or fabricated root admission totals. '
+              'Missing owners and counter resets invalidate attribution; configured topology/identity gauges are endpoints.'}
+    if len(usable) < 2:
+        errors.append('fewer_than_two_statistics_samples')
+    if errors or count not in (2, 4):
+        return result
+    result['header_gauges_at_endpoints'] = {key: [views[0]['header'][key], views[-1]['header'][key]]
+                                            for key in OWNER_STATS.HEADER_GAUGES}
+    for index in range(count):
+        identities = [view['owner_rows'][str(index)]['identity'] for view in views]
+        local = [dict(row, stats=view['owner_rows'][str(index)]['stats']) for row, view in zip(usable, views)]
+        summary = summarize(local, _required_keys=REQUIRED_KEYS[:2], _owner_dispatch=False)
+        # Ordinary admission counters also need every adjacent sample checked; a
+        # reset must not be hidden by recovery above the first endpoint.
+        for position, (old, new) in enumerate(zip(local, local[1:])):
+            _, failures = deltas(old['stats'], new['stats'], REQUIRED_KEYS[:2])
+            summary['errors'].extend(f'interval_{position}:' + failure for failure in failures)
+        identity_delta = {}
+        for key in OWNER_STATS.IDENTITY_CONFIG:
+            if any(row[key] != identities[0][key] for row in identities):
+                summary['errors'].append('owner_identity_configuration_changed:' + key)
+        for key in OWNER_STATS.IDENTITY_COUNTERS:
+            if any(new[key] < old[key] for old, new in zip(identities, identities[1:])):
+                summary['errors'].append('owner_identity_counter_reset:' + key)
+            else:
+                identity_delta[key] = identities[-1][key] - identities[0][key]
+        summary['identity'] = {
+            'configuration': {key: identities[0][key] for key in OWNER_STATS.IDENTITY_CONFIG},
+            'counter_deltas': identity_delta,
+            'gauges_at_endpoints': {key: [identities[0][key], identities[-1][key]] for key in OWNER_STATS.IDENTITY_GAUGES},
+            'lifetime_maxima_at_endpoints': {key: [identities[0][key], identities[-1][key]] for key in OWNER_STATS.IDENTITY_MAXIMA},
+            'semantics': 'Router decode samples/time cover strict batch RPC parsing only. Single-message routing can increment routed_messages without a decode sample.',
+            'batch_router_decode_mean_ms': (identity_delta.get('router_decode_sum_s', 0) * 1000 /
+                                      identity_delta['router_decode_samples']) if identity_delta.get('router_decode_samples') else None}
+        result['owners'][str(index)] = summary
+        errors.extend(f'owner_{index}:' + failure for failure in summary['errors'])
+    shared = [dict(row, stats={OWNER_STATS.SHARED: row['stats'][OWNER_STATS.SHARED]}
+                   if OWNER_STATS.SHARED in row['stats'] else {}) for row in usable]
+    shared_delta, shared_errors = deltas(shared[0]['stats'], shared[-1]['stats'], (OWNER_STATS.SHARED,))
+    for position, (old, new) in enumerate(zip(shared, shared[1:])):
+        _, failures = deltas(old['stats'], new['stats'], (OWNER_STATS.SHARED,))
+        shared_errors.extend(f'interval_{position}:' + failure for failure in failures)
+    result['shared_signature_executor'] = {'counter_deltas': shared_delta.get(OWNER_STATS.SHARED, {}),
+                                           'valid': not shared_errors, 'errors': shared_errors}
+    errors.extend(shared_errors)
+    if errors:
+        # Preserve raw deltas as invalid evidence, but publish no usable stage means.
+        for owner in result['owners'].values():
+            owner['diagnostics_available'] = False
+            owner['stage_mean_ms'] = {}
+            owner['config_cache_hit_fraction'] = None
+            owner['snapshot_changed_fraction_of_not_ready'] = None
+            owner['snapshot_changed_fraction_of_completed_inputs'] = None
+            owner['reconciliation']['apply_outcome_fractions'] = {}
+            owner['reconciliation']['apply_effects_fraction'] = None
+            owner['identity']['batch_router_decode_mean_ms'] = None
+            for key in ('reconciliation',) + tuple(OPTIONAL_SCHEMAS):
+                owner[key]['valid'] = False
+                owner[key]['stage_mean_ms'] = {}
+    result['diagnostics_available'] = not errors and all(owner['diagnostics_available'] for owner in result['owners'].values())
+    return result
+
+
+def summarize(samples, *, expected_owners=None, _required_keys=REQUIRED_KEYS, _owner_dispatch=True):
+    if _owner_dispatch and (expected_owners not in (None, 1) or any(
+            any(OWNER_STATS.is_owner_key(key) for key in row.get('stats', {})) for row in samples)):
+        return summarize_owners(samples, expected_owners)
     usable = [x for x in samples if x.get('stats')]
     result = {'schema': 'native-validator-profile-v1', 'samples': len(samples),
               'statistics_samples': len(usable), 'diagnostics_available': False,
@@ -380,12 +479,12 @@ def summarize(samples):
     if len(usable) < 2:
         result['errors'].append('fewer_than_two_statistics_samples')
         return result
-    changes, errors = deltas(usable[0]['stats'], usable[-1]['stats'])
+    changes, errors = deltas(usable[0]['stats'], usable[-1]['stats'], _required_keys)
     result.update(start_unix_s=usable[0]['stats_started_unix_s'],
                   end_unix_s=usable[-1]['stats_finished_unix_s'], counter_deltas=changes)
     result['errors'].extend(errors)
     diagnostic = changes.get(KEYS[1], {})
-    result['diagnostics_available'] = all(k in usable[0]['stats'] and k in usable[-1]['stats'] for k in REQUIRED_KEYS)
+    result['diagnostics_available'] = all(k in usable[0]['stats'] and k in usable[-1]['stats'] for k in _required_keys)
     result['stage_mean_ms'] = {k[:-8]: diagnostic[k[:-8] + '_sum_s'] * 1000 / n
                                for k, n in diagnostic.items() if k.endswith('_samples') and n > 0
                                and k[:-8] + '_sum_s' in diagnostic}
@@ -627,7 +726,7 @@ def main():
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         samples.append({'errors': [str(exc)]})
     finally:
-        summary = summarize(samples)
+        summary = summarize(samples, expected_owners=int(initial.get('environment', {}).get('TON_NATIVE_POOL_OWNERS', '1')))
         summary['thread_cpu_intervals'] = thread_intervals(samples, os.sysconf('SC_CLK_TCK'))
         summary['interrupted'] = stopped
         if a.dashboard_url and samples and 'observed_unix_s' in samples[0]:

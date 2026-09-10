@@ -1314,6 +1314,12 @@ benchmark_container_projects=$(docker ps -a \
   --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}')
 benchmark_container_projects_match "$benchmark_compose_project" "$benchmark_container_projects"
 compose_environment=$("${compose[@]}" config --environment)
+native_pool_owners_expected=$(awk -F= '$1 == "TON_NATIVE_POOL_OWNERS" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+native_pool_owners_expected=${native_pool_owners_expected:-1}
+case "$native_pool_owners_expected" in
+  1|2|4) ;;
+  *) echo "TON_NATIVE_POOL_OWNERS must be 1, 2 or 4" >&2; exit 2 ;;
+esac
 ton_image=$(awk -F= '$1 == "TON_IMAGE" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 ton_branch=$(awk -F= '$1 == "TON_BRANCH" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 native_signed_runs_expected_raw=$(awk -F= '
@@ -2768,6 +2774,14 @@ jq -Rsc '
   }
 ' "$validator_scheduling_log_file" >"$validator_scheduling_log_summary_file"
 
+# Multi-owner validators intentionally do not expose a root-only pool as an
+# aggregate. Validate every declared owner and retain scoped evidence before
+# applying the same final native cleanup boundary as the legacy single pool.
+validator_owner_summary_file=$result_dir/native-pool-owners.json
+python3 "$script_dir/benchmark/remote/native_pool_owner_stats.py" \
+  --before "$validator_stats_before_file" --after "$validator_stats_after_file" \
+  --expected-owners "$native_pool_owners_expected" --output "$validator_owner_summary_file"
+
 scheduler_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_scheduler")
 scheduler_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_scheduler")
 batch_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_batch_admission")
@@ -2781,6 +2795,7 @@ reconciliation_after=$(parse_validator_stat "$validator_stats_after_file" "total
 pending_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_pending")
 pending_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_pending")
 jq -L "$benchmark_jq_dir" -n \
+  --slurpfile ownership "$validator_owner_summary_file" \
   --argjson scheduler_before "$scheduler_before" \
   --argjson scheduler_after "$scheduler_after" \
   --argjson batch_before "$batch_before" \
@@ -2836,7 +2851,16 @@ jq -L "$benchmark_jq_dir" -n \
     cleanup_acceptance:($cleanup + {
       semantics:"a usable run must capture validator cleanup telemetry, leave no locally accepted source awaiting canonical reconciliation, and leave no native message in the validator pool"
     })
-  }
+  } |
+  $ownership[0] as $owner |
+  if $owner.expected_owners > 1 then
+    $owner + {semantics:"per-owner native pool telemetry; no root admission totals or summed owner maxima are fabricated"}
+  else
+    . + {native_pool_owners:$owner} |
+    .cleanup_acceptance.invalid_reasons += $owner.cleanup_acceptance.invalid_reasons |
+    .cleanup_acceptance.invalid_reasons |= unique |
+    .cleanup_acceptance.valid = (.cleanup_acceptance.valid and $owner.cleanup_acceptance.valid)
+  end
 ' >"$validator_pool_summary_file"
 
 generator_measure_start=$(jq -Rs \
