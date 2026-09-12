@@ -1,5 +1,15 @@
 # Native pool owner observations
 
+The separate prepared-admission prototype uses
+`TON_NATIVE_ADMISSION_LANE_OWNERS=4`, passed to genesis by Compose with default
+`0`. It requires a matching validator build, `TON_NATIVE_ADMISSION_PREPARE=1`,
+`TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0`, and an existing fixed four-lane
+payment chain. Its four native admission owners share a separate generic-message
+coordinator; `TON_NATIVE_LANE_SCHEDULERS` independently controls scheduler
+placement. This is distinct from `TON_NATIVE_POOL_OWNERS` below. The legacy
+owner observer described here does not validate the new prototype's metadata;
+use its matching benchmark observer. Neither machine preset enables it.
+
 `TON_NATIVE_POOL_OWNERS` accepts `1`, `2`, or `4`; Compose defaults to `1`.
 Changing this flag is an experimental validator change. Compare frozen matching
 validator and generator images, the same chain and account set, and the same
