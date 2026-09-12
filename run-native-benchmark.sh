@@ -23,6 +23,7 @@ Run this script itself with sudo when Docker requires root access. Optional:
   BENCHMARK_ACTOR_STATS_TIMEOUT_SECONDS=2 # must be less than sample cadence, max 5
   BENCHMARK_RECREATE_GENESIS=1   # force container recreation even when matching
   BENCHMARK_STRICT_GENESIS_REUSE=1 # fail instead of reconciling a mismatch
+  BENCHMARK_EXPECTED_GENERATOR_REVISION=<40-hex-source-commit> # optional separately pinned client source
   BENCHMARK_STRICT_IMAGE_REUSE=1 # paired runs: requires IMAGES_PREBUILT=1, verifies no validator restart
   BENCHMARK_IMAGES_PREBUILT=1   # derived images already built and source revision verified
   BENCHMARK_EXT_MESSAGES_BROADCAST_DISABLED=0|1 # opt-in validator control; unset is a no-op
@@ -536,6 +537,45 @@ strict_image_reuse_preflight() {
     echo "strict image reuse requires BENCHMARK_IMAGES_PREBUILT=1; build images before paired runs" >&2
     return 2
   fi
+}
+
+expected_generator_source_revision() {
+  local validator_revision=$1 explicit_generator_revision=${2:-}
+  if [[ -n $explicit_generator_revision && ! $explicit_generator_revision =~ ^[0-9a-f]{40}$ ]]; then
+    echo "BENCHMARK_EXPECTED_GENERATOR_REVISION must be a full lowercase 40-hex source commit" >&2
+    return 2
+  fi
+  printf '%s\n' "${explicit_generator_revision:-$validator_revision}"
+}
+
+prebuilt_source_revision_matches() {
+  local service=$1 generator_service=$2 actual_revision=$3 validator_revision=$4 generator_revision=$5
+  local expected_revision=$validator_revision
+  if [[ $service == "$generator_service" ]]; then
+    expected_revision=$generator_revision
+  fi
+  [[ -n $actual_revision && $actual_revision == "$expected_revision" ]]
+}
+
+prebuilt_generator_revision_self_test() {
+  local validator_revision=7b73cdb157a1f5e621e420e1e5c913726b267cf5
+  local generator_revision=ace223354f58d68cc4ef12c20627e068742eeaab expected
+  expected=$(expected_generator_source_revision "$validator_revision" '')
+  [[ $expected == "$validator_revision" ]]
+  prebuilt_source_revision_matches native-load-generator native-load-generator "$validator_revision" "$validator_revision" "$expected"
+  if prebuilt_source_revision_matches native-load-generator native-load-generator "$generator_revision" "$validator_revision" "$expected"; then
+    echo 'unconfigured differing generator source was accepted' >&2; return 1
+  fi
+  expected=$(expected_generator_source_revision "$validator_revision" "$generator_revision")
+  prebuilt_source_revision_matches native-load-generator native-load-generator "$generator_revision" "$validator_revision" "$expected"
+  prebuilt_source_revision_matches genesis native-load-generator "$validator_revision" "$validator_revision" "$expected"
+  if prebuilt_source_revision_matches native-load-generator native-load-generator "$validator_revision" "$validator_revision" "$expected" ||
+     prebuilt_source_revision_matches genesis native-load-generator "$generator_revision" "$validator_revision" "$expected" ||
+     expected_generator_source_revision "$validator_revision" ace22335 >/dev/null 2>&1 ||
+     expected_generator_source_revision "$validator_revision" unknown >/dev/null 2>&1; then
+    echo 'wrong/invalid pinned source was accepted' >&2; return 1
+  fi
+  echo 'prebuilt generator source revision guard tests passed'
 }
 
 validator_process_identity_from_rows() {
@@ -1166,6 +1206,10 @@ case "${1:-}" in
     strict_genesis_reuse_self_test
     exit 0
     ;;
+  --self-test-prebuilt-generator-revision)
+    prebuilt_generator_revision_self_test
+    exit 0
+    ;;
   --self-test-compose-project)
     benchmark_compose_project_self_test
     exit 0
@@ -1374,6 +1418,10 @@ if [[ -z $ton_base_revision || $ton_base_revision == '<no value>' || $ton_base_r
   echo "rebuild it from the matching TON checkout with the VCS_REF command in README.md" >&2
   exit 2
 fi
+generator_revision_override=$(awk -F= '
+  $1 == "BENCHMARK_EXPECTED_GENERATOR_REVISION" {sub(/^[^=]*=/, ""); print; exit}
+' <<<"$compose_environment")
+expected_generator_revision=$(expected_generator_source_revision "$ton_base_revision" "$generator_revision_override")
 
 # Exercise the complete Compose provenance path before creating a result
 # directory or starting a long run. Compose 2.39 requires one explicit service
@@ -2487,8 +2535,9 @@ if [[ $images_prebuilt == 1 ]]; then
     prebuilt_revision=$(docker image inspect -f \
       '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
       "$prebuilt_image" 2>/dev/null || true)
-    if [[ -z $prebuilt_image || $prebuilt_revision != "$ton_base_revision" ]]; then
-      echo "prebuilt $prebuilt_service image is missing or does not match TON revision $ton_base_revision" >&2
+    if [[ -z $prebuilt_image ]] || ! prebuilt_source_revision_matches \
+        "$prebuilt_service" "$container_name" "$prebuilt_revision" "$ton_base_revision" "$expected_generator_revision"; then
+      echo "prebuilt $prebuilt_service source revision mismatch (validator=$ton_base_revision generator=$expected_generator_revision)" >&2
       exit 2
     fi
   done
@@ -2690,10 +2739,14 @@ if [[ $strict_image_reuse == 1 ]]; then
   fi
 fi
 jq -n --argjson required "$strict_image_reuse" --argjson valid "$strict_image_reuse_valid" \
+  --arg expected_validator_revision "$ton_base_revision" --arg expected_generator_revision "$expected_generator_revision" \
+  --arg generator_revision_override "$generator_revision_override" \
   --argjson before "$strict_genesis_before" --argjson after "$strict_genesis_after" \
   --arg generator_image_before "$strict_generator_image_id" --arg generator_image_after "$strict_generator_image_after" \
   --arg generator_container_before "$strict_generator_container_id" --arg generator_container_after "$strict_generator_container_after" '
   {required:($required == 1),valid:$valid,validator_before:$before,validator_after:$after,
+   expected_validator_revision:$expected_validator_revision,expected_generator_revision:$expected_generator_revision,
+   generator_revision_override:($generator_revision_override != ""),
    generator_image_before:$generator_image_before,generator_image_after:$generator_image_after,
    generator_container_before:$generator_container_before,generator_container_after:$generator_container_after,
    semantics:"prebuilt images; stable validator container/image and daemon PID/kernel start ticks across setup and load"}
@@ -3851,6 +3904,9 @@ jq -n \
   --arg finished_at "$finished_at" \
   --arg env_file "$env_file" \
   --arg env_sha256 "$env_sha256" \
+  --arg expected_validator_revision "$ton_base_revision" \
+  --arg expected_generator_revision "$expected_generator_revision" \
+  --arg generator_revision_override "$generator_revision_override" \
   --arg git_revision "$git_revision" \
   --arg git_root "$git_root" \
   --arg git_branch "$git_branch" \
@@ -3882,6 +3938,9 @@ jq -n \
   --slurpfile native_payment_lanes "$native_payment_lanes_provenance_file" \
   --argjson reproducibility_reasons "$reproducibility_reasons" \
   '{$schema,$run_id,$started_at,$finished_at,$elapsed_seconds,$env_file,$env_sha256,
+    image_source_contract:{expected_validator_revision:$expected_validator_revision,
+      expected_generator_revision:$expected_generator_revision,
+      generator_revision_override:($generator_revision_override != "")},
     $git_revision,$git_dirty,
     source:{root:$git_root,revision:$git_revision,branch:$git_branch,describe:$git_describe,
             dirty:$git_dirty,status_sha256:$git_status_sha256,diff_sha256:$git_diff_sha256},
