@@ -162,10 +162,7 @@ def parse_stats(text):
             name, sep, value = item.partition(':')
             if not sep or name in values:
                 raise ValueError('invalid or duplicate counter')
-            number = int(value) if re.fullmatch(r'[0-9]+', value) else float(value)
-            if not math.isfinite(number) or number < 0:
-                raise ValueError('invalid counter value')
-            values[name] = number
+            values[name] = OWNER_STATS.parse_stat_value(fields[0], name, value)
         result[fields[0]] = values
     return result
 

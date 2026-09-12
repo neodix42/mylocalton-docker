@@ -1,0 +1,28 @@
+{
+  "schema": "native-lane-owner-raw-stat-fixture-v1",
+  "source_revision": "52a20df0c214dad09aba82e2b6c239f338d63665",
+  "scope": "Verbatim selected owner and total.ext_msg_* telemetry lines only; no private keys or account material. Original full raw captures remain untouched.",
+  "captures": {
+    "before": {
+      "fixture": "native-lane-owner-52a20df0-before.txt",
+      "fixture_sha256": "c0535406354daf4d41a41796f4a0e88355d00ba9c9e42f69db06e4f11fdc6e05",
+      "source": "build/benchmarks/native-lane-pipeline-stage1-volume-20260912/02-stage1-B1/sweep/01-10-connections/validator-stats-before.txt",
+      "source_sha256": "15d03ebdd8bbacd7b0c9f63b8b51e9644e54f5a32ed661f45041da11df770e5c",
+      "selected_lines": 75
+    },
+    "after": {
+      "fixture": "native-lane-owner-52a20df0-after.txt",
+      "fixture_sha256": "7b8d02d072eb081fa8f225411bdb96befc19f51403cb2a067350250bf3d986e5",
+      "source": "build/benchmarks/native-lane-pipeline-stage1-volume-20260912/02-stage1-B1/sweep/01-10-connections/validator-stats-cleanup-36.txt",
+      "source_sha256": "63f9e3e6a7c5d4d6a4c5956cf6db81a3d134460d2d590cd4e62a0860f21fb623",
+      "selected_lines": 75
+    },
+    "confirmation": {
+      "fixture": "native-lane-owner-52a20df0-confirmation.txt",
+      "fixture_sha256": "75aa89f5933f7ded555daaae4401f7da0cd07d4969b80fdb783ea37cd690d063",
+      "source": "build/benchmarks/native-lane-pipeline-stage1-volume-20260912/02-stage1-B1/sweep/01-10-connections/validator-stats-cleanup-37.txt",
+      "source_sha256": "bf46b27e773e25930a7800511f4f351aac520ac7d733b46b56d479f730a1556e",
+      "selected_lines": 75
+    }
+  }
+}

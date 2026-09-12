@@ -29,6 +29,28 @@ IDENTITY_COUNTERS = ('routed_batches', 'routed_messages', 'fence_rejections', 't
 IDENTITY_MAXIMA = ('router_decode_max_s',)
 
 
+# TD StringBuilder emits these topology flags as true/false. Keep the
+# allowlist scoped to the exact statistics family: a boolean in a numeric
+# cleanup gauge must never be silently interpreted as zero.
+BOOLEAN_FIELDS = {
+    HEADER: frozenset(('topology_ready',)),
+    LANE_HEADER: frozenset(('topology_ready', 'topology_failed')),
+}
+
+
+def parse_stat_value(key, name, text_value):
+    if name in BOOLEAN_FIELDS.get(key, ()):
+        if text_value not in ('true', 'false', '0', '1'):
+            raise ValueError('invalid boolean field:' + key + '.' + name)
+        return int(text_value in ('true', '1'))
+    if text_value in ('true', 'false'):
+        raise ValueError('unexpected boolean field:' + key + '.' + name)
+    value = int(text_value) if re.fullmatch(r'[0-9]+', text_value) else float(text_value)
+    if (type(value) is float and not math.isfinite(value)) or value < 0:
+        raise ValueError('invalid field:' + key + '.' + name)
+    return value
+
+
 def is_owner_key(key):
     return key in (HEADER, LANE_HEADER) or OWNER_KEY.fullmatch(key) is not None or LANE_OWNER_KEY.fullmatch(key) is not None
 
@@ -95,10 +117,7 @@ def parse_stats(text, *, last_exact_sample=False):
             name, sep, text_value = item.partition(':')
             if not sep or name in values:
                 raise ValueError('invalid or duplicate field:' + key)
-            value = int(text_value) if re.fullmatch(r'[0-9]+', text_value) else float(text_value)
-            if (type(value) is float and not math.isfinite(value)) or value < 0:
-                raise ValueError('invalid field:' + key + '.' + name)
-            values[name] = value
+            values[name] = parse_stat_value(key, name, text_value)
         result[key] = values
     return result
 

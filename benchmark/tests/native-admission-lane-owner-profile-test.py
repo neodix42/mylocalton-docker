@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Strict new-owner population, retained watermark and live drain fixtures."""
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -53,6 +54,67 @@ def clean(old, after, confirm, producer=False):
 
 
 class LaneOwnerTests(unittest.TestCase):
+    def test_real_boolean_owner_snapshots_parse_and_cleanup(self):
+        fixture_root = Path(__file__).with_name('fixtures')
+        manifest = json.loads((fixture_root/'native-lane-owner-52a20df0-manifest.json').read_text())
+        samples = {}
+        for label, capture in manifest['captures'].items():
+            raw = (fixture_root/capture['fixture']).read_bytes()
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), capture['fixture_sha256'])
+            text = raw.decode()
+            self.assertIn('topology_ready:true topology_failed:false', text)
+            parsed = o.parse_stats(text)
+            self.assertEqual(parsed[o.LANE_HEADER]['topology_ready'], 1)
+            self.assertEqual(parsed[o.LANE_HEADER]['topology_failed'], 0)
+            self.assertIs(type(parsed[o.LANE_HEADER]['topology_ready']), int)
+            self.assertEqual(m.parse_stats(text)[o.LANE_HEADER], parsed[o.LANE_HEADER])
+            self.assertTrue(o.lane_snapshot(parsed)['valid'])
+            samples[label] = parsed
+        result = clean(samples['before'], samples['after'], samples['confirmation'], True)
+        self.assertTrue(result['cleanup_acceptance']['valid'], result['cleanup_acceptance'])
+        self.assertEqual(set(result['owners']), {'0', '1', '2', '3'})
+
+    def test_only_declared_topology_fields_accept_wire_booleans(self):
+        for key, names in o.BOOLEAN_FIELDS.items():
+            for name in names:
+                for raw, expected in [('true', 1), ('false', 0), ('1', 1), ('0', 0)]:
+                    self.assertEqual(o.parse_stat_value(key, name, raw), expected)
+                for raw in ('True', 'False', 'yes', 'no', '2', '-1', '1.0', 'nan', ''):
+                    with self.assertRaises(ValueError): o.parse_stat_value(key, name, raw)
+        # Every numeric live cleanup field remains numeric, even if a false
+        # token might otherwise compare equal to zero in Python.
+        fields = {
+            'total.ext_msg_native_reconciliation': ('pending_sources',),
+            'total.ext_msg_native_pending': ('accounts', 'messages', 'logical_messages', 'nonce_watermarks'),
+            'total.ext_msg_mempool': ('messages', 'native', 'native_logical'),
+            'total.ext_msg_batch_diagnostics': ('active_batches', 'prepare_active_parents', 'prepare_active_bytes', 'shard_shared_active'),
+            'total.ext_msg_native_transport': ('pending', 'live_queued', 'live_unpushed', 'logical_pending',
+                'logical_live_queued', 'logical_live_unpushed', 'push_reserved', 'logical_push_reserved'),
+            'total.ext_msg_native_persistent_producer': o.PRODUCER_LIVE_FIELDS,
+        }
+        for prefix in [''] + [f'native_pool.owner.{i}.' for i in range(4)]:
+            for key, names in fields.items():
+                for name in names:
+                    for token in ('false', 'true'):
+                        raw = prefix + key + ' ' + name + ':' + token + '\n'
+                        parsers = [o.parse_stats]
+                        if prefix + key in m.KEYS or o.is_owner_key(prefix + key):
+                            parsers.append(m.parse_stats)
+                        for parser in parsers:
+                            with self.subTest(key=prefix + key, field=name, token=token, parser=parser.__module__):
+                                with self.assertRaises(ValueError): parser(raw)
+        for key, name in [(o.LANE_HEADER, 'aggregate_mempool'), (o.LANE_HEADER, 'published_generation'),
+                          (o.LANE_HEADER, 'coordinator_native_accounts'), (o.LANE_HEADER, 'owners'),
+                          (o.LANE_HEADER, 'unknown_boolean'), ('native_pool.owner.0.identity', 'generation'),
+                          ('native_pool.owner.0.identity', 'local_signature_workers')]:
+            with self.assertRaises(ValueError): o.parse_stats(key + ' ' + name + ':false\n')
+        self.assertFalse(o.number(False))
+        # Legitimate boolean flags still participate in strict topology gates.
+        for change in ({'topology_ready': 0}, {'topology_failed': 1}):
+            bad = rows(3, True); bad[o.LANE_HEADER].update(change)
+            raw = f.raw(bad).replace('topology_ready:0', 'topology_ready:false').replace('topology_failed:1', 'topology_failed:true')
+            self.assertFalse(clean(rows(1, True), rows(2, True), o.parse_stats(raw), True)['cleanup_acceptance']['valid'])
+
     def test_explicit_identity_shared_budget_and_retained_watermarks(self):
         result = clean(rows(1), rows(2), rows(3))
         self.assertTrue(result['cleanup_acceptance']['valid'], result)
