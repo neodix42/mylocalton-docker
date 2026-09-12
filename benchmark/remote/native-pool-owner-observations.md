@@ -6,9 +6,38 @@ The separate prepared-admission prototype uses
 `TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0`, and an existing fixed four-lane
 payment chain. Its four native admission owners share a separate generic-message
 coordinator; `TON_NATIVE_LANE_SCHEDULERS` independently controls scheduler
-placement. This is distinct from `TON_NATIVE_POOL_OWNERS` below. The legacy
-owner observer described here does not validate the new prototype's metadata;
-use its matching benchmark observer. Neither machine preset enables it.
+placement. This is distinct from `TON_NATIVE_POOL_OWNERS` below, which stays
+`1` for this prototype. Neither machine preset enables it.
+
+The matching observer requires `total.native_admission_lane_owners` plus all
+four child identities, including lane zero, under `native_pool.owner.N.identity`.
+Child pool families retain their complete name after the prefix, for example
+`native_pool.owner.0.total.ext_msg_native_pending`. The coordinator's root
+families describe only its own work. Every child must report zero local signature
+workers and the same shared worker budget as the coordinator (8 in the fixed
+desktop experiment). These are references to the same eight workers. The
+process-global signature executor is reported once, even when repeated by children.
+
+Prepared-owner cleanup requires two separate complete post-drain RPC snapshots.
+Each must show ready topology, no coordinator native ledger/watermarks, every
+child generation at least the earlier sampled root publication, and zero native
+pending/reconciliation, mempool, preparation leases and transport queue/reservation
+gauges in all five populations. Child nonce watermarks remain retained; they are
+not expected to be zero. Generation is a process-local fence, not an account nonce
+or a completed canonical scan. Generator canonical proofs and complete cohorts
+remain mandatory. Root aggregate and child gauges are asynchronous and are never
+added together or required to match during load. Missing identity/telemetry fails
+closed; the legacy one-owner header cannot validate this prototype.
+
+With `TON_NATIVE_PERSISTENT_PRODUCER=1`, even without the owner prototype, every
+participating pool additionally needs zero `owner_dirty_sources`,
+`owner_flush_scheduled`, `inbox_pending_sources`, `inbox_latest_sources`,
+`updates_inflight_sources`, `live_sources` and `live_physical_messages` in both
+cleanup observations. Retained producer objects, callbacks, publication counters
+and lifetime maxima are allowed. The wrapper retries asynchronous cleanup for up
+to 90 seconds (plus an in-flight 15-second console deadline), retains each capture
+and failed receipt, and records exact capture hashes and expected feature settings.
+It never sends additional load during observation.
 
 `TON_NATIVE_POOL_OWNERS` accepts `1`, `2`, or `4`; Compose defaults to `1`.
 Changing this flag is an experimental validator change. Compare frozen matching
@@ -50,12 +79,14 @@ canonical proofs and strict image/process reuse are separate mandatory gates.
 `profile-native-validator.py` now loads the adjacent
 `native_pool_owner_stats.py`; retain both files if copying the profiler alone.
 The benchmark wrapper invokes the same module offline over saved exact-key
-console captures. It performs no additional validator RPCs.
+console captures. Default-off legacy runs retain their original capture cadence;
+the new owner/producer paths use the bounded additional cleanup observations above.
 
 Focused offline validation (no Docker or traffic):
 
 ```sh
 python3 benchmark/tests/native-pool-owner-profile-test.py
+python3 benchmark/tests/native-admission-lane-owner-profile-test.py
 python3 benchmark/tests/native-container-runtime-env-test.py
 python3 benchmark/tests/native-validator-profile-test.py
 python3 benchmark/tests/native-dispatch-profile-test.py

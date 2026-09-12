@@ -1364,6 +1364,18 @@ case "$native_pool_owners_expected" in
   1|2|4) ;;
   *) echo "TON_NATIVE_POOL_OWNERS must be 1, 2 or 4" >&2; exit 2 ;;
 esac
+native_admission_lane_owners_expected=$(awk -F= '$1 == "TON_NATIVE_ADMISSION_LANE_OWNERS" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+native_admission_lane_owners_expected=${native_admission_lane_owners_expected:-0}
+native_persistent_producer_expected=$(awk -F= '$1 == "TON_NATIVE_PERSISTENT_PRODUCER" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+native_persistent_producer_expected=${native_persistent_producer_expected:-0}
+native_signature_workers_expected=$(awk -F= '$1 == "TON_NATIVE_EXECUTOR_THREADS" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
+native_signature_workers_expected=${native_signature_workers_expected:-8}
+case "$native_admission_lane_owners_expected" in 0|4) ;; *) echo "TON_NATIVE_ADMISSION_LANE_OWNERS must be 0 or 4" >&2; exit 2 ;; esac
+case "$native_persistent_producer_expected" in 0|1) ;; *) echo "TON_NATIVE_PERSISTENT_PRODUCER must be 0 or 1" >&2; exit 2 ;; esac
+[[ $native_signature_workers_expected =~ ^[1-9][0-9]*$ ]] || { echo "Invalid native signature worker budget" >&2; exit 2; }
+if [[ $native_admission_lane_owners_expected == 4 && $native_pool_owners_expected != 1 ]]; then
+  echo "Prepared admission owners require TON_NATIVE_POOL_OWNERS=1" >&2; exit 2
+fi
 ton_image=$(awk -F= '$1 == "TON_IMAGE" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 ton_branch=$(awk -F= '$1 == "TON_BRANCH" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 native_signed_runs_expected_raw=$(awk -F= '
@@ -2831,9 +2843,38 @@ jq -Rsc '
 # aggregate. Validate every declared owner and retain scoped evidence before
 # applying the same final native cleanup boundary as the legacy single pool.
 validator_owner_summary_file=$result_dir/native-pool-owners.json
-python3 "$script_dir/benchmark/remote/native_pool_owner_stats.py" \
-  --before "$validator_stats_before_file" --after "$validator_stats_after_file" \
-  --expected-owners "$native_pool_owners_expected" --output "$validator_owner_summary_file"
+owner_observer=(python3 "$script_dir/benchmark/remote/native_pool_owner_stats.py"
+  --before "$validator_stats_before_file" --expected-owners "$native_pool_owners_expected"
+  --expected-admission-lane-owners "$native_admission_lane_owners_expected"
+  --expected-signature-workers "$native_signature_workers_expected"
+  --persistent-producer "$native_persistent_producer_expected")
+if [[ $native_admission_lane_owners_expected == 4 || $native_persistent_producer_expected == 1 ]]; then
+  # Each getstats fanout is asynchronous. Require two separately captured clean
+  # snapshots, retaining every failed attempt; canonical generator proof remains
+  # mandatory. This post-drain observation never offers or repairs transfers.
+  owner_cleanup_deadline=$((SECONDS + 90))
+  owner_cleanup_previous=$validator_stats_after_file
+  owner_cleanup_attempt=0
+  while :; do
+    owner_cleanup_attempt=$((owner_cleanup_attempt + 1))
+    owner_cleanup_confirmation=$result_dir/validator-stats-cleanup-$owner_cleanup_attempt.txt
+    owner_cleanup_receipt=$result_dir/native-pool-owners-attempt-$owner_cleanup_attempt.json
+    sleep 2
+    if ! capture_validator_stats "$owner_cleanup_confirmation"; then
+      : >"$owner_cleanup_confirmation"
+    fi
+    "${owner_observer[@]}" --after "$owner_cleanup_previous" --confirmation "$owner_cleanup_confirmation" \
+      --output "$owner_cleanup_receipt"
+    if jq -e '.cleanup_acceptance.valid == true' "$owner_cleanup_receipt" >/dev/null ||
+       (( SECONDS >= owner_cleanup_deadline )); then
+      cp "$owner_cleanup_receipt" "$validator_owner_summary_file"
+      break
+    fi
+    owner_cleanup_previous=$owner_cleanup_confirmation
+  done
+else
+  "${owner_observer[@]}" --after "$validator_stats_after_file" --output "$validator_owner_summary_file"
+fi
 
 scheduler_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_scheduler")
 scheduler_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_scheduler")
@@ -2906,13 +2947,18 @@ jq -L "$benchmark_jq_dir" -n \
     })
   } |
   $ownership[0] as $owner |
-  if $owner.expected_owners > 1 then
+  if $owner.expected_owners > 1 or $owner.expected_admission_lane_owners == 4 then
     $owner + {semantics:"per-owner native pool telemetry; no root admission totals or summed owner maxima are fabricated"}
   else
     . + {native_pool_owners:$owner} |
-    .cleanup_acceptance.invalid_reasons += $owner.cleanup_acceptance.invalid_reasons |
-    .cleanup_acceptance.invalid_reasons |= unique |
-    .cleanup_acceptance.valid = (.cleanup_acceptance.valid and $owner.cleanup_acceptance.valid)
+    if $owner.persistent_producer_expected == true then
+      .cleanup_acceptance = ($owner.cleanup_acceptance + {
+        semantics:"two bounded post-drain native cleanup observations; initial before/after counters retained separately"})
+    else
+      .cleanup_acceptance.invalid_reasons += $owner.cleanup_acceptance.invalid_reasons |
+      .cleanup_acceptance.invalid_reasons |= unique |
+      .cleanup_acceptance.valid = (.cleanup_acceptance.valid and $owner.cleanup_acceptance.valid)
+    end
   end
 ' >"$validator_pool_summary_file"
 

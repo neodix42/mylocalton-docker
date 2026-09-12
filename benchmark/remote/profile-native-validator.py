@@ -115,6 +115,8 @@ OPTIONAL_SCHEMAS = {
     },
 }
 ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
+            'TON_NATIVE_PERSISTENT_PRODUCER', 'TON_NATIVE_ADMISSION_PREPARE',
+            'TON_NATIVE_CANONICAL_JOURNAL', 'TON_NATIVE_LANE_SCHEDULERS', 'TON_NATIVE_ADMISSION_LANE_OWNERS',
             'TON_NATIVE_ADMISSION_SHARD_SHARING', 'TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH',
             'TON_NATIVE_RECONCILIATION_PROFILE',
             'TON_NATIVE_RECONCILIATION_CHUNKS', 'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH',
@@ -181,7 +183,8 @@ def deltas(before, after, required_keys=REQUIRED_KEYS):
         for key, old in before[group].items():
             if key in ('active_batches', 'config_cache_enabled') or key.endswith('_enabled') or \
                     'peak' in key or 'max_' in key or key.endswith('_max_s') or key.endswith('_active') or \
-                    key in ('shard_shared_waiters', 'shard_shared_table_limit', 'shard_shared_waiters_per_key_limit'):
+                    key in ('shard_shared_waiters', 'shard_shared_table_limit', 'shard_shared_waiters_per_key_limit',
+                            'prepare_active_parents', 'prepare_active_bytes', 'prepare_parent_limit', 'prepare_byte_limit'):
                 continue
             # Only documented admission/executor counters, not sequence numbers
             # or gauges in the broader pool-admission statistics key.
@@ -465,7 +468,90 @@ def summarize_owners(samples, expected_owners=None):
     return result
 
 
-def summarize(samples, *, expected_owners=None, _required_keys=REQUIRED_KEYS, _owner_dispatch=True):
+def scoped_fields(rows, configuration, counters, gauges=(), maxima=()):
+    errors, changes = [], {}
+    for key in configuration:
+        if any(row.get(key) != rows[0].get(key) for row in rows):
+            errors.append('configuration_changed:' + key)
+    for key in counters:
+        values = [row.get(key) for row in rows]
+        if not all(OWNER_STATS.number(value, integer=not key.endswith('_s')) for value in values):
+            errors.append('counter_missing:' + key)
+        elif any(new < old for old, new in zip(values, values[1:])):
+            errors.append('counter_reset:' + key)
+        else:
+            changes[key] = values[-1] - values[0]
+    return {'configuration': {key: rows[0].get(key) for key in configuration}, 'counter_deltas': changes,
+            'gauges_at_endpoints': {key: [rows[0].get(key), rows[-1].get(key)] for key in gauges},
+            'lifetime_maxima_at_endpoints': {key: [rows[0].get(key), rows[-1].get(key)] for key in maxima},
+            'errors': errors}
+
+
+def summarize_lane_owners(samples, expected_owners, expected_lane_owners, expected_signature_workers):
+    usable = [row for row in samples if row.get('stats')]
+    views = [OWNER_STATS.lane_snapshot(row['stats'], expected_lane_owners, expected_signature_workers) for row in usable]
+    errors = [error for row in samples for error in row.get('errors', [])]
+    errors.extend(f'sample_{i}:' + error for i, view in enumerate(views) for error in view['errors'])
+    if expected_owners not in (None, 1):
+        errors.append('legacy_pool_owners_must_remain_one')
+    if len(usable) < 2:
+        errors.append('fewer_than_two_statistics_samples')
+    result = {'schema': 'native-validator-admission-lane-profile-v1', 'scope': 'native_children_and_generic_coordinator',
+              'expected_admission_lane_owners': expected_lane_owners, 'expected_signature_workers': expected_signature_workers,
+              'samples': len(samples), 'statistics_samples': len(usable), 'owners': {}, 'errors': errors,
+              'diagnostics_available': False, 'semantics': 'Four native child populations, including lane zero, and one generic '
+              'coordinator. Shared executor counters appear once. Header aggregate and child gauges are asynchronous; they '
+              'are not added or subtracted as counters. Router join time includes child service and sibling wait, not exclusive CPU.'}
+    if errors:
+        return result
+    headers = [view['header'] for view in views]
+    result['router'] = scoped_fields(headers, OWNER_STATS.LANE_HEADER_CONFIG, OWNER_STATS.LANE_HEADER_COUNTERS,
+                                    OWNER_STATS.LANE_HEADER_GAUGES, ('join_max_s',))
+    errors.extend('router:' + value for value in result['router']['errors'])
+    for scope in ['coordinator', '0', '1', '2', '3']:
+        local = [dict(row, stats=view['coordinator'] if scope == 'coordinator' else view['owner_rows'][scope]['stats'])
+                 for row, view in zip(usable, views)]
+        summary = summarize(local, _required_keys=REQUIRED_KEYS[:2], _owner_dispatch=False)
+        for position, (old, new) in enumerate(zip(local, local[1:])):
+            _, failures = deltas(old['stats'], new['stats'], REQUIRED_KEYS[:2])
+            summary['errors'].extend(f'interval_{position}:' + failure for failure in failures)
+        if scope == 'coordinator':
+            result['coordinator'] = summary
+        else:
+            identities = [view['owner_rows'][scope]['identity'] for view in views]
+            identity = scoped_fields(identities, OWNER_STATS.LANE_IDENTITY_CONFIG, OWNER_STATS.LANE_IDENTITY_COUNTERS,
+                                     OWNER_STATS.LANE_IDENTITY_GAUGES, OWNER_STATS.LANE_IDENTITY_MAXIMA)
+            identity['queue_mean_ms'] = (identity['counter_deltas']['queue_sum_s'] * 1000 /
+                identity['counter_deltas']['queue_samples']) if identity['counter_deltas'].get('queue_samples') else None
+            summary['identity'] = identity
+            summary['errors'].extend(identity['errors'])
+            result['owners'][scope] = summary
+        errors.extend(scope + ':' + value for value in summary['errors'])
+    shared_rows = [row['stats'].get(OWNER_STATS.SHARED, {}) for row in usable]
+    shared_deltas, shared_errors = deltas({OWNER_STATS.SHARED: shared_rows[0]},
+                                         {OWNER_STATS.SHARED: shared_rows[-1]}, (OWNER_STATS.SHARED,))
+    for index, (old, new) in enumerate(zip(shared_rows, shared_rows[1:])):
+        _, failures = deltas({OWNER_STATS.SHARED: old}, {OWNER_STATS.SHARED: new}, (OWNER_STATS.SHARED,))
+        shared_errors.extend(f'interval_{index}:' + value for value in failures)
+    result['shared_signature_executor'] = {'counter_deltas': shared_deltas.get(OWNER_STATS.SHARED, {}), 'errors': shared_errors}
+    if not shared_rows[0] or any(not row for row in shared_rows):
+        result['shared_signature_executor']['errors'].append('shared_executor_capture_missing')
+    errors.extend('shared_executor:' + value for value in result['shared_signature_executor']['errors'])
+    if errors:
+        for summary in [result['coordinator']] + list(result['owners'].values()):
+            summary['diagnostics_available'] = False
+            summary['stage_mean_ms'] = {}
+            if 'identity' in summary:
+                summary['identity']['queue_mean_ms'] = None
+    result['diagnostics_available'] = not errors and all(value['diagnostics_available'] for value in
+        [result['coordinator']] + list(result['owners'].values()))
+    return result
+
+
+def summarize(samples, *, expected_owners=None, expected_lane_owners=0, expected_signature_workers=8,
+              _required_keys=REQUIRED_KEYS, _owner_dispatch=True):
+    if _owner_dispatch and (expected_lane_owners or any(OWNER_STATS.LANE_HEADER in row.get('stats', {}) for row in samples)):
+        return summarize_lane_owners(samples, expected_owners, expected_lane_owners, expected_signature_workers)
     if _owner_dispatch and (expected_owners not in (None, 1) or any(
             any(OWNER_STATS.is_owner_key(key) for key in row.get('stats', {})) for row in samples)):
         return summarize_owners(samples, expected_owners)
@@ -726,7 +812,10 @@ def main():
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         samples.append({'errors': [str(exc)]})
     finally:
-        summary = summarize(samples, expected_owners=int(initial.get('environment', {}).get('TON_NATIVE_POOL_OWNERS', '1')))
+        observed_env = initial.get('environment', {})
+        summary = summarize(samples, expected_owners=int(observed_env.get('TON_NATIVE_POOL_OWNERS', '1')),
+                            expected_lane_owners=int(observed_env.get('TON_NATIVE_ADMISSION_LANE_OWNERS', '0')),
+                            expected_signature_workers=int(observed_env.get('TON_NATIVE_EXECUTOR_THREADS', '8')))
         summary['thread_cpu_intervals'] = thread_intervals(samples, os.sysconf('SC_CLK_TCK'))
         summary['interrupted'] = stopped
         if a.dashboard_url and samples and 'observed_unix_s' in samples[0]:
