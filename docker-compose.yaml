@@ -229,6 +229,8 @@ services:
       - native-load-wallets:/wallets:ro
     environment:
       - NATIVE_LOAD_GLOBAL_CONFIG=${NATIVE_LOAD_GLOBAL_CONFIG:-/usr/share/data/global.config.json}
+      # Optional benchmark provenance only; leaves generator behavior unchanged.
+      - BENCHMARK_EXPECTED_GENERATOR_REVISION=${BENCHMARK_EXPECTED_GENERATOR_REVISION:-}
       - NATIVE_LOAD_WALLET_DIR=/wallets
       - NATIVE_LOAD_SOURCES
       - NATIVE_LOAD_CONNECTIONS

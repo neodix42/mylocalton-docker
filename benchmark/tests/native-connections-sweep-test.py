@@ -207,6 +207,25 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(resolved['native-load-generator']['image_id'], 'sha256:' + '2' * 64)
             self.assertNotEqual(resolved['native-load-generator']['image_id'], resolved['genesis']['image_id'])
 
+    def test_explicit_generator_revision_preserves_default_guard(self):
+        c, found = config(options(), 10), images()
+        self.assertFalse(sweep.image_source_contract(found, c)['generator_revision_override'])
+        found['native-load-generator']['revision'] = 'b' * 40
+        with self.assertRaises(sweep.EvidenceError):
+            sweep.image_source_contract(found, c)
+        c['services']['native-load-generator']['environment']['BENCHMARK_EXPECTED_GENERATOR_REVISION'] = 'b' * 40
+        contract = sweep.image_source_contract(found, c)
+        self.assertEqual(contract, {'expected_validator_revision': 'a' * 40,
+                                   'expected_generator_revision': 'b' * 40,
+                                   'generator_revision_override': True})
+        found['native-load-generator']['revision'] = 'c' * 40
+        with self.assertRaises(sweep.EvidenceError):
+            sweep.image_source_contract(found, c)
+        for invalid in ('short', 'B' * 40, 12):
+            c['services']['native-load-generator']['environment']['BENCHMARK_EXPECTED_GENERATOR_REVISION'] = invalid
+            with self.assertRaises(sweep.EvidenceError):
+                sweep.image_source_contract(found, c)
+
     def test_endpoint_process_and_live_volume_fail_closed(self):
         one = {'liteservers': [{'id': {'key': 'public'}, 'ip': 123, 'port': 40004}]}
         server = sweep.endpoint(one)

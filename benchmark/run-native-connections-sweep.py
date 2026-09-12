@@ -219,6 +219,18 @@ def endpoint(config, expected=None):
     return server
 
 
+def image_source_contract(images, config):
+    override = config['services']['native-load-generator'].get('environment', {}).get('BENCHMARK_EXPECTED_GENERATOR_REVISION') or ''
+    require(isinstance(override, str) and (not override or re.fullmatch(r'[0-9a-f]{40}', override)),
+            'BENCHMARK_EXPECTED_GENERATOR_REVISION must be a full lowercase 40-hex source commit')
+    validator_revision = images['genesis'].get('revision')
+    expected_generator = override or validator_revision
+    require(validator_revision and images['native-load-generator'].get('revision') == expected_generator,
+            'prebuilt generator source revision differs from the explicit pin or default validator revision')
+    return {'expected_validator_revision': validator_revision, 'expected_generator_revision': expected_generator,
+            'generator_revision_override': bool(override)}
+
+
 class Host:
     def text(self, command):
         return subprocess.check_output(command, cwd=ROOT, text=True, timeout=45)
@@ -252,9 +264,7 @@ class Host:
             require(len(rows) == 1 and re.fullmatch(r'sha256:[0-9a-f]{64}', rows[0]['Id']), 'missing immutable image ID')
             result[name] = {'reference': image, 'image_id': rows[0]['Id'],
                             'revision': (rows[0]['Config'].get('Labels') or {}).get('org.opencontainers.image.revision')}
-        require(result['genesis']['revision'] and
-                result['genesis']['revision'] == result['native-load-generator']['revision'],
-                'prebuilt validator and generator must have matching source revision labels')
+        image_source_contract(result, config)
         return result
 
     def topology(self, a, config, validator):
@@ -508,6 +518,7 @@ def execute(a, host=None):
         frozen = {'validator': host.validator(), 'images': host.images(configs[0]),
                   'normalized_compose_sha256': digest(reference_config),
                   'compose_sha256_by_connections': {str(n): digest(c) for n, c in zip(a.connections, configs)}}
+        frozen['image_source_contract'] = image_source_contract(frozen['images'], configs[0])
         require(frozen['validator']['identity']['image_id'] == frozen['images']['genesis']['image_id'],
                 'live validator does not use the exact prebuilt genesis service image')
         frozen['topology'] = host.topology(a, configs[0], frozen['validator'])
