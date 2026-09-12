@@ -2,7 +2,7 @@
 
 `run-native-connections-sweep.py` runs the existing native load generator with 10, then 50, then 100 persistent ADNL/TCP submission connections to one prepared local liteserver. It saves measured offered logical TPS, admission logical TPS, canonical chain logical TPS, and the original acceptance decisions for every completed arm. It does not launch a CLI process per message.
 
-Prepare the fixed-depth native chain and build all images **before** the sweep. The runner requires a healthy existing genesis, matching prebuilt validator/generator source revisions, an available session-stats image, and exactly one liteserver in the shared public config. It performs no builds, pulls, genesis recreation, state resets, or volume deletion. Generator containers are recreated between arms by the existing benchmark wrapper. The validator container, image, daemon PID/start ticks, mounts, resource limits, and public endpoint must remain unchanged for the entire sweep.
+Prepare the fixed-depth native chain and build all images **before** the sweep. The runner requires a healthy existing genesis, matching prebuilt validator/generator source revisions by default, an available session-stats image, and exactly one liteserver in the shared public config. It performs no builds, pulls, genesis recreation, state resets, or volume deletion. Generator containers are recreated between arms by the existing benchmark wrapper. The validator container, image, daemon PID/start ticks, mounts, resource limits, and public endpoint must remain unchanged for the entire sweep.
 
 ```sh
 # Offline plan: no Docker calls or workload.
@@ -28,7 +28,7 @@ NATIVE_LOAD_IMAGE=mylocalton-native-load-generator:generator-entrypoint-v2 \
     --connections 10 50 100 --output benchmark-results/connections-retry
 ```
 
-The default generator image remains `mylocalton-native-load-generator:${TON_BRANCH:-latest}`. This optional override changes only the generator service image; it does not retag, rebuild, or recreate genesis. The replacement must retain the same TON source revision label as the validator. Its immutable image ID is frozen for every arm of the new sweep, and a partial failed sweep remains a separate rejected bundle. Build the replacement before starting the sweep; builds are never part of its measurement path.
+The default generator image remains `mylocalton-native-load-generator:${TON_BRANCH:-latest}`. This optional override changes only the generator service image; it does not retag, rebuild, or recreate genesis. By default the replacement must retain the same TON source revision label as the validator. For a controlled validator comparison using one fixed client from a different revision, explicitly set `BENCHMARK_EXPECTED_GENERATOR_REVISION` to the client's full 40-character source commit in the env file. The sweep and wrapper both check that exact client revision and record the separate validator/client source contract. Its immutable image ID is still frozen for every arm; validator identity and source checks remain unchanged. A partial failed sweep remains a separate rejected bundle. Build the replacement before starting the sweep; builds are never part of its measurement path.
 
 The local sweep retains its historical four-lane default. For a fresh eight-lane `.env.physical` genesis, pass `--lane-depth 3` explicitly; all eight lanes must be ready and proof-balanced. The standalone exported remote runner instead inherits the actual topology from A's manifest, so a fresh eight-lane export needs no lane argument on B.
 
