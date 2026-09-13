@@ -81,6 +81,25 @@ SIGNATURE_DISPATCH_COUNTERS = {'signature_dispatch_' + key for key in (
     'late_reply_tasks abandoned_tasks profiled_reply_tasks cpu_unsupported_tasks legacy_tasks legacy_results legacy_errors legacy_timeouts cache_unchecked cache_hits '
     'cache_misses crypto_attempts crypto_successes cache_inserts cache_duplicate_inserts cache_evictions').split()} | {
         stage + suffix for stage in SIGNATURE_DISPATCH_STAGES for suffix in ('_samples', '_sum_s')}
+SIGNATURE_EXECUTOR_POOL_COUNTERS = {
+    'pool_calls': 'counter', 'pool_tickets': 'counter', 'pool_threads_created': 'counter',
+    'pool_contended_submits': 'counter', 'pool_queue_wait_sum_s': 'number',
+    'pool_completion_wait_sum_s': 'number', 'pool_worker_cpu_sum_s': 'number',
+}
+SIGNATURE_EXECUTOR_POOL_CONFIGURATION = {
+    'pool_queue_capacity': 'positive_integer',
+}
+SIGNATURE_EXECUTOR_POOL_GAUGES = {
+    'pool_threads': 'gauge', 'pool_active': 'gauge', 'pool_queue': 'gauge',
+}
+SIGNATURE_EXECUTOR_POOL_MAXIMA = {
+    'pool_active_peak': 'counter', 'pool_queue_peak': 'counter',
+    'pool_queue_wait_max_s': 'number', 'pool_completion_wait_max_s': 'number',
+}
+SIGNATURE_EXECUTOR_POOL_FIELDS = (set(SIGNATURE_EXECUTOR_POOL_COUNTERS) |
+                                  set(SIGNATURE_EXECUTOR_POOL_CONFIGURATION) |
+                                  set(SIGNATURE_EXECUTOR_POOL_GAUGES) |
+                                  set(SIGNATURE_EXECUTOR_POOL_MAXIMA))
 OPTIONAL_SCHEMAS = {
     'signature_dispatch': {
         'group': REQUIRED_KEYS[1],
@@ -125,7 +144,7 @@ ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_KEYRING_PREPARED_SIGNING', 'TON_OVERLAY_LOCAL_SIGNATURE_REUSE',
             'TON_NATIVE_CANDIDATE_METADATA_PROJECTION',
             'TON_NATIVE_STAGED_TRIE_DIRECT', 'TON_NATIVE_PUBLICATION_GROUPING',
-            'TON_NATIVE_VALIDATION_SIGNATURE_THREADS',
+            'TON_NATIVE_VALIDATION_SIGNATURE_THREADS', 'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL',
             'TON_NATIVE_COLLATOR_QUEUE_LIMIT', 'TON_SIMPLEX_MAX_TPS', 'SIMPLEX_TARGET_RATE_MS',
             'TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS', 'TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS',
             'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS', 'NATIVE_PAYMENT_LANE_DEPTH',
@@ -180,6 +199,8 @@ def deltas(before, after, required_keys=REQUIRED_KEYS):
         for key, old in before[group].items():
             if key in ('active_batches', 'config_cache_enabled') or key.endswith('_enabled') or \
                     'peak' in key or 'max_' in key or key.endswith('_max_s') or key.endswith('_active') or \
+                    (group == REQUIRED_KEYS[2] and key in (SIGNATURE_EXECUTOR_POOL_CONFIGURATION |
+                                                           SIGNATURE_EXECUTOR_POOL_GAUGES)) or \
                     key in ('shard_shared_waiters', 'shard_shared_table_limit', 'shard_shared_waiters_per_key_limit',
                             'prepare_active_parents', 'prepare_active_bytes', 'prepare_parent_limit', 'prepare_byte_limit'):
                 continue
@@ -210,11 +231,75 @@ def deltas(before, after, required_keys=REQUIRED_KEYS):
 
 
 def valid_schema_value(value, kind):
-    if kind in ('counter', 'positive_integer', 'flag'):
+    if kind in ('counter', 'positive_integer', 'flag', 'gauge'):
         return type(value) is int and (value in (0, 1) if kind == 'flag' else
                                       value > 0 if kind == 'positive_integer' else value >= 0)
     return type(value) in (int, float) and (type(value) is int or math.isfinite(value)) and \
         (value > 0 if kind == 'positive_number' else value >= 0)
+
+
+def summarize_signature_executor(samples, changes):
+    """Keep reusable-pool counters separate from current gauges and lifetime maxima."""
+    rows = [sample['stats'].get(REQUIRED_KEYS[2], {}) for sample in samples]
+    present = [bool(SIGNATURE_EXECUTOR_POOL_FIELDS & set(row)) for row in rows]
+    result = {
+        'available': all(REQUIRED_KEYS[2] in sample['stats'] for sample in samples),
+        'valid': False,
+        'pool_telemetry_available': any(present),
+        'counter_deltas': changes.get(REQUIRED_KEYS[2], {}),
+        'configuration': {},
+        'gauges_at_endpoints': {},
+        'lifetime_maxima_at_endpoints': {},
+        'errors': [],
+        'semantics': ('Pool calls/tickets/created threads and wait/CPU sums are monotonic process-lifetime counters. '
+                      'Pool threads, active workers and queued tickets are current endpoint gauges. Peaks are '
+                      'process-lifetime maxima; queue capacity is fixed configuration. Worker CPU is summed '
+                      'across tickets and can exceed wall time. A zero worker-CPU sum is unavailable on platforms '
+                      'where ThreadCpuTimer has no thread CPU clock, not evidence of zero CPU cost.'),
+    }
+    errors = result['errors']
+    if not result['available']:
+        errors.append('signature_executor_capture_missing')
+        return result
+    if not any(present):
+        # Recordings from validators predating the persistent-pool telemetry remain valid.
+        result['valid'] = True
+        return result
+    for index, (row, exists) in enumerate(zip(rows, present)):
+        if not exists:
+            errors.append(f'missing_signature_executor_pool_schema:sample_{index}')
+            continue
+        for key, kind in (SIGNATURE_EXECUTOR_POOL_COUNTERS | SIGNATURE_EXECUTOR_POOL_CONFIGURATION |
+                          SIGNATURE_EXECUTOR_POOL_GAUGES |
+                          SIGNATURE_EXECUTOR_POOL_MAXIMA).items():
+            if key not in row:
+                errors.append(f'missing_signature_executor_pool_field:{key}:sample_{index}')
+            elif not valid_schema_value(row[key], kind):
+                errors.append(f'invalid_signature_executor_pool_field:{key}:sample_{index}')
+    for index, (old, new) in enumerate(zip(rows, rows[1:]), 1):
+        for key in SIGNATURE_EXECUTOR_POOL_CONFIGURATION:
+            if key in old and key in new and new[key] != old[key]:
+                errors.append(f'signature_executor_pool_configuration_changed:{key}:sample_{index}')
+        for key in SIGNATURE_EXECUTOR_POOL_COUNTERS:
+            if key in old and key in new and new[key] < old[key]:
+                errors.append(f'signature_executor_pool_counter_reset:{key}:sample_{index}')
+        for key in SIGNATURE_EXECUTOR_POOL_MAXIMA:
+            if key in old and key in new and new[key] < old[key]:
+                errors.append(f'signature_executor_pool_maximum_reset:{key}:sample_{index}')
+    first, last = rows[0], rows[-1]
+    result['configuration'] = {
+        key: first[key] for key in SIGNATURE_EXECUTOR_POOL_CONFIGURATION if key in first
+    }
+    result['gauges_at_endpoints'] = {
+        key: [first[key], last[key]] for key in SIGNATURE_EXECUTOR_POOL_GAUGES
+        if key in first and key in last
+    }
+    result['lifetime_maxima_at_endpoints'] = {
+        key: [first[key], last[key]] for key in SIGNATURE_EXECUTOR_POOL_MAXIMA
+        if key in first and key in last
+    }
+    result['valid'] = not errors
+    return result
 
 
 def summarize_optional_schema(samples, name, counter_errors):
@@ -444,8 +529,11 @@ def summarize_owners(samples, expected_owners=None):
     for position, (old, new) in enumerate(zip(shared, shared[1:])):
         _, failures = deltas(old['stats'], new['stats'], (OWNER_STATS.SHARED,))
         shared_errors.extend(f'interval_{position}:' + failure for failure in failures)
-    result['shared_signature_executor'] = {'counter_deltas': shared_delta.get(OWNER_STATS.SHARED, {}),
-                                           'valid': not shared_errors, 'errors': shared_errors}
+    shared_summary = summarize_signature_executor(shared, shared_delta)
+    shared_errors.extend(error for error in shared_summary['errors'] if error not in shared_errors)
+    shared_summary['errors'] = shared_errors
+    shared_summary['valid'] = not shared_errors
+    result['shared_signature_executor'] = shared_summary
     errors.extend(shared_errors)
     if errors:
         # Preserve raw deltas as invalid evidence, but publish no usable stage means.
@@ -524,15 +612,21 @@ def summarize_lane_owners(samples, expected_owners, expected_lane_owners, expect
             summary['errors'].extend(identity['errors'])
             result['owners'][scope] = summary
         errors.extend(scope + ':' + value for value in summary['errors'])
-    shared_rows = [row['stats'].get(OWNER_STATS.SHARED, {}) for row in usable]
+    shared = [dict(row, stats={OWNER_STATS.SHARED: row['stats'][OWNER_STATS.SHARED]}
+                   if OWNER_STATS.SHARED in row['stats'] else {}) for row in usable]
+    shared_rows = [row['stats'].get(OWNER_STATS.SHARED, {}) for row in shared]
     shared_deltas, shared_errors = deltas({OWNER_STATS.SHARED: shared_rows[0]},
                                          {OWNER_STATS.SHARED: shared_rows[-1]}, (OWNER_STATS.SHARED,))
     for index, (old, new) in enumerate(zip(shared_rows, shared_rows[1:])):
         _, failures = deltas({OWNER_STATS.SHARED: old}, {OWNER_STATS.SHARED: new}, (OWNER_STATS.SHARED,))
         shared_errors.extend(f'interval_{index}:' + value for value in failures)
-    result['shared_signature_executor'] = {'counter_deltas': shared_deltas.get(OWNER_STATS.SHARED, {}), 'errors': shared_errors}
+    shared_summary = summarize_signature_executor(shared, shared_deltas)
+    shared_errors.extend(error for error in shared_summary['errors'] if error not in shared_errors)
     if not shared_rows[0] or any(not row for row in shared_rows):
-        result['shared_signature_executor']['errors'].append('shared_executor_capture_missing')
+        shared_errors.append('shared_executor_capture_missing')
+    shared_summary['errors'] = shared_errors
+    shared_summary['valid'] = not shared_errors
+    result['shared_signature_executor'] = shared_summary
     errors.extend('shared_executor:' + value for value in result['shared_signature_executor']['errors'])
     if errors:
         for summary in [result['coordinator']] + list(result['owners'].values()):
@@ -580,6 +674,9 @@ def summarize(samples, *, expected_owners=None, expected_lane_owners=0, expected
     completed = admissions.get('accepted', 0) + admissions.get('rejected', 0)
     result['snapshot_changed_fraction_of_completed_inputs'] = (
         diagnostic.get('not_ready_snapshot_changed', 0) / completed if completed else None)
+    if REQUIRED_KEYS[2] in _required_keys:
+        result['signature_executor'] = summarize_signature_executor(usable, changes)
+        result['errors'].extend(result['signature_executor']['errors'])
     result['reconciliation'] = summarize_reconciliation(usable[0]['stats'], usable[-1]['stats'], changes, errors)
     result['errors'].extend(result['reconciliation']['errors'])
     for name in OPTIONAL_SCHEMAS:
@@ -610,8 +707,9 @@ def summarize(samples, *, expected_owners=None, expected_lane_owners=0, expected
         'Calls include repeated checks before/after awaits or snapshot refresh, not unique messages or admitted transfers. '
         'Presented output slots can remain unvisited after early failure. Visits equal destination queries plus same-call reuse hits; '
         'shard queries also include source lookups. Ratios use this locality-call population only.')
-    if errors or result['reconciliation']['errors'] or any(result[name]['errors'] for name in OPTIONAL_SCHEMAS):
+    if result['errors']:
         # A reset/partial schema must never appear to be a valid attribution.
+        result['diagnostics_available'] = False
         result['stage_mean_ms'] = {}
         result['config_cache_hit_fraction'] = None
         result['snapshot_changed_fraction_of_not_ready'] = None

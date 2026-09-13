@@ -35,6 +35,18 @@ def rows(count=2, tick=1):
     return result
 
 
+def with_pool(value, tick, active=0, queued=0):
+    value[o.SHARED].update(
+        pool_calls=10*tick, pool_tickets=80*tick, pool_threads=8,
+        pool_threads_created=8, pool_contended_submits=tick,
+        pool_queue_wait_sum_s=.01*tick, pool_completion_wait_sum_s=.2*tick,
+        pool_worker_cpu_sum_s=.4*tick, pool_active=active,
+        pool_active_peak=4*tick, pool_queue=queued, pool_queue_peak=8*tick,
+        pool_queue_wait_max_s=.01*tick, pool_completion_wait_max_s=.02*tick,
+        pool_queue_capacity=128)
+    return value
+
+
 def summarize(values, **kwargs):
     return m.summarize([dict(stats=value, stats_started_unix_s=30*i, stats_finished_unix_s=30*i+.1)
                         for i,value in enumerate(values)], **kwargs)
@@ -67,6 +79,25 @@ class OwnerProfileTests(unittest.TestCase):
                 self.assertEqual(owner['identity']['lifetime_maxima_at_endpoints']['router_decode_max_s'],[9,7])
                 self.assertNotIn('applied_generation',owner['identity']['counter_deltas'])
             self.assertNotIn('aggregate_mempool',result.get('counter_deltas',{}))
+
+    def test_shared_executor_keeps_pool_gauges_configuration_and_legacy_compatibility(self):
+        result = summarize([with_pool(rows(2, 1), 1, 2, 8),
+                            with_pool(rows(2, 3), 3, 0, 0)], expected_owners=2)
+        shared = result['shared_signature_executor']
+        self.assertTrue(result['diagnostics_available'], result['errors'])
+        self.assertTrue(shared['valid'])
+        self.assertTrue(shared['pool_telemetry_available'])
+        self.assertEqual(shared['counter_deltas']['pool_tickets'], 160)
+        self.assertEqual(shared['gauges_at_endpoints']['pool_queue'], [8, 0])
+        self.assertEqual(shared['lifetime_maxima_at_endpoints']['pool_queue_peak'], [8, 24])
+        self.assertEqual(shared['configuration']['pool_queue_capacity'], 128)
+        for key in (m.SIGNATURE_EXECUTOR_POOL_CONFIGURATION | m.SIGNATURE_EXECUTOR_POOL_GAUGES |
+                    m.SIGNATURE_EXECUTOR_POOL_MAXIMA):
+            self.assertNotIn(key, shared['counter_deltas'])
+
+        legacy = summarize([rows(2, 1), rows(2, 2)], expected_owners=2)['shared_signature_executor']
+        self.assertTrue(legacy['valid'])
+        self.assertFalse(legacy['pool_telemetry_available'])
 
     def test_legacy_single_owner_schema_is_preserved(self):
         old,new=rows(1,1),rows(1,2)

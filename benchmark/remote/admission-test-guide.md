@@ -38,6 +38,7 @@ TON_NATIVE_RECONCILIATION_PROFILE=1
 TON_KEYRING_PREPARED_SIGNING=0
 TON_NATIVE_ADMISSION_SHARD_SHARING=0
 TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0
+TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0
 ```
 
 Stop and drain B's current test before maintenance. From the MyLocalTonDocker
@@ -118,6 +119,7 @@ immutable client image and record A's image/process identity with the sampler.
 | Maximum admission queries per client / coalescing | 64 / 20ms |
 | A admission/state executor threads | 8 |
 | A NTRN block-signature threads | 8 initially; independent 1/2/4/8 screen later |
+| A persistent block-signature executor | 0; independent same-image 0/1 screen |
 | A configuration cache / metadata projection / overlay reuse | 1 / 1 / 1 |
 | A reconciliation timing / prepared signing / sharing / refresh | 1 / 0 / 0 / 0 |
 | Candidate timeout / finalize reserve | Retain 8000ms / 1000ms |
@@ -209,6 +211,12 @@ includes cache hit rate, configuration/stage wall times, snapshot-change fractio
 of both not-ready and all completed inputs, and sampled per-thread CPU/runqueue
 cost. Thread samples exclude threads that vanished between polls; cgroup CPU
 counters and signature thread-creation counters help expose that missing work.
+For validators with persistent-executor telemetry, `summary.json` separates
+monotonic pool work/wait/CPU counters from current thread/active/queue endpoint
+gauges and process-lifetime peaks. Older recordings without those additive fields
+remain readable. The worker CPU sum can exceed wall time because it adds ticket
+CPU, but a zero is unavailable on platforms where `ThreadCpuTimer` lacks a thread
+CPU clock rather than evidence that the tickets used no CPU.
 Network counters cover the network namespace, not exclusively the validator.
 Signature statistics include rejected validation attempts, not only canonical blocks.
 
@@ -221,6 +229,12 @@ existing proof, completion, capacity or source-reuse rules.
 
 Choose only one next treatment:
 
+- If repeated signature thread creation is material, compare
+  `TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0` against `1` in a same-image
+  A/B/B/A. Keep `TON_NATIVE_VALIDATION_SIGNATURE_THREADS=8`, workload, topology,
+  resources and every other feature flag fixed, and recreate/settle genesis for
+  each arm. Fewer than 64 signed parents remain serial. Treat `pool_threads`,
+  `pool_active` and `pool_queue` as endpoint gauges, not accumulated work.
 - If signature thread creation and scheduler delay are material, compare A's
   `TON_NATIVE_VALIDATION_SIGNATURE_THREADS=1`, `2`, `4`, `8` with the cache flag
   fixed and the same B command. This changes NTRN block-signature fanout, not the

@@ -179,6 +179,19 @@ class LaneOwnerTests(unittest.TestCase):
             self.assertNotIn('prepare_active_bytes',owner['counter_deltas']['total.ext_msg_batch_diagnostics'])
         self.assertFalse(f.summarize([rows(),rows(2)],expected_owners=1)['diagnostics_available'])
 
+    def test_profile_reports_shared_pool_gauges_once(self):
+        before, after = rows(1), rows(3)
+        f.with_pool(before, 1, 2, 8)
+        f.with_pool(after, 3, 0, 0)
+        result = f.summarize([before, after], expected_owners=1, expected_lane_owners=4)
+        shared = result['shared_signature_executor']
+        self.assertTrue(result['diagnostics_available'], result['errors'])
+        self.assertTrue(shared['valid'])
+        self.assertEqual(shared['counter_deltas']['pool_calls'], 20)
+        self.assertEqual(shared['gauges_at_endpoints']['pool_active'], [2, 0])
+        self.assertEqual(shared['configuration']['pool_queue_capacity'], 128)
+        self.assertNotIn('pool_queue', shared['counter_deltas'])
+
     def test_intermediate_counter_reset_rejects_attribution(self):
         for key,field in [(o.LANE_HEADER,'routed_parents'), ('native_pool.owner.0.identity','admission_batches'),
                           ('native_pool.owner.3.total.ext_msg_batch_admission','accepted'),(o.SHARED,'verifies')]:

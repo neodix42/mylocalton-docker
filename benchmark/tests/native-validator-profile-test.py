@@ -25,6 +25,18 @@ class ProfileTests(unittest.TestCase):
             f'residence_max_s:{n} active_batches:{10-n} peak_active_batches:10',
             f'{m.KEYS[2]} calls:{n} threads_created:{n*8} residence_sum_s:{n*0.001}']))
 
+    def pool_stats(self, n, active, queued):
+        stats = self.stats(n)
+        stats[m.KEYS[2]].update(
+            pool_calls=10*n, pool_tickets=80*n, pool_threads=8,
+            pool_threads_created=8, pool_contended_submits=n,
+            pool_queue_wait_sum_s=0.01*n, pool_completion_wait_sum_s=0.2*n,
+            pool_worker_cpu_sum_s=0.4*n, pool_active=active,
+            pool_active_peak=4*n, pool_queue=queued, pool_queue_peak=8*n,
+            pool_queue_wait_max_s=0.01*n, pool_completion_wait_max_s=0.02*n,
+            pool_queue_capacity=128)
+        return stats
+
     def reconciliation_stats(self, n, profiling=True):
         stats = self.stats(n)
         counters = dict.fromkeys(m.RECONCILIATION_DIAGNOSTIC_COUNTERS, 0)
@@ -92,6 +104,61 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(summary['stage_mean_ms']['residence'],250)
         self.assertEqual(summary['config_cache_hit_fraction'],0.9)
         self.assertEqual(summary['snapshot_changed_fraction_of_not_ready'],0.8)
+
+    def test_persistent_signature_pool_counters_gauges_and_legacy_schema(self):
+        before, after = self.pool_stats(1, 2, 8), self.pool_stats(2, 0, 0)
+        summary = self.summary_between(before, after)
+        self.assertFalse(summary['errors'])
+        executor = summary['signature_executor']
+        self.assertTrue(executor['valid'])
+        self.assertTrue(executor['pool_telemetry_available'])
+        self.assertEqual(executor['counter_deltas']['pool_calls'], 10)
+        self.assertEqual(executor['counter_deltas']['pool_tickets'], 80)
+        self.assertEqual(executor['gauges_at_endpoints']['pool_queue'], [8, 0])
+        self.assertEqual(executor['gauges_at_endpoints']['pool_active'], [2, 0])
+        self.assertEqual(executor['lifetime_maxima_at_endpoints']['pool_queue_peak'], [8, 16])
+        self.assertEqual(executor['lifetime_maxima_at_endpoints']['pool_completion_wait_max_s'], [0.02, 0.04])
+        self.assertEqual(executor['configuration']['pool_queue_capacity'], 128)
+        for key in (m.SIGNATURE_EXECUTOR_POOL_CONFIGURATION | m.SIGNATURE_EXECUTOR_POOL_GAUGES |
+                    m.SIGNATURE_EXECUTOR_POOL_MAXIMA):
+            self.assertNotIn(key, executor['counter_deltas'])
+
+        legacy = self.summary_between(self.stats(1), self.stats(2))['signature_executor']
+        self.assertTrue(legacy['valid'])
+        self.assertFalse(legacy['pool_telemetry_available'])
+        self.assertEqual(legacy['gauges_at_endpoints'], {})
+
+    def test_relaxed_pool_snapshot_does_not_require_cross_field_consistency(self):
+        # The validator emits these fields with independent relaxed loads. A
+        # transition can therefore expose a new gauge beside an older peak or
+        # thread count without corrupting either field's reporting semantics.
+        before, after = self.pool_stats(1, 9, 9), self.pool_stats(2, 0, 0)
+        summary = self.summary_between(before, after)
+        self.assertFalse(summary['errors'])
+        self.assertTrue(summary['signature_executor']['valid'])
+        self.assertEqual(summary['signature_executor']['gauges_at_endpoints']['pool_active'], [9, 0])
+
+    def test_partial_or_reset_persistent_signature_pool_schema_is_invalid(self):
+        before, after = self.pool_stats(1, 0, 0), self.pool_stats(2, 0, 0)
+        del before[m.KEYS[2]]['pool_tickets']
+        summary = self.summary_between(before, after)
+        self.assertIn('missing_signature_executor_pool_field:pool_tickets:sample_0', summary['errors'])
+        self.assertFalse(summary['signature_executor']['valid'])
+        self.assertFalse(summary['diagnostics_available'])
+        self.assertEqual(summary['stage_mean_ms'], {})
+        self.assertIsNone(summary['config_cache_hit_fraction'])
+
+        before, after = self.pool_stats(2, 0, 0), self.pool_stats(1, 0, 0)
+        summary = self.summary_between(before, after)
+        self.assertTrue(any(error.startswith('signature_executor_pool_counter_reset:')
+                            for error in summary['errors']))
+        self.assertFalse(summary['diagnostics_available'])
+
+    def test_persistent_signature_pool_environment_passthrough_is_default_off(self):
+        flag = 'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL'
+        compose = path.resolve().parents[2] / 'docker-compose.yaml'
+        self.assertIn(flag, m.ENV_KEYS)
+        self.assertEqual(compose.read_text().count(f'- {flag}=${{{flag}:-0}}'), 1)
 
     def test_reset_or_missing_schema_cannot_produce_attribution(self):
         a,b=self.stats(3),self.stats(1)

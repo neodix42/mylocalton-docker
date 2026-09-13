@@ -30,7 +30,8 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
         for value in ('0', '1'):
             expected = [f'TON_KEYRING_PREPARED_SIGNING={value}',
                         f'TON_OVERLAY_LOCAL_SIGNATURE_REUSE={value}',
-                        f'TON_NATIVE_CANDIDATE_METADATA_PROJECTION={value}']
+                        f'TON_NATIVE_CANDIDATE_METADATA_PROJECTION={value}',
+                        f'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL={value}']
             with self.subTest(value=value):
                 self.assertEqual(captured_environment(expected), expected)
 
