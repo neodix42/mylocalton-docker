@@ -31,7 +31,10 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
             expected = [f'TON_KEYRING_PREPARED_SIGNING={value}',
                         f'TON_OVERLAY_LOCAL_SIGNATURE_REUSE={value}',
                         f'TON_NATIVE_CANDIDATE_METADATA_PROJECTION={value}',
-                        f'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL={value}']
+                        f'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL={value}',
+                        f'TON_NATIVE_EAGER_COLLATOR_CALLBACK={value}',
+                        f'TON_NATIVE_CELLDB_DURABILITY_PROFILE={value}',
+                        f'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE={value}']
             with self.subTest(value=value):
                 self.assertEqual(captured_environment(expected), expected)
 

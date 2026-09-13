@@ -160,6 +160,17 @@ class ProfileTests(unittest.TestCase):
         self.assertIn(flag, m.ENV_KEYS)
         self.assertEqual(compose.read_text().count(f'- {flag}=${{{flag}:-0}}'), 1)
 
+    def test_callback_and_durability_probe_environment_passthrough_is_default_off(self):
+        compose = path.resolve().parents[2] / 'docker-compose.yaml'
+        physical_env = path.resolve().parents[2] / '.env.physical'
+        for flag in ('TON_NATIVE_EAGER_COLLATOR_CALLBACK',
+                     'TON_NATIVE_CELLDB_DURABILITY_PROFILE',
+                     'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE'):
+            with self.subTest(flag=flag):
+                self.assertIn(flag, m.ENV_KEYS)
+                self.assertEqual(compose.read_text().count(f'- {flag}=${{{flag}:-0}}'), 1)
+                self.assertEqual(physical_env.read_text().splitlines().count(f'{flag}=0'), 1)
+
     def test_reset_or_missing_schema_cannot_produce_attribution(self):
         a,b=self.stats(3),self.stats(1)
         summary=m.summarize([{'stats':a,'stats_started_unix_s':1},
