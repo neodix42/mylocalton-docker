@@ -1315,7 +1315,7 @@ if ! IFS=$'\t' read -r ext_messages_broadcast_requested \
 fi
 ext_messages_broadcast_settle_seconds=5
 
-for command_name in docker jq awk git getconf sed sort cut sha256sum timeout; do
+for command_name in docker jq awk git getconf sed sort cut sha256sum timeout python3; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "required command is not installed: $command_name" >&2
     exit 2
@@ -1527,6 +1527,8 @@ cgroup_stats_file=$result_dir/cgroup-resources.jsonl
 thread_stats_file=$result_dir/thread-resources.jsonl
 device_stats_file=$result_dir/device-resources.jsonl
 generator_log_file=$result_dir/native-load-generator.log
+generator_records_file=$result_dir/native-load-generator-records.jsonl
+generator_records_report_file=$result_dir/native-load-generator-records.json
 generator_summary_file=$result_dir/generator-summary.json
 resource_summary_file=$result_dir/resource-summary.json
 session_stats_summary_file=$result_dir/session-stats-summary.json
@@ -2821,6 +2823,11 @@ finished_epoch=$(date +%s)
 stop_collectors
 wait_actor_stats_collector
 docker logs "$container_name" >"$generator_log_file" 2>&1 || true
+if ! python3 "$script_dir/benchmark/extract-native-load-records.py" \
+  "$generator_log_file" "$generator_records_file" "$generator_records_report_file"; then
+  echo "native load record extraction did not produce exactly one valid final record" >&2
+  benchmark_exit_code=125
+fi
 capture_validator_actor_stats_record \
   "$validator_actor_stats_final_file" "$validator_actor_stats_final_metadata_file" post_drain 0
 jq -L "$benchmark_jq_dir" -s \
@@ -3026,14 +3033,14 @@ generator_measure_start=$(jq -Rs \
     if ($final.measure_start_unix_ms // null) != null
     then ($final.measure_start_unix_ms / 1000)
     else ($final.measure_start_unix_s // null)
-    end)' "$generator_log_file")
+    end)' "$generator_records_file")
 generator_measure_end=$(jq -Rs \
   '[split("\n")[] | fromjson? | select(.schema == "native-load-v2" and .final == true)] |
    (last as $final |
     if ($final.measure_end_unix_ms // null) != null
     then ($final.measure_end_unix_ms / 1000)
     else ($final.measure_end_unix_s // null)
-    end)' "$generator_log_file")
+    end)' "$generator_records_file")
 
 if ! jq -en --argjson start "$generator_measure_start" --argjson end "$generator_measure_end" \
   '$start != null and $end != null and $start < $end' >/dev/null; then
@@ -3495,7 +3502,8 @@ jq -n \
 jq -L "$benchmark_jq_dir" -Rs \
   --argjson expected_run_batching "$native_run_batching_expected" \
   --argjson expected_signed_runs "$native_signed_runs_expected" \
-  --argjson expected_run_target "$native_signed_run_target_expected" '
+  --argjson expected_run_target "$native_signed_run_target_expected" \
+  --slurpfile record_extraction "$generator_records_report_file" '
   include "native-benchmark-lib";
   [split("\n")[] | fromjson? | select(.schema == "native-load-v2")] as $records |
   ($records | map(select(.final == true)) | last) as $final |
@@ -3506,9 +3514,26 @@ jq -L "$benchmark_jq_dir" -Rs \
   with_native_run_batching_acceptance(
     capacity_acceptance($final; $expected_signed_runs; $expected_run_target);
     $run_batching
-  ) as $acceptance |
+  ) as $base_acceptance |
+  (if $record_extraction[0].valid == true then $base_acceptance
+   else
+     $base_acceptance |
+     .chain_correctness_valid = false |
+     .correctness_invalid_reasons =
+       (((.correctness_invalid_reasons // []) + ["generator_record_extraction_invalid"]) | unique) |
+     .run_complete = false |
+     .run_incomplete_reasons =
+       (((.run_incomplete_reasons // []) + ["generator_record_extraction_invalid"]) | unique) |
+     .ingress_capacity_valid = false |
+     .ingress_capacity_invalid_reasons =
+       (((.ingress_capacity_invalid_reasons // []) + ["generator_record_extraction_invalid"]) | unique) |
+     .chain_capacity_valid = false |
+     .chain_capacity_invalid_reasons =
+       (((.chain_capacity_invalid_reasons // []) + ["generator_record_extraction_invalid"]) | unique)
+   end) as $acceptance |
   canonical_lane_balance_telemetry($final) as $lane_telemetry |
   {
+    record_extraction:$record_extraction[0],
     records: ($records | length),
     max_offered_tps: ($records | map(.offered_tps // 0) | max),
     max_sign_tps: ($records | map(.sign_tps // 0) | max),
@@ -3550,7 +3575,7 @@ jq -L "$benchmark_jq_dir" -Rs \
       if $final == null then null else ($acceptance.chain_capacity_valid // false) end
     ),
     chain_correctness_valid:(
-      if $final == null then null else ($final.chain_correctness_valid // false) end
+      if $final == null then null else ($acceptance.chain_correctness_valid // false) end
     ),
     canonical_lane_balance:$lane_telemetry.canonical_lane_balance,
     canonical_lanes:$lane_telemetry.canonical_lanes,
@@ -3667,6 +3692,7 @@ jq -L "$benchmark_jq_dir" -Rs \
       if $final == null then null else $final.benchmark_result_valid end
     ),
     valid_canonical_run: (
+      ($record_extraction[0].valid == true) and
       $final != null and
       ($final.benchmark_result_valid == true) and
       ($final.canonical_result_valid == true) and
@@ -3701,7 +3727,7 @@ jq -L "$benchmark_jq_dir" -Rs \
     } end),
     final: $final
   }
-' "$generator_log_file" >"$generator_summary_file"
+' "$generator_records_file" >"$generator_summary_file"
 
 if [[ $strict_image_reuse == 1 && $strict_image_reuse_valid != true ]]; then
   jq '.chain_capacity_valid = false |

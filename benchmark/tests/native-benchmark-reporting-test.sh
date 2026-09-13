@@ -13,6 +13,7 @@ bash "$script_dir/native-run-batching-config-test.sh"
 bash "$script_dir/native-initial-cwnd-config-test.sh"
 python3 "$script_dir/native-connections-sweep-test.py"
 python3 "$script_dir/celldb-durability-stats-test.py"
+python3 "$script_dir/native-load-record-extractor-test.py"
 bash "$script_dir/native-eight-lane-reporting-test.sh"
 
 command -v jq >/dev/null 2>&1 || {
@@ -29,6 +30,17 @@ command -v jq >/dev/null 2>&1 || {
 "$wrapper" --self-test-ext-messages-broadcast
 "$wrapper" --self-test-native-payment-lanes-manifest
 "$wrapper" --self-test-native-payment-lanes-resolved-enablement
+
+for generator_record_artifact in \
+  benchmark/extract-native-load-records.py \
+  native-load-generator.log \
+  native-load-generator-records.jsonl \
+  native-load-generator-records.json; do
+  grep -Fq "$generator_record_artifact" "$wrapper" || {
+    echo "benchmark wrapper does not preserve and validate generator records: $generator_record_artifact" >&2
+    exit 1
+  }
+done
 
 "$wrapper" --self-test-strict-genesis-reuse
 "$wrapper" --self-test-compose-project

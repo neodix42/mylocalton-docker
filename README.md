@@ -411,7 +411,13 @@ configuration while preserving named and bind-mounted volumes. Set
 wrapper builds the generator before opening the sample window, starts Session
 Stats and a fresh generator, and writes its final bundle under
 `benchmark-results/<UTC>/`. In addition to generator, Session Stats, and
-resource summaries, the bundle contains `validator-session-stats.jsonl` and
+resource summaries, the bundle preserves merged Docker output in
+`native-load-generator.log`, writes fully parsed `native-load-v2` records to
+`native-load-generator-records.jsonl`, and records hashes and any narrowly
+removed ANSI logger interleaving in `native-load-generator-records.json`.
+Measured-window and final summaries read the validated records artifact; a
+partial or malformed generator candidate keeps the run invalid. The bundle
+also contains `validator-session-stats.jsonl` and
 `validator-pipeline-summary.json` with all-run and exact measured-window
 actual/estimated block sizes plus per-stage collation/validation timing
 distributions. `validator-scheduling-summary.json` derives cadence and
