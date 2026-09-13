@@ -37,6 +37,14 @@ class ProfileTests(unittest.TestCase):
             pool_queue_capacity=128)
         return stats
 
+    def cache_fast_stats(self, n, enabled=1):
+        stats = self.pool_stats(n, 0, 0)
+        stats[m.KEYS[2]].update(cache_fast_enabled=enabled, cache_fast_checks=10*n,
+            cache_fast_hits=8*n if enabled else 0, cache_fast_misses=2*n if enabled else 0,
+            cache_fast_scanned_items=1000*n if enabled else 0,
+            cache_fast_cached_items=800*n if enabled else 0)
+        return stats
+
     def reconciliation_stats(self, n, profiling=True):
         stats = self.stats(n)
         counters = dict.fromkeys(m.RECONCILIATION_DIAGNOSTIC_COUNTERS, 0)
@@ -92,6 +100,14 @@ class ProfileTests(unittest.TestCase):
             locality_destination_queries=queries, locality_dedup_hits=hits, locality_shard_queries=queries+2*n)
         return stats
 
+    def validated_state_handoff_stats(self, n, enabled=True, entries=1):
+        stats = self.stats(n)
+        stats[m.VALIDATED_STATE_HANDOFF_KEY] = dict(enabled=int(enabled), capacity=32,
+            hits=8*n if enabled else 0, misses=2*n if enabled else 0,
+            inserts=12*n if enabled else 0, evictions=n if enabled else 0,
+            expirations=n if enabled else 0, entries=entries)
+        return stats
+
     def test_deltas_have_correct_units_and_exclude_gauges(self):
         first, last = self.stats(1), self.stats(3)
         d, errors = m.deltas(first, last)
@@ -138,6 +154,36 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue(summary['signature_executor']['valid'])
         self.assertEqual(summary['signature_executor']['gauges_at_endpoints']['pool_active'], [9, 0])
 
+    def test_signature_cache_fastpath_schema_and_accounting(self):
+        summary = self.summary_between(self.cache_fast_stats(1), self.cache_fast_stats(2))
+        self.assertFalse(summary['errors'])
+        executor = summary['signature_executor']
+        self.assertTrue(executor['cache_fastpath_available'])
+        self.assertTrue(executor['cache_fastpath_valid'])
+        self.assertEqual(executor['cache_fastpath_configuration'], {'cache_fast_enabled': 1})
+        self.assertEqual(executor['cache_fastpath_counter_deltas']['cache_fast_checks'], 10)
+        self.assertEqual(executor['cache_fastpath_counter_deltas']['cache_fast_hits'], 8)
+
+        bad = self.cache_fast_stats(2)
+        bad[m.KEYS[2]]['cache_fast_hits'] += 1
+        invalid = self.summary_between(self.cache_fast_stats(1), bad)
+        self.assertFalse(invalid['errors'])
+        self.assertTrue(invalid['signature_executor']['cache_fastpath_valid'])
+        self.assertFalse(invalid['signature_executor']['cache_fastpath_accounting_diagnostics']
+                         ['checks_equal_completed_outcomes'])
+
+    def test_validated_state_handoff_schema_keeps_gauge_out_of_deltas(self):
+        before = self.validated_state_handoff_stats(1, entries=9)
+        after = self.validated_state_handoff_stats(2, entries=1)
+        summary = self.summary_between(before, after)
+        self.assertFalse(summary['errors'])
+        handoff = summary['validated_state_handoff']
+        self.assertTrue(handoff['valid'])
+        self.assertEqual(handoff['configuration'], {'enabled': 1, 'capacity': 32})
+        self.assertEqual(handoff['counter_deltas']['hits'], 8)
+        self.assertEqual(handoff['gauges_at_endpoints']['entries'], [9, 1])
+        self.assertEqual(handoff['hit_fraction'], 0.8)
+
     def test_partial_or_reset_persistent_signature_pool_schema_is_invalid(self):
         before, after = self.pool_stats(1, 0, 0), self.pool_stats(2, 0, 0)
         del before[m.KEYS[2]]['pool_tickets']
@@ -165,11 +211,24 @@ class ProfileTests(unittest.TestCase):
         physical_env = path.resolve().parents[2] / '.env.physical'
         for flag in ('TON_NATIVE_EAGER_COLLATOR_CALLBACK',
                      'TON_NATIVE_CELLDB_DURABILITY_PROFILE',
-                     'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE'):
+                     'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE',
+                     'TON_NATIVE_VALIDATED_STATE_HANDOFF'):
             with self.subTest(flag=flag):
                 self.assertIn(flag, m.ENV_KEYS)
                 self.assertEqual(compose.read_text().count(f'- {flag}=${{{flag}:-0}}'), 1)
                 self.assertEqual(physical_env.read_text().splitlines().count(f'{flag}=0'), 1)
+
+    def test_signature_cache_fastpath_and_mailbox_quantum_environment(self):
+        compose = path.resolve().parents[2] / 'docker-compose.yaml'
+        physical_env = path.resolve().parents[2] / '.env.physical'
+        cache_flag = 'TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH'
+        quantum = 'TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM'
+        self.assertIn(cache_flag, m.ENV_KEYS)
+        self.assertIn(quantum, m.ENV_KEYS)
+        self.assertEqual(compose.read_text().count(f'- {cache_flag}=${{{cache_flag}:-1}}'), 1)
+        self.assertEqual(compose.read_text().count(f'- {quantum}=${{{quantum}:-0}}'), 1)
+        self.assertEqual(physical_env.read_text().splitlines().count(f'{cache_flag}=1'), 1)
+        self.assertEqual(physical_env.read_text().splitlines().count(f'{quantum}=0'), 1)
 
     def test_reset_or_missing_schema_cannot_produce_attribution(self):
         a,b=self.stats(3),self.stats(1)

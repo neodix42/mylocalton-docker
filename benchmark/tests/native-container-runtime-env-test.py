@@ -32,9 +32,11 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
                         f'TON_OVERLAY_LOCAL_SIGNATURE_REUSE={value}',
                         f'TON_NATIVE_CANDIDATE_METADATA_PROJECTION={value}',
                         f'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL={value}',
+                        f'TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH={value}',
                         f'TON_NATIVE_EAGER_COLLATOR_CALLBACK={value}',
                         f'TON_NATIVE_CELLDB_DURABILITY_PROFILE={value}',
-                        f'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE={value}']
+                        f'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE={value}',
+                        f'TON_NATIVE_VALIDATED_STATE_HANDOFF={value}']
             with self.subTest(value=value):
                 self.assertEqual(captured_environment(expected), expected)
 
@@ -53,6 +55,12 @@ class ContainerRuntimeEnvironmentTest(unittest.TestCase):
                         f'TON_NATIVE_ADMISSION_LOCALITY_FASTPATH={value}']
             with self.subTest(value=value):
                 self.assertEqual(captured_environment(expected), expected)
+
+    def test_mailbox_quantum_is_preserved(self):
+        for value in ('0', '64'):
+            wanted = f'TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM={value}'
+            with self.subTest(value=value):
+                self.assertEqual(captured_environment([wanted]), [wanted])
 
     def test_dispatch_and_actor_cpu_flags_are_exactly_captured(self):
         for value in ('0','1'):

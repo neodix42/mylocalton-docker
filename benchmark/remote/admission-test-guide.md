@@ -39,6 +39,9 @@ TON_KEYRING_PREPARED_SIGNING=0
 TON_NATIVE_ADMISSION_SHARD_SHARING=0
 TON_NATIVE_ADMISSION_SNAPSHOT_REFRESH=0
 TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0
+TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=1
+TON_NATIVE_VALIDATED_STATE_HANDOFF=0
+TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM=0
 ```
 
 Stop and drain B's current test before maintenance. From the MyLocalTonDocker
@@ -120,10 +123,12 @@ immutable client image and record A's image/process identity with the sampler.
 | A admission/state executor threads | 8 |
 | A NTRN block-signature threads | 8 initially; independent 1/2/4/8 screen later |
 | A persistent block-signature executor | 0; independent same-image 0/1 screen |
+| A all-cached signature shortcut | 1; use 0 only as its matched control |
 | A configuration cache / metadata projection / overlay reuse | 1 / 1 / 1 |
 | A reconciliation timing / prepared signing / sharing / refresh | 1 / 0 / 0 / 0 |
 | Candidate timeout / finalize reserve | Retain 8000ms / 1000ms |
 | Ingress checkpoint retention | 0 |
+| Validated-state handoff / pool mailbox quantum | 0 / 0; independent experiments |
 
 Keep 24,576 sources and the exported lane depth fixed. These are controlled
 starting settings, not a measured optimum. Successful drain/proof checks remain
@@ -229,6 +234,20 @@ existing proof, completion, capacity or source-reuse rules.
 
 Choose only one next treatment:
 
+- Compare `TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH=0` against `1` in a
+  same-image A/B/B/A first. Admission and validation use the same exact positive
+  signature cache, so the treatment avoids executor launch only when every signed
+  parent is already cached. Require `cache_fast_hits` to cover the validation
+  population and keep the persistent pool off in both arms.
+- Compare `TON_NATIVE_VALIDATED_STATE_HANDOFF=0` against `1` separately. A hit
+  reuses the exact state root produced by successful validation; it deliberately
+  supplies an empty CellDb hint so database presence is rediscovered safely. A
+  miss retains full state reconstruction. Require nonzero handoff hits, no cache
+  evictions under the test cadence, and the ordinary state/proof and durability
+  gates.
+- If actor samples still show long ExtMessagePool turns, compare
+  `TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM=0` against `64`. This bounds queued
+  messages processed per actor turn; it does not interrupt one long handler.
 - If repeated signature thread creation is material, compare
   `TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL=0` against `1` in a same-image
   A/B/B/A. Keep `TON_NATIVE_VALIDATION_SIGNATURE_THREADS=8`, workload, topology,

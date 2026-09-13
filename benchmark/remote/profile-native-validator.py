@@ -25,7 +25,9 @@ RECONCILIATION_DIAGNOSTIC_KEY = 'total.ext_msg_native_reconciliation_diagnostics
 PUBLICATION_KEY = 'total.ext_msg_native_publication'
 BATCH_DISPATCH_KEY = 'total.ext_msg_batch_dispatch'
 RECONCILIATION_COALESCING_KEY = 'total.ext_msg_native_reconciliation_coalescing'
-KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY, BATCH_DISPATCH_KEY, RECONCILIATION_COALESCING_KEY)
+VALIDATED_STATE_HANDOFF_KEY = 'total.native_validated_state_handoff'
+KEYS = REQUIRED_KEYS + (RECONCILIATION_KEY, RECONCILIATION_DIAGNOSTIC_KEY, PUBLICATION_KEY, BATCH_DISPATCH_KEY,
+                        RECONCILIATION_COALESCING_KEY, VALIDATED_STATE_HANDOFF_KEY)
 PUBLICATION_COUNTERS = {
     'groups', 'ingress_wakes', 'alarm_wakes', 'target_releases', 'timeout_releases',
     'bypass_releases', 'cancelled_groups', 'wait_samples', 'wait_sum_s',
@@ -75,6 +77,7 @@ RECONCILIATION_COALESCING_COUNTERS = set('notifications active_notifications coa
     'registered_notifications folded_notifications empty_registered_passes pass_sources superseded_passes '
     'generation_lag_sum'.split()) | {stage + suffix for stage in RECONCILIATION_COALESCING_STAGES
                                   for suffix in ('_samples', '_sum_s')}
+VALIDATED_STATE_HANDOFF_COUNTERS = {'hits', 'misses', 'inserts', 'evictions', 'expirations'}
 SIGNATURE_DISPATCH_STAGES = tuple('signature_dispatch_' + stage for stage in ('queue', 'worker_wall', 'worker_cpu', 'resume'))
 SIGNATURE_DISPATCH_COUNTERS = {'signature_dispatch_' + key for key in (
     'rounds tasks items run_items logical_transfers reply_tasks reply_items failed_tasks timeout_tasks '
@@ -100,6 +103,12 @@ SIGNATURE_EXECUTOR_POOL_FIELDS = (set(SIGNATURE_EXECUTOR_POOL_COUNTERS) |
                                   set(SIGNATURE_EXECUTOR_POOL_CONFIGURATION) |
                                   set(SIGNATURE_EXECUTOR_POOL_GAUGES) |
                                   set(SIGNATURE_EXECUTOR_POOL_MAXIMA))
+SIGNATURE_CACHE_FAST_CONFIGURATION = {'cache_fast_enabled': 'flag'}
+SIGNATURE_CACHE_FAST_COUNTERS = {
+    'cache_fast_checks', 'cache_fast_hits', 'cache_fast_misses',
+    'cache_fast_scanned_items', 'cache_fast_cached_items',
+}
+SIGNATURE_CACHE_FAST_FIELDS = set(SIGNATURE_CACHE_FAST_CONFIGURATION) | SIGNATURE_CACHE_FAST_COUNTERS
 OPTIONAL_SCHEMAS = {
     'signature_dispatch': {
         'group': REQUIRED_KEYS[1],
@@ -132,6 +141,12 @@ OPTIONAL_SCHEMAS = {
         'group': REQUIRED_KEYS[1], 'configuration': {'locality_fastpath_enabled': 'flag'},
         'counters': LOCALITY_COUNTERS, 'stages': (),
     },
+    'validated_state_handoff': {
+        'group': VALIDATED_STATE_HANDOFF_KEY, 'whole_group': True,
+        'configuration': {'enabled': 'flag', 'capacity': 'positive_integer'},
+        'counters': VALIDATED_STATE_HANDOFF_COUNTERS, 'stages': (),
+        'gauges': {'entries': 'gauge'},
+    },
 }
 ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_PERSISTENT_PRODUCER', 'TON_NATIVE_ADMISSION_PREPARE',
@@ -145,8 +160,10 @@ ENV_KEYS = {'TON_NATIVE_ADMISSION_CONFIG_CACHE', 'TON_NATIVE_EXECUTOR_THREADS',
             'TON_NATIVE_CANDIDATE_METADATA_PROJECTION',
             'TON_NATIVE_STAGED_TRIE_DIRECT', 'TON_NATIVE_PUBLICATION_GROUPING',
             'TON_NATIVE_VALIDATION_SIGNATURE_THREADS', 'TON_NATIVE_VALIDATION_SIGNATURE_PERSISTENT_POOL',
+            'TON_NATIVE_VALIDATION_SIGNATURE_CACHE_FASTPATH',
             'TON_NATIVE_EAGER_COLLATOR_CALLBACK', 'TON_NATIVE_CELLDB_DURABILITY_PROFILE',
-            'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE',
+            'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE', 'TON_NATIVE_VALIDATED_STATE_HANDOFF',
+            'TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM',
             'TON_NATIVE_COLLATOR_QUEUE_LIMIT', 'TON_SIMPLEX_MAX_TPS', 'SIMPLEX_TARGET_RATE_MS',
             'TON_SIMPLEX_MAX_TPS_CANDIDATE_TIMEOUT_MS', 'TON_SIMPLEX_MAX_TPS_FINALIZE_RESERVE_MS',
             'TON_NATIVE_CHECKPOINT_RETAIN_INGRESS', 'NATIVE_PAYMENT_LANE_DEPTH',
@@ -221,6 +238,8 @@ def deltas(before, after, required_keys=REQUIRED_KEYS):
                 continue
             if group == RECONCILIATION_COALESCING_KEY and key not in RECONCILIATION_COALESCING_COUNTERS:
                 continue
+            if group == VALIDATED_STATE_HANDOFF_KEY and key not in VALIDATED_STATE_HANDOFF_COUNTERS:
+                continue
             if group == REQUIRED_KEYS[1] and key.startswith('signature_dispatch_') and key not in SIGNATURE_DISPATCH_COUNTERS:
                 continue
             new = after[group].get(key)
@@ -244,6 +263,7 @@ def summarize_signature_executor(samples, changes):
     """Keep reusable-pool counters separate from current gauges and lifetime maxima."""
     rows = [sample['stats'].get(REQUIRED_KEYS[2], {}) for sample in samples]
     present = [bool(SIGNATURE_EXECUTOR_POOL_FIELDS & set(row)) for row in rows]
+    cache_fast_present = [bool(SIGNATURE_CACHE_FAST_FIELDS & set(row)) for row in rows]
     result = {
         'available': all(REQUIRED_KEYS[2] in sample['stats'] for sample in samples),
         'valid': False,
@@ -252,32 +272,50 @@ def summarize_signature_executor(samples, changes):
         'configuration': {},
         'gauges_at_endpoints': {},
         'lifetime_maxima_at_endpoints': {},
+        'cache_fastpath_available': any(cache_fast_present),
+        'cache_fastpath_valid': False,
+        'cache_fastpath_configuration': {},
+        'cache_fastpath_counter_deltas': {},
+        'cache_fastpath_accounting_diagnostics': {},
         'errors': [],
         'semantics': ('Pool calls/tickets/created threads and wait/CPU sums are monotonic process-lifetime counters. '
                       'Pool threads, active workers and queued tickets are current endpoint gauges. Peaks are '
                       'process-lifetime maxima; queue capacity is fixed configuration. Worker CPU is summed '
                       'across tickets and can exceed wall time. A zero worker-CPU sum is unavailable on platforms '
-                      'where ThreadCpuTimer has no thread CPU clock, not evidence of zero CPU cost.'),
+                      'where ThreadCpuTimer has no thread CPU clock, not evidence of zero CPU cost. Cache fast-path '
+                      'checks classify whole helper calls; cached items count only complete all-hit calls.'),
     }
     errors = result['errors']
     if not result['available']:
         errors.append('signature_executor_capture_missing')
         return result
-    if not any(present):
+    if not any(present) and not any(cache_fast_present):
         # Recordings from validators predating the persistent-pool telemetry remain valid.
         result['valid'] = True
         return result
-    for index, (row, exists) in enumerate(zip(rows, present)):
-        if not exists:
-            errors.append(f'missing_signature_executor_pool_schema:sample_{index}')
-            continue
-        for key, kind in (SIGNATURE_EXECUTOR_POOL_COUNTERS | SIGNATURE_EXECUTOR_POOL_CONFIGURATION |
-                          SIGNATURE_EXECUTOR_POOL_GAUGES |
-                          SIGNATURE_EXECUTOR_POOL_MAXIMA).items():
-            if key not in row:
-                errors.append(f'missing_signature_executor_pool_field:{key}:sample_{index}')
-            elif not valid_schema_value(row[key], kind):
-                errors.append(f'invalid_signature_executor_pool_field:{key}:sample_{index}')
+    if any(present):
+        for index, (row, exists) in enumerate(zip(rows, present)):
+            if not exists:
+                errors.append(f'missing_signature_executor_pool_schema:sample_{index}')
+                continue
+            for key, kind in (SIGNATURE_EXECUTOR_POOL_COUNTERS | SIGNATURE_EXECUTOR_POOL_CONFIGURATION |
+                              SIGNATURE_EXECUTOR_POOL_GAUGES |
+                              SIGNATURE_EXECUTOR_POOL_MAXIMA).items():
+                if key not in row:
+                    errors.append(f'missing_signature_executor_pool_field:{key}:sample_{index}')
+                elif not valid_schema_value(row[key], kind):
+                    errors.append(f'invalid_signature_executor_pool_field:{key}:sample_{index}')
+    if any(cache_fast_present):
+        for index, (row, exists) in enumerate(zip(rows, cache_fast_present)):
+            if not exists:
+                errors.append(f'missing_signature_cache_fast_schema:sample_{index}')
+                continue
+            for key in sorted(SIGNATURE_CACHE_FAST_FIELDS):
+                kind = SIGNATURE_CACHE_FAST_CONFIGURATION.get(key, 'counter')
+                if key not in row:
+                    errors.append(f'missing_signature_cache_fast_field:{key}:sample_{index}')
+                elif not valid_schema_value(row[key], kind):
+                    errors.append(f'invalid_signature_cache_fast_field:{key}:sample_{index}')
     for index, (old, new) in enumerate(zip(rows, rows[1:]), 1):
         for key in SIGNATURE_EXECUTOR_POOL_CONFIGURATION:
             if key in old and key in new and new[key] != old[key]:
@@ -288,6 +326,12 @@ def summarize_signature_executor(samples, changes):
         for key in SIGNATURE_EXECUTOR_POOL_MAXIMA:
             if key in old and key in new and new[key] < old[key]:
                 errors.append(f'signature_executor_pool_maximum_reset:{key}:sample_{index}')
+        for key in SIGNATURE_CACHE_FAST_CONFIGURATION:
+            if key in old and key in new and new[key] != old[key]:
+                errors.append(f'signature_cache_fast_configuration_changed:{key}:sample_{index}')
+        for key in SIGNATURE_CACHE_FAST_COUNTERS:
+            if key in old and key in new and new[key] < old[key]:
+                errors.append(f'signature_cache_fast_counter_reset:{key}:sample_{index}')
     first, last = rows[0], rows[-1]
     result['configuration'] = {
         key: first[key] for key in SIGNATURE_EXECUTOR_POOL_CONFIGURATION if key in first
@@ -300,6 +344,29 @@ def summarize_signature_executor(samples, changes):
         key: [first[key], last[key]] for key in SIGNATURE_EXECUTOR_POOL_MAXIMA
         if key in first and key in last
     }
+    if all(cache_fast_present):
+        result['cache_fastpath_configuration'] = {
+            key: first[key] for key in SIGNATURE_CACHE_FAST_CONFIGURATION if key in first
+        }
+        cache_changes = changes.get(REQUIRED_KEYS[2], {})
+        result['cache_fastpath_counter_deltas'] = {
+            key: cache_changes[key] for key in SIGNATURE_CACHE_FAST_COUNTERS if key in cache_changes
+        }
+        values = result['cache_fastpath_counter_deltas']
+        if SIGNATURE_CACHE_FAST_COUNTERS <= values.keys():
+            result['cache_fastpath_accounting_diagnostics'] = {
+                'checks_equal_completed_outcomes':
+                    values['cache_fast_checks'] == values['cache_fast_hits'] + values['cache_fast_misses'],
+                'cached_items_do_not_exceed_scanned_items':
+                    values['cache_fast_cached_items'] <= values['cache_fast_scanned_items'],
+                'semantics': ('Diagnostic only: each field is a relaxed atomic snapshot. Calls already in flight at '
+                              'the first sample, or entering during either sample, can make interval identities '
+                              'temporarily false without a counter reset or implementation error.'),
+            }
+        result['cache_fastpath_valid'] = not any(error.startswith('signature_cache_fast') or
+                                                 error.startswith('missing_signature_cache_fast') or
+                                                 error.startswith('invalid_signature_cache_fast')
+                                                 for error in errors)
     result['valid'] = not errors
     return result
 
@@ -369,6 +436,11 @@ def summarize_optional_schema(samples, name, counter_errors):
             errors.append('locality_source_queries_outside_call_population')
         if result['configuration']['locality_fastpath_enabled'] == 0 and values['locality_dedup_hits']:
             errors.append('locality_hits_while_fastpath_disabled')
+    if name == 'validated_state_handoff':
+        attempts = values['hits'] + values['misses']
+        result['hit_fraction'] = values['hits'] / attempts if attempts else None
+        if result['configuration']['enabled'] == 0 and any(values.values()):
+            errors.append('validated_state_handoff_activity_while_disabled')
     if errors or counter_errors:
         return result
     result['valid'] = True
@@ -709,6 +781,10 @@ def summarize(samples, *, expected_owners=None, expected_lane_owners=0, expected
         'Calls include repeated checks before/after awaits or snapshot refresh, not unique messages or admitted transfers. '
         'Presented output slots can remain unvisited after early failure. Visits equal destination queries plus same-call reuse hits; '
         'shard queries also include source lookups. Ratios use this locality-call population only.')
+    result['validated_state_handoff']['semantics'] = (
+        'Inserts are fully validated speculative states acknowledged before validation succeeds. Hits and misses '
+        'classify exact acceptance lookups; a hit is consumed once. Entries is an endpoint gauge. Evictions are '
+        'capacity removals and expirations are TTL removals; neither implies a validation or acceptance failure.')
     if result['errors']:
         # A reset/partial schema must never appear to be a valid attribution.
         result['diagnostics_available'] = False
@@ -724,7 +800,7 @@ def summarize(samples, *, expected_owners=None, expected_lane_owners=0, expected
             result[name]['valid'] = False
             result[name]['stage_mean_ms'] = {}
             for key in ('late_batch_fraction', 'destination_hit_fraction', 'destination_queries_per_call',
-                        'shard_queries_per_call'):
+                        'shard_queries_per_call', 'hit_fraction'):
                 result[name].pop(key, None)
     return result
 
