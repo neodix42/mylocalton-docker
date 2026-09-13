@@ -2888,6 +2888,10 @@ reconciliation_before=$(parse_validator_stat "$validator_stats_before_file" "tot
 reconciliation_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_reconciliation")
 pending_before=$(parse_validator_stat "$validator_stats_before_file" "total.ext_msg_native_pending")
 pending_after=$(parse_validator_stat "$validator_stats_after_file" "total.ext_msg_native_pending")
+celldb_durability_before=$(python3 "$script_dir/benchmark/remote/celldb_durability_stats.py" \
+  --input "$validator_stats_before_file")
+celldb_durability_after=$(python3 "$script_dir/benchmark/remote/celldb_durability_stats.py" \
+  --input "$validator_stats_after_file")
 jq -L "$benchmark_jq_dir" -n \
   --slurpfile ownership "$validator_owner_summary_file" \
   --argjson scheduler_before "$scheduler_before" \
@@ -2901,7 +2905,9 @@ jq -L "$benchmark_jq_dir" -n \
   --argjson reconciliation_before "$reconciliation_before" \
   --argjson reconciliation_after "$reconciliation_after" \
   --argjson pending_before "$pending_before" \
-  --argjson pending_after "$pending_after" '
+  --argjson pending_after "$pending_after" \
+  --argjson celldb_durability_before "$celldb_durability_before" \
+  --argjson celldb_durability_after "$celldb_durability_after" '
   include "native-benchmark-lib";
   def delta($before; $after; $exclude):
     reduce ($after | keys_unsorted[]) as $key ({};
@@ -2959,7 +2965,10 @@ jq -L "$benchmark_jq_dir" -n \
       .cleanup_acceptance.invalid_reasons |= unique |
       .cleanup_acceptance.valid = (.cleanup_acceptance.valid and $owner.cleanup_acceptance.valid)
     end
-  end
+  end |
+  . + {celldb_durability:celldb_durability_summary(
+    $celldb_durability_before; $celldb_durability_after
+  )}
 ' >"$validator_pool_summary_file"
 
 generator_measure_start=$(jq -Rs \

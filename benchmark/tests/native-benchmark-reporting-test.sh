@@ -12,6 +12,7 @@ bash "$script_dir/native-payment-lane-wallets-test.sh"
 bash "$script_dir/native-run-batching-config-test.sh"
 bash "$script_dir/native-initial-cwnd-config-test.sh"
 python3 "$script_dir/native-connections-sweep-test.py"
+python3 "$script_dir/celldb-durability-stats-test.py"
 bash "$script_dir/native-eight-lane-reporting-test.sh"
 
 command -v jq >/dev/null 2>&1 || {
@@ -78,6 +79,145 @@ jq -n -e -L "$jq_dir" '
   (native_admission_diagnostics_summary($before;($after | .not_ready_total = 6)) |
     .capture_complete and .cause_counts_reconciled == false and
     .counter_deltas_valid == false and .counters_delta == null)
+' >/dev/null
+
+# CellDb durability snapshots distinguish process-lifetime endpoint values from
+# full-run counter/count/sum deltas and fail closed on resets or config drift.
+jq -n -e -L "$jq_dir" '
+  include "native-benchmark-lib";
+  def durability_histogram($n):
+    {p50_us:1,p95_us:2,p99_us:3,p100_us:4,count:(10 * $n),sum_us:(30 * $n)};
+  def durability_snapshot($n; $sync):
+    {
+      telemetry_available:true,
+      capture_complete:true,
+      missing_fields:[],
+      invalid_fields:[],
+      config:{
+        enabled:true,sync_writes:$sync,wal_enabled:true,
+        periodic_reset_enabled:false
+      },
+      counters:(reduce celldb_durability_counter_fields[] as $key
+        ({}; .[$key] = 10 * $n)),
+      gauges:{queue_max_depth:(4 * $n),reset_generation:0},
+      histograms:(reduce celldb_durability_histogram_fields[] as $key
+        ({}; .[$key] = durability_histogram($n)))
+    };
+  durability_snapshot(1; true) as $before |
+  durability_snapshot(2; true) as $after |
+  celldb_durability_summary($before; $after) as $good |
+  ($good.telemetry_available == true) and
+  ($good.capture_complete == true) and
+  ($good.configuration.valid == true) and
+  ($good.configuration.effective == {
+    enabled:true,sync_writes:true,wal_enabled:true,periodic_reset_enabled:false
+  }) and
+  ($good.counter_deltas_valid == true) and
+  ($good.reset_generation == {before:0,after:0,unchanged:true}) and
+  ($good.queue_wait_counts_reconcile == true) and
+  ($good.commit_histogram_counts_reconcile == true) and
+  ($good.comparison_valid == true) and
+  ($good.production_durability_preserved == true) and
+  ($good.unsafe_ceiling_only == false) and
+  ($good.promotion_eligible == true) and
+  ($good.counter_deltas.commit_calls == 10) and
+  ($good.queue_max_depth == {before:4,after:8}) and
+  (($good.counter_deltas | has("queue_max_depth")) | not) and
+  ($good.histograms.commit_wall.count_delta == 10) and
+  ($good.histograms.commit_wall.sum_us_delta == 30) and
+  ($good.histograms.commit_wall.mean_us == 3) and
+  ($good.histograms.commit_wall.accumulator_generation_after.p100_us == 4) and
+
+  (celldb_durability_summary(
+    {telemetry_available:false,capture_complete:false,missing_fields:["all"],invalid_fields:[]};
+    {telemetry_available:false,capture_complete:false,missing_fields:["all"],invalid_fields:[]}
+  )) as $missing |
+  ($missing.telemetry_available == false) and
+  ($missing.capture_complete == false) and
+  ($missing.availability == "missing_in_both_snapshots_old_image_or_profile_disabled") and
+  ($missing.counter_deltas == null) and
+  ($missing.histograms.commit_wall.mean_us == null) and
+
+  (celldb_durability_summary(($before | .capture_complete = false); $after)) as $partial |
+  ($partial.telemetry_available == true) and
+  ($partial.capture_complete == false) and
+  ($partial.availability == "incomplete_or_invalid_snapshot") and
+  ($partial.counter_deltas == null) and
+
+  ([
+    ($after | .counters.commit_calls = 9),
+    ($after | .histograms.commit_wall.sum_us = 29),
+    ($after | .gauges.queue_max_depth = 3)
+  ] | all(.[]; . as $reset |
+    celldb_durability_summary($before; $reset) |
+    .capture_complete == true and .counter_deltas_valid == false and
+    .comparison_valid == false and .counter_deltas == null)) and
+
+  (celldb_durability_summary($before; ($after | .config.sync_writes = false))) as $config_drift |
+  ($config_drift.capture_complete == true) and
+  ($config_drift.configuration.valid == false) and
+  ($config_drift.counter_deltas_valid == true) and
+  ($config_drift.comparison_valid == false) and
+  ($config_drift.counter_deltas == null) and
+  ($config_drift.histograms.commit_wall.mean_us == null) and
+  (celldb_durability_summary(
+    $before; ($after | .counters.queue_wait_count = 21)
+  )) as $queue_mismatch |
+  ($queue_mismatch.queue_wait_counts_reconcile == false) and
+  ($queue_mismatch.comparison_valid == false) and
+  ($queue_mismatch.counter_deltas == null) and
+  ($queue_mismatch.histograms.queue_wait.mean_us == null) and
+
+  # A periodic clear is detected by generation even when every endpoint has
+  # already climbed above its pre-run value again.
+  (celldb_durability_summary(
+    $before; ($after | .gauges.reset_generation = 1)
+  )) as $hidden_reset |
+  ($hidden_reset.capture_complete == true) and
+  ($hidden_reset.decreased_fields == []) and
+  ($hidden_reset.reset_generation.unchanged == false) and
+  ($hidden_reset.counter_deltas_valid == false) and
+  ($hidden_reset.comparison_valid == false) and
+  ($hidden_reset.counter_deltas == null) and
+
+  (celldb_durability_summary(
+    $before; ($after | .histograms.commit_wall.count = 21)
+  )) as $commit_count_mismatch |
+  ($commit_count_mismatch.capture_complete == true) and
+  ($commit_count_mismatch.commit_histogram_counts_reconcile == false) and
+  ($commit_count_mismatch.comparison_valid == false) and
+  ($commit_count_mismatch.histograms.commit_wall.mean_us == null) and
+
+  (celldb_durability_summary(
+    ($before | .histograms.commit_wall.sum_us = 1000); $after
+  )) as $impossible_histogram |
+  ($impossible_histogram.capture_complete == false) and
+  ($impossible_histogram.comparison_valid == false) and
+
+  ($before |
+    .config.sync_writes = false |
+    .counters.rocksdb_wal_sync_count = 0 |
+    .histograms.rocksdb_wal_sync = {
+      p50_us:0,p95_us:0,p99_us:0,p100_us:0,count:10,sum_us:0
+    }) as $unsafe_before |
+  ($after |
+    .config.sync_writes = false |
+    .counters.rocksdb_wal_sync_count = 0 |
+    .histograms.rocksdb_wal_sync = {
+      p50_us:0,p95_us:0,p99_us:0,p100_us:0,count:20,sum_us:0
+    }) as $unsafe_after |
+  celldb_durability_summary($unsafe_before; $unsafe_after) as $unsafe |
+  ($unsafe.configuration.valid == true) and
+  ($unsafe.configuration.effective.sync_writes == false) and
+  ($unsafe.configuration.effective.wal_enabled == true) and
+  ($unsafe.comparison_valid == true) and
+  ($unsafe.production_durability_preserved == false) and
+  ($unsafe.unsafe_ceiling_only == true) and
+  ($unsafe.promotion_eligible == false) and
+  ($unsafe.counter_deltas.rocksdb_wal_sync_count == 0) and
+  ($unsafe.histograms.rocksdb_wal_sync.count_delta == 10) and
+  ($unsafe.histograms.rocksdb_wal_sync.sum_us_delta == 0) and
+  ($unsafe.histograms.rocksdb_wal_sync.mean_us == 0)
 ' >/dev/null
 
 jq -n -e -L "$jq_dir" '
@@ -217,6 +357,41 @@ jq -n -e -L "$jq_dir" '
     "external_wait_native_producer_drain_s=0 external_wait_native_producer_drain_calls=0 " +
     "external_wait_native_sync_snapshot_s=0 external_wait_native_sync_snapshot_calls=0 " +
     "external_wait_accounted_s=\($accounted) external_wait_calls=1";
+  def callback_install_stats($stats):
+    "external_delivery_callback_install_requests=\($stats.requests) " +
+    "external_delivery_callback_install_eager_requests=\($stats.eager_requests) " +
+    "external_delivery_callback_install_manager_observed=\($stats.manager_observed) " +
+    "external_delivery_callback_install_pool_observed=\($stats.pool_observed) " +
+    "external_delivery_callback_install_epoch_observed=\($stats.epoch_observed) " +
+    "external_delivery_callback_install_epoch_unobserved=\($stats.epoch_unobserved) " +
+    "external_delivery_callback_install_request_to_manager_s=\($stats.request_to_manager_s) " +
+    "external_delivery_callback_install_manager_to_pool_s=\($stats.manager_to_pool_s) " +
+    "external_delivery_callback_install_pool_to_epoch_s=\($stats.pool_to_epoch_s) " +
+    "external_delivery_callback_install_request_to_epoch_s=\($stats.request_to_epoch_s)";
+  def callback_install_epoch:
+    callback_install_stats({
+      requests:1, eager_requests:0,
+      manager_observed:1, pool_observed:1,
+      epoch_observed:1, epoch_unobserved:0,
+      request_to_manager_s:0.01, manager_to_pool_s:0.02,
+      pool_to_epoch_s:0.03, request_to_epoch_s:0.06
+    });
+  def callback_install_manager_only:
+    callback_install_stats({
+      requests:1, eager_requests:1,
+      manager_observed:1, pool_observed:0,
+      epoch_observed:0, epoch_unobserved:1,
+      request_to_manager_s:0.04, manager_to_pool_s:0,
+      pool_to_epoch_s:0, request_to_epoch_s:0
+    });
+  def callback_install_zero:
+    callback_install_stats({
+      requests:0, eager_requests:0,
+      manager_observed:0, pool_observed:0,
+      epoch_observed:0, epoch_unobserved:0,
+      request_to_manager_s:0, manager_to_pool_s:0,
+      pool_to_epoch_s:0, request_to_epoch_s:0
+    });
   def native_deferral_stats($factor; $overrides; $drop_fields):
     ({
       native_deferral_intake_deadline_idle_entries:$factor,
@@ -1096,20 +1271,24 @@ jq -n -e -L "$jq_dir" '
   ($legacy_cache.request_accounting_error == null) and
 
   (collation_external_wait_summary([
-    {wait_externals_time:1, work_time_real_stats:external_wait_stats(1; 1)},
-    {wait_externals_time:0.5, work_time_real_stats:external_wait_stats(0.5; 2)}
+    {wait_externals_time:1,
+     work_time_real_stats:(external_wait_stats(1; 1) + " " + callback_install_epoch)},
+    {wait_externals_time:0.5,
+     work_time_real_stats:(external_wait_stats(0.5; 2) + " " + callback_install_manager_only)},
+    {wait_externals_time:0,
+     work_time_real_stats:(external_wait_stats(0; 0) + " " + callback_install_zero)}
   ])) as $wait |
   ($wait.telemetry_available == true) and
   ($wait.capture_complete == true) and
-  ($wait.records_total == 2) and
-  ($wait.records_with_telemetry == 2) and
+  ($wait.records_total == 3) and
+  ($wait.records_with_telemetry == 3) and
   (($wait.wait_externals_total_s - 1.5 | fabs) < 1e-12) and
   (($wait.reported_accounted_total_s - 1.5 | fabs) < 1e-12) and
   (($wait.category_total_s - 1.5 | fabs) < 1e-12) and
   (($wait.accounting_error_s | fabs) < 1e-12) and
   (($wait.reported_accounting_error_s | fabs) < 1e-12) and
   (($wait.category_vs_reported_accounted_error_s | fabs) < 1e-12) and
-  (($wait.accounting_tolerance_envelope_s - 0.0015 | fabs) < 1e-12) and
+  (($wait.accounting_tolerance_envelope_s - 0.0016 | fabs) < 1e-12) and
   (($wait.max_per_record_absolute_accounting_error_s | fabs) < 1e-12) and
   ($wait.accounting_within_tolerance == true) and
   ($wait.external_wait_calls == 30) and
@@ -1117,6 +1296,140 @@ jq -n -e -L "$jq_dir" '
   ($wait.call_accounting_error == 0) and
   (($wait.categories.round_native_coalescing.seconds - 0.3 | fabs) < 1e-12) and
   ($wait.categories.round_native_coalescing.calls == 3) and
+  ($wait.callback_install.telemetry_available == true) and
+  ($wait.callback_install.capture_complete == true) and
+  ($wait.callback_install.records_total == 3) and
+  ($wait.callback_install.records_with_telemetry == 3) and
+  ($wait.callback_install.totals.requests == 2) and
+  ($wait.callback_install.totals.eager_requests == 1) and
+  ($wait.callback_install.totals.manager_observed == 2) and
+  ($wait.callback_install.totals.pool_observed == 1) and
+  ($wait.callback_install.totals.epoch_observed == 1) and
+  ($wait.callback_install.totals.epoch_unobserved == 1) and
+  (($wait.callback_install.request_fraction_of_records - (2 / 3) | fabs) < 1e-12) and
+  (($wait.callback_install.fractions_of_requests.eager - 0.5 | fabs) < 1e-12) and
+  (($wait.callback_install.fractions_of_requests.manager_observed - 1 | fabs) < 1e-12) and
+  (($wait.callback_install.fractions_of_requests.pool_observed - 0.5 | fabs) < 1e-12) and
+  (($wait.callback_install.fractions_of_requests.epoch_observed - 0.5 | fabs) < 1e-12) and
+  (($wait.callback_install.fractions_of_requests.epoch_unobserved - 0.5 | fabs) < 1e-12) and
+  ($wait.callback_install.stages.request_to_manager.samples == 2) and
+  (($wait.callback_install.stages.request_to_manager.total_s - 0.05 | fabs) < 1e-12) and
+  (($wait.callback_install.stages.request_to_manager.mean_s - 0.025 | fabs) < 1e-12) and
+  ($wait.callback_install.stages.manager_to_pool.samples == 1) and
+  (($wait.callback_install.stages.manager_to_pool.mean_s - 0.02 | fabs) < 1e-12) and
+  ($wait.callback_install.stages.pool_to_epoch.samples == 1) and
+  (($wait.callback_install.stages.pool_to_epoch.mean_s - 0.03 | fabs) < 1e-12) and
+  ($wait.callback_install.stages.request_to_epoch.samples == 1) and
+  (($wait.callback_install.stages.request_to_epoch.mean_s - 0.06 | fabs) < 1e-12) and
+  ($wait.callback_install.epoch_observation_accounting_error == 0) and
+  ($wait.callback_install.counters_reconcile == true) and
+  ($wait.callback_install.timings_reconcile == true) and
+  ($wait.callback_install.reconciliation_valid == true) and
+  (($wait.callback_install.max_per_record_absolute_timing_error_s | fabs) < 1e-12) and
+
+  # A complete all-zero new-image record is available, but it has no request
+  # population from which to derive fractions or stage means.
+  (collation_callback_install_summary([
+    {work_time_real_stats:callback_install_zero}
+  ])) as $zero_callback |
+  ($zero_callback.telemetry_available == true) and
+  ($zero_callback.capture_complete == true) and
+  ($zero_callback.totals.requests == 0) and
+  ($zero_callback.request_fraction_of_records == 0) and
+  ($zero_callback.fractions_of_requests.eager == null) and
+  ($zero_callback.stages.request_to_manager.samples == 0) and
+  ($zero_callback.stages.request_to_manager.mean_s == null) and
+  ($zero_callback.reconciliation_valid == true) and
+
+  # Partial, malformed, duplicate and non-binary count fields make the atomic
+  # callback telemetry version incomplete. Near-prefix fields do not count.
+  ([
+    (callback_install_zero |
+      sub("external_delivery_callback_install_request_to_epoch_s=0"; "")),
+    (callback_install_zero |
+      sub("external_delivery_callback_install_request_to_epoch_s=0";
+          "external_delivery_callback_install_request_to_epoch_s=NaN")),
+    (callback_install_zero + " external_delivery_callback_install_requests=0"),
+    (callback_install_zero |
+      sub("external_delivery_callback_install_requests=0";
+          "external_delivery_callback_install_requests=-1")),
+    (callback_install_zero |
+      sub("external_delivery_callback_install_requests=0";
+          "external_delivery_callback_install_requests=0.5")),
+    (callback_install_zero |
+      sub("external_delivery_callback_install_requests=0";
+          "external_delivery_callback_install_requests=2")),
+    (callback_install_zero |
+      sub("external_delivery_callback_install_request_to_epoch_s=0";
+          "external_delivery_callback_install_request_to_epoch_s=-0.1")),
+    (callback_install_zero |
+      sub("external_delivery_callback_install_request_to_epoch_s=0";
+          "external_delivery_callback_install_request_to_epoch_s=1e999"))
+  ] | all(.[]; . as $stats |
+    (collation_callback_install_summary([{work_time_real_stats:$stats}]) |
+      .telemetry_available == true and .capture_complete == false and
+      .totals.requests == null))) and
+  (collation_callback_install_summary([{
+    work_time_real_stats:(
+      "near_external_delivery_callback_install_requests=0 " +
+      "external_delivery_callback_install_requests_extra=0"
+    )
+  }])) as $near_prefix_callback |
+  ($near_prefix_callback.telemetry_available == false) and
+  ($near_prefix_callback.capture_complete == false) and
+
+  # Syntactically complete telemetry remains available when its semantic
+  # relationships are invalid; reconciliation reports the problem separately.
+  (collation_callback_install_summary([{
+    work_time_real_stats:(callback_install_zero |
+      sub("external_delivery_callback_install_manager_observed=0";
+          "external_delivery_callback_install_manager_observed=1"))
+  }])) as $bad_counter_callback |
+  ($bad_counter_callback.capture_complete == true) and
+  ($bad_counter_callback.counters_reconcile == false) and
+  ($bad_counter_callback.reconciliation_valid == false) and
+  ($bad_counter_callback.raw_totals.manager_observed == 1) and
+  ($bad_counter_callback.totals.manager_observed == null) and
+  ($bad_counter_callback.stages.request_to_manager.mean_s == null) and
+  (collation_callback_install_summary([{
+    work_time_real_stats:(callback_install_epoch |
+      sub("external_delivery_callback_install_request_to_epoch_s=0.06";
+          "external_delivery_callback_install_request_to_epoch_s=0.08"))
+  }])) as $bad_timing_callback |
+  ($bad_timing_callback.capture_complete == true) and
+  ($bad_timing_callback.counters_reconcile == true) and
+  ($bad_timing_callback.timings_reconcile == false) and
+  ($bad_timing_callback.reconciliation_valid == false) and
+  ($bad_timing_callback.raw_totals.request_to_epoch_s == 0.08) and
+  ($bad_timing_callback.totals.request_to_epoch_s == null) and
+  ($bad_timing_callback.stages.request_to_epoch.mean_s == null) and
+  (collation_callback_install_summary([{
+    work_time_real_stats:(callback_install_manager_only |
+      sub("external_delivery_callback_install_manager_to_pool_s=0";
+          "external_delivery_callback_install_manager_to_pool_s=9"))
+  }])) as $unobserved_timing_callback |
+  ($unobserved_timing_callback.capture_complete == true) and
+  ($unobserved_timing_callback.counters_reconcile == true) and
+  ($unobserved_timing_callback.timings_reconcile == false) and
+  ($unobserved_timing_callback.reconciliation_valid == false) and
+  ($unobserved_timing_callback.raw_totals.manager_to_pool_s == 9) and
+  ($unobserved_timing_callback.totals.manager_to_pool_s == null) and
+  ($unobserved_timing_callback.stages.manager_to_pool.samples == null) and
+  ($unobserved_timing_callback.stages.manager_to_pool.mean_s == null) and
+
+  # A mixed old/new capture does not fabricate callback aggregates and does
+  # not weaken a complete legacy external-wait summary.
+  (collation_external_wait_summary([
+    {wait_externals_time:1,
+     work_time_real_stats:(external_wait_stats(1; 1) + " " + callback_install_epoch)},
+    {wait_externals_time:0.5, work_time_real_stats:external_wait_stats(0.5; 2)}
+  ])) as $mixed_callback |
+  ($mixed_callback.capture_complete == true) and
+  ($mixed_callback.callback_install.telemetry_available == true) and
+  ($mixed_callback.callback_install.capture_complete == false) and
+  ($mixed_callback.callback_install.records_total == 2) and
+  ($mixed_callback.callback_install.records_with_telemetry == 1) and
+  ($mixed_callback.callback_install.totals.requests == null) and
 
   # Equal and opposite category errors must not cancel into a passing aggregate.
   (collation_external_wait_summary([
@@ -1153,6 +1466,11 @@ jq -n -e -L "$jq_dir" '
   ($legacy_wait.accounting_tolerance_envelope_s == null) and
   ($legacy_wait.max_per_record_absolute_accounting_error_s == null) and
   ($legacy_wait.accounting_within_tolerance == null) and
+  ($legacy_wait.callback_install.telemetry_available == false) and
+  ($legacy_wait.callback_install.capture_complete == false) and
+  ($legacy_wait.callback_install.records_total == 1) and
+  ($legacy_wait.callback_install.records_with_telemetry == 0) and
+  ($legacy_wait.callback_install.totals.requests == null) and
   ($legacy_wait.categories.native_probe.seconds == null)
 ' >/dev/null
 
@@ -1663,6 +1981,25 @@ grep -Fq 'config --services' "$wrapper" &&
     echo "benchmark wrapper must hash each resolved Compose service explicitly" >&2
     exit 1
   }
+
+grep -Fq 'benchmark/remote/celldb_durability_stats.py' "$wrapper" &&
+  grep -Fq 'celldb_durability:celldb_durability_summary(' "$wrapper" &&
+  grep -Fq 'callback_install:$callback_install' "$jq_dir/native-benchmark-lib.jq" || {
+    echo "callback-install and CellDb durability diagnostics must reach benchmark summaries" >&2
+    exit 1
+  }
+python3 - "$wrapper" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text()
+owner_branch = source.index('$ownership[0] as $owner |')
+owner_branch_end = source.index(
+    '  end |\n  . + {celldb_durability:celldb_durability_summary(', owner_branch)
+summary_write = source.index("' >\"$validator_pool_summary_file\"", owner_branch_end)
+if not owner_branch < owner_branch_end < summary_write:
+    raise SystemExit('CellDb durability summary must be appended after both owner-overlay branches')
+PY
 
 # Fine histograms reconcile independently and never turn old missing fields into
 # zeros or discard still-valid legacy totals. Bind fixtures before assertions so

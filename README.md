@@ -704,6 +704,36 @@ diagnostic and does not change benchmark acceptance. Legacy or mixed records kee
 `wait_externals_time_s` distribution and report unavailable derived totals as
 `null` with `capture_complete:false`.
 
+The nested `external_wait_breakdown.callback_install` object splits callback
+installation into Collator-to-Manager, Manager-to-pool, pool-to-first-epoch,
+and full request-to-epoch intervals. Stage means use the count that observed
+that stage's ending timestamp; they never divide by every collation. The ten
+fields form one atomic per-record telemetry version. Old, mixed, duplicate, or
+malformed captures keep raw wait reporting intact and publish null callback
+aggregates. Syntactically complete observations also reconcile the request and
+stage-counter hierarchy, require unobserved stage times to remain zero, and
+check the full interval against the three component intervals per record.
+Failed reconciliation retains `raw_totals` for diagnosis while nulling derived
+totals, fractions, and means.
+
+When `TON_NATIVE_CELLDB_DURABILITY_PROFILE=1`,
+`validator-pool-summary.json.celldb_durability` parses the exact CellDb
+durability key family from the before/after validator snapshots. It reports
+counter and histogram count/sum deltas across the broader harness capture
+interval, including small setup and final-diagnostic margins around the
+generator, while keeping percentiles and maximum queue depth as
+accumulator-generation endpoint observations. Missing fields, malformed
+histograms, counter resets, config
+drift, reset-generation changes, queue-wait count mismatches, or detailed
+histogram counts that differ from commit calls make the comparison invalid
+instead of turning missing evidence into zero. Validator `getstats` caches the
+CellDb view on its two-second refresh cadence, so the endpoints can omit a
+small boundary interval; this diagnostic is not an exact canonical-window
+counter. `production_durability_preserved`, `unsafe_ceiling_only`, and
+`promotion_eligible` label the sync-false arm in machine-readable form. The
+unsafe flag is only a disposable benchmark ceiling probe; WAL remains enabled
+and this setting must not be used as a deployment policy.
+
 `benchmark-summary.json.acceptance` keeps canonical proof correctness, complete
 settled execution, ingress-capacity validity, canonical lane-balance validity,
 chain-capacity validity, validator canonical cleanup, and reproducibility as

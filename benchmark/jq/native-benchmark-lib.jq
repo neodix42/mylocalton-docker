@@ -537,12 +537,402 @@ def native_admission_shard_cache_summary($before; $after):
     }
   end;
 
+# Aggregate the callback installation timestamps emitted in each collation's
+# work_time_real_stats.  The stage intervals are observation snapshots taken
+# when that collation finalizes: an in-flight callback can have only a prefix
+# of the actor chain present.  Keep this diagnostic independent from the older
+# external-wait completeness contract so mixed/legacy artifacts remain usable.
+def collation_callback_install_summary($rows):
+  [
+    {key:"requests", stat:"external_delivery_callback_install_requests", kind:"counter"},
+    {key:"eager_requests", stat:"external_delivery_callback_install_eager_requests", kind:"counter"},
+    {key:"manager_observed", stat:"external_delivery_callback_install_manager_observed", kind:"counter"},
+    {key:"pool_observed", stat:"external_delivery_callback_install_pool_observed", kind:"counter"},
+    {key:"epoch_observed", stat:"external_delivery_callback_install_epoch_observed", kind:"counter"},
+    {key:"epoch_unobserved", stat:"external_delivery_callback_install_epoch_unobserved", kind:"counter"},
+    {key:"request_to_manager_s", stat:"external_delivery_callback_install_request_to_manager_s", kind:"seconds"},
+    {key:"manager_to_pool_s", stat:"external_delivery_callback_install_manager_to_pool_s", kind:"seconds"},
+    {key:"pool_to_epoch_s", stat:"external_delivery_callback_install_pool_to_epoch_s", kind:"seconds"},
+    {key:"request_to_epoch_s", stat:"external_delivery_callback_install_request_to_epoch_s", kind:"seconds"}
+  ] as $fields |
+  def work_stat_tokens($row; $name):
+    ($name + "=") as $prefix |
+    [
+      (($row.work_time_real_stats? // null) | strings | splits("[[:space:]]+")) |
+      select(startswith($prefix)) |
+      ltrimstr($prefix)
+    ];
+  def nonnegative_finite_number:
+    if type != "string" or
+       (test("^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$") | not)
+    then null
+    else
+      (tonumber? // null) as $value |
+      if ($value | type) == "number" and
+         (($value | isinfinite) | not) and
+         (($value | isnan) | not)
+      then $value
+      else null
+      end
+    end;
+  def parsed_stat($tokens; $kind):
+    if ($tokens | length) != 1 then null
+    else
+      ($tokens[0] | nonnegative_finite_number) as $value |
+      if $value == null then null
+      elif $kind == "counter" and ($value != 0 and $value != 1) then null
+      else $value
+      end
+    end;
+  [
+    $rows[] as $row |
+    ([
+      $fields[] as $field |
+      (work_stat_tokens($row; $field.stat)) as $tokens |
+      (parsed_stat($tokens; $field.kind)) as $value |
+      {
+        key:$field.key,
+        present:(($tokens | length) > 0),
+        valid:(($tokens | length) == 1 and $value != null),
+        value:$value
+      }
+    ]) as $entries |
+    (reduce $entries[] as $entry ({}; .[$entry.key] = $entry.value)) as $values |
+    {
+      values:$values,
+      telemetry_present:any($entries[]; .present),
+      complete:all($entries[]; .valid)
+    }
+  ] as $parsed |
+  ([$parsed[] | select(.telemetry_present)] | length) as $with_telemetry |
+  (($parsed | length) > 0 and
+   $with_telemetry == ($parsed | length) and
+   all($parsed[]; .complete)) as $complete |
+  if $complete then
+    (reduce $fields[] as $field
+      ({}; .[$field.key] = ($parsed | map(.values[$field.key]) | add // 0))) as $totals |
+    ([
+      $parsed[] |
+      .values as $values |
+      ($values.request_to_manager_s + $values.manager_to_pool_s +
+       $values.pool_to_epoch_s) as $stage_sum |
+      (if $values.epoch_observed == 1
+       then $values.request_to_epoch_s - $stage_sum
+       else 0
+       end) as $timing_error |
+      ([0.0001, (($values.request_to_epoch_s | fabs) * 0.001)] | max) as $tolerance |
+      {
+        counters_reconcile:(
+          $values.eager_requests <= $values.requests and
+          $values.manager_observed <= $values.requests and
+          $values.pool_observed <= $values.manager_observed and
+          $values.epoch_observed <= $values.pool_observed and
+          $values.epoch_observed + $values.epoch_unobserved == $values.requests
+        ),
+        unobserved_timings_zero:(
+          ($values.manager_observed == 1 or $values.request_to_manager_s == 0) and
+          ($values.pool_observed == 1 or $values.manager_to_pool_s == 0) and
+          ($values.epoch_observed == 1 or
+            ($values.pool_to_epoch_s == 0 and $values.request_to_epoch_s == 0))
+        ),
+        timing_error:$timing_error,
+        timing_tolerance:$tolerance,
+        timings_reconcile:(
+          ($values.epoch_observed == 0 and $values.request_to_epoch_s == 0 and
+           $values.pool_to_epoch_s == 0) or
+          ($values.epoch_observed == 1 and ($timing_error | fabs) <= $tolerance)
+        )
+      }
+    ]) as $row_reconciliation |
+    (all($row_reconciliation[]; .counters_reconcile)) as $counters_reconcile |
+    (all($row_reconciliation[]; .unobserved_timings_zero and .timings_reconcile)) as
+      $timings_reconcile |
+    ($counters_reconcile and $timings_reconcile) as $reconciliation_valid |
+    (reduce $fields[] as $field ({}; .[$field.key] = null)) as $null_totals |
+    {
+      semantics:(
+        "per-candidate callback-install observation snapshots at collation finalization; " +
+        "stage seconds include only records whose ending timestamp was observed, and the " +
+        "overlapping intervals must not be added to each other or to external wait totals"
+      ),
+      telemetry_available:true,
+      capture_complete:true,
+      records_total:($parsed | length),
+      records_with_telemetry:$with_telemetry,
+      raw_totals:$totals,
+      totals:(if $reconciliation_valid then $totals else $null_totals end),
+      request_fraction_of_records:(if $reconciliation_valid
+        then $totals.requests / ($parsed | length) else null end),
+      fractions_of_requests:{
+        eager:(if $reconciliation_valid and $totals.requests > 0
+          then $totals.eager_requests / $totals.requests else null end),
+        manager_observed:(if $reconciliation_valid and $totals.requests > 0
+          then $totals.manager_observed / $totals.requests else null end),
+        pool_observed:(if $reconciliation_valid and $totals.requests > 0
+          then $totals.pool_observed / $totals.requests else null end),
+        epoch_observed:(if $reconciliation_valid and $totals.requests > 0
+          then $totals.epoch_observed / $totals.requests else null end),
+        epoch_unobserved:(if $reconciliation_valid and $totals.requests > 0
+          then $totals.epoch_unobserved / $totals.requests else null end)
+      },
+      stages:{
+        request_to_manager:{
+          total_s:(if $reconciliation_valid then $totals.request_to_manager_s else null end),
+          samples:(if $reconciliation_valid then $totals.manager_observed else null end),
+          mean_s:(if $reconciliation_valid and $totals.manager_observed > 0
+            then $totals.request_to_manager_s / $totals.manager_observed else null end)
+        },
+        manager_to_pool:{
+          total_s:(if $reconciliation_valid then $totals.manager_to_pool_s else null end),
+          samples:(if $reconciliation_valid then $totals.pool_observed else null end),
+          mean_s:(if $reconciliation_valid and $totals.pool_observed > 0
+            then $totals.manager_to_pool_s / $totals.pool_observed else null end)
+        },
+        pool_to_epoch:{
+          total_s:(if $reconciliation_valid then $totals.pool_to_epoch_s else null end),
+          samples:(if $reconciliation_valid then $totals.epoch_observed else null end),
+          mean_s:(if $reconciliation_valid and $totals.epoch_observed > 0
+            then $totals.pool_to_epoch_s / $totals.epoch_observed else null end)
+        },
+        request_to_epoch:{
+          total_s:(if $reconciliation_valid then $totals.request_to_epoch_s else null end),
+          samples:(if $reconciliation_valid then $totals.epoch_observed else null end),
+          mean_s:(if $reconciliation_valid and $totals.epoch_observed > 0
+            then $totals.request_to_epoch_s / $totals.epoch_observed else null end)
+        }
+      },
+      epoch_observation_accounting_error:(
+        $totals.epoch_observed + $totals.epoch_unobserved - $totals.requests
+      ),
+      counters_reconcile:$counters_reconcile,
+      timings_reconcile:$timings_reconcile,
+      reconciliation_valid:$reconciliation_valid,
+      max_per_record_absolute_timing_error_s:(
+        $row_reconciliation | map(.timing_error | fabs) | max // null
+      ),
+      max_per_record_timing_tolerance_s:(
+        $row_reconciliation | map(.timing_tolerance) | max // null
+      )
+    }
+  else
+    {
+      semantics:(
+        "per-candidate callback-install observation snapshots at collation finalization; " +
+        "stage seconds include only records whose ending timestamp was observed, and the " +
+        "overlapping intervals must not be added to each other or to external wait totals"
+      ),
+      telemetry_available:($with_telemetry > 0),
+      capture_complete:false,
+      records_total:($parsed | length),
+      records_with_telemetry:$with_telemetry,
+      raw_totals:(reduce $fields[] as $field ({}; .[$field.key] = null)),
+      totals:(reduce $fields[] as $field ({}; .[$field.key] = null)),
+      request_fraction_of_records:null,
+      fractions_of_requests:{
+        eager:null,
+        manager_observed:null,
+        pool_observed:null,
+        epoch_observed:null,
+        epoch_unobserved:null
+      },
+      stages:{
+        request_to_manager:{total_s:null,samples:null,mean_s:null},
+        manager_to_pool:{total_s:null,samples:null,mean_s:null},
+        pool_to_epoch:{total_s:null,samples:null,mean_s:null},
+        request_to_epoch:{total_s:null,samples:null,mean_s:null}
+      },
+      epoch_observation_accounting_error:null,
+      counters_reconcile:null,
+      timings_reconcile:null,
+      reconciliation_valid:null,
+      max_per_record_absolute_timing_error_s:null,
+      max_per_record_timing_tolerance_s:null
+    }
+  end;
+
+def celldb_durability_counter_fields:
+  [
+    "queue_wait_count",
+    "commit_calls",
+    "write_batch_operations",
+    "write_batch_serialized_bytes",
+    "rocksdb_db_write_count",
+    "rocksdb_wal_write_count",
+    "rocksdb_wal_bytes",
+    "rocksdb_wal_sync_count",
+    "rocksdb_stall_micros"
+  ];
+
+def celldb_durability_histogram_fields:
+  [
+    "queue_wait",
+    "prepare_wall",
+    "prepare_cpu",
+    "prepare_caller_cpu",
+    "prepare_async_cpu",
+    "write_batch_wall",
+    "write_batch_cpu",
+    "commit_wall",
+    "commit_cpu",
+    "rocksdb_db_write",
+    "rocksdb_wal_sync",
+    "completion_wall"
+  ];
+
+# Interpret two exact-key CellDb durability snapshots parsed by
+# celldb_durability_stats.py. Percentiles and queue depth are process-lifetime
+# observations; only monotonic counters plus histogram count/sum are deltas.
+def celldb_durability_summary($before; $after):
+  celldb_durability_counter_fields as $counter_fields |
+  celldb_durability_histogram_fields as $histogram_fields |
+  ($histogram_fields - ["queue_wait"]) as $commit_histogram_fields |
+  def finite_nonnegative:
+    type == "number" and . >= 0 and ((isinfinite or isnan) | not);
+  def nonnegative_integer:
+    finite_nonnegative and floor == .;
+  def histogram_valid($histogram):
+    ($histogram | type) == "object" and
+    all(["p50_us", "p95_us", "p99_us", "p100_us", "sum_us"][];
+      . as $key | ($histogram[$key] | finite_nonnegative)) and
+    ($histogram.count | nonnegative_integer) and
+    $histogram.p50_us <= $histogram.p95_us and
+    $histogram.p95_us <= $histogram.p99_us and
+    $histogram.p99_us <= $histogram.p100_us and
+    ($histogram.count > 0 or
+      ($histogram.p50_us == 0 and $histogram.p95_us == 0 and
+       $histogram.p99_us == 0 and $histogram.p100_us == 0 and
+       $histogram.sum_us == 0)) and
+    (if $histogram.count > 0 then
+       ([0.000001, ($histogram.count * 0.000001)] | max) as $tolerance |
+       $histogram.sum_us + $tolerance >= $histogram.p100_us and
+       $histogram.sum_us <= $histogram.count * $histogram.p100_us + $tolerance
+     else true end);
+  def snapshot_valid($snapshot):
+    ($snapshot | type) == "object" and
+    $snapshot.capture_complete == true and
+    ($snapshot.config.enabled | type) == "boolean" and
+    ($snapshot.config.sync_writes | type) == "boolean" and
+    ($snapshot.config.wal_enabled | type) == "boolean" and
+    ($snapshot.config.periodic_reset_enabled | type) == "boolean" and
+    all($counter_fields[]; . as $key | ($snapshot.counters[$key] | nonnegative_integer)) and
+    ($snapshot.gauges.queue_max_depth | nonnegative_integer) and
+    ($snapshot.gauges.reset_generation | nonnegative_integer) and
+    all($histogram_fields[]; . as $key | histogram_valid($snapshot.histograms[$key]));
+  (snapshot_valid($before)) as $before_complete |
+  (snapshot_valid($after)) as $after_complete |
+  ($before_complete and $after_complete) as $complete |
+  (($before.telemetry_available? == true) or ($after.telemetry_available? == true)) as $available |
+  (if $complete then
+    [
+      ($counter_fields[] as $key |
+       select($after.counters[$key] < $before.counters[$key]) |
+       "counters." + $key),
+      ($histogram_fields[] as $key |
+       select($after.histograms[$key].count < $before.histograms[$key].count) |
+       "histograms." + $key + ".count"),
+      ($histogram_fields[] as $key |
+       select($after.histograms[$key].sum_us < $before.histograms[$key].sum_us) |
+       "histograms." + $key + ".sum_us"),
+      (select($after.gauges.queue_max_depth < $before.gauges.queue_max_depth) |
+       "gauges.queue_max_depth"),
+      (select($after.gauges.reset_generation < $before.gauges.reset_generation) |
+       "gauges.reset_generation")
+    ]
+   else [] end) as $decreased |
+  (if $complete then
+     $before.gauges.reset_generation == $after.gauges.reset_generation
+   else null end) as $reset_generation_unchanged |
+  ($complete and ($decreased | length) == 0 and $reset_generation_unchanged == true) as $deltas_valid |
+  ($complete and $before.config == $after.config and
+   $before.config.enabled == true and $before.config.wal_enabled == true) as $config_valid |
+  (if $complete then
+    $before.counters.queue_wait_count == $before.histograms.queue_wait.count and
+    $after.counters.queue_wait_count == $after.histograms.queue_wait.count
+   else null end) as $queue_wait_counts_reconcile |
+  (if $complete then
+     all([$before, $after][]; . as $snapshot |
+       all($commit_histogram_fields[]; . as $key |
+         $snapshot.histograms[$key].count == $snapshot.counters.commit_calls))
+   else null end) as $commit_histogram_counts_reconcile |
+  ($complete and $deltas_valid and $config_valid and
+   $queue_wait_counts_reconcile == true and
+   $commit_histogram_counts_reconcile == true) as $comparison_valid |
+  (if $config_valid then
+     $after.config.sync_writes == true and $after.config.wal_enabled == true
+   else null end) as $production_durability_preserved |
+  {
+    semantics:(
+      "CellDb durability snapshots span the harness before/after capture interval, including " +
+      "small setup and final-diagnostic margins around the generator; getstats uses a two-second " +
+      "CellDb cache so another small boundary interval can be omitted; percentiles and queue max " +
+      "depth remain accumulator-generation endpoint observations and are never subtracted, " +
+      "and count/sum deltas require an unchanged accumulator reset generation"
+    ),
+    telemetry_available:$available,
+    capture_complete:$complete,
+    availability:(if $complete then "complete"
+      elif $available then "incomplete_or_invalid_snapshot"
+      else "missing_in_both_snapshots_old_image_or_profile_disabled"
+      end),
+    missing_or_invalid_before:(
+      (($before.missing_fields? // []) + ($before.invalid_fields? // [])) | unique
+    ),
+    missing_or_invalid_after:(
+      (($after.missing_fields? // []) + ($after.invalid_fields? // [])) | unique
+    ),
+    configuration:{
+      before:($before.config? // null),
+      after:($after.config? // null),
+      valid:$config_valid,
+      effective:(if $config_valid then $after.config else null end)
+    },
+    counter_deltas_valid:$deltas_valid,
+    decreased_fields:$decreased,
+    reset_generation:{
+      before:(if $complete then $before.gauges.reset_generation else null end),
+      after:(if $complete then $after.gauges.reset_generation else null end),
+      unchanged:$reset_generation_unchanged
+    },
+    queue_wait_counts_reconcile:$queue_wait_counts_reconcile,
+    commit_histogram_counts_reconcile:$commit_histogram_counts_reconcile,
+    comparison_valid:$comparison_valid,
+    production_durability_preserved:$production_durability_preserved,
+    unsafe_ceiling_only:(if $config_valid then ($after.config.sync_writes | not) else null end),
+    promotion_eligible:($comparison_valid and $production_durability_preserved == true),
+    before:$before,
+    after:$after,
+    counter_deltas:(if $comparison_valid then
+      reduce $counter_fields[] as $key
+        ({}; .[$key] = $after.counters[$key] - $before.counters[$key])
+      else null end),
+    queue_max_depth:{
+      before:(if $complete then $before.gauges.queue_max_depth else null end),
+      after:(if $complete then $after.gauges.queue_max_depth else null end)
+    },
+    histograms:(reduce $histogram_fields[] as $key
+      ({};
+       .[$key] = {
+         count_delta:(if $comparison_valid
+           then $after.histograms[$key].count - $before.histograms[$key].count else null end),
+         sum_us_delta:(if $comparison_valid
+           then $after.histograms[$key].sum_us - $before.histograms[$key].sum_us else null end),
+         mean_us:(if $comparison_valid and
+                    $after.histograms[$key].count > $before.histograms[$key].count
+           then ($after.histograms[$key].sum_us - $before.histograms[$key].sum_us) /
+                ($after.histograms[$key].count - $before.histograms[$key].count)
+           else null end),
+         accumulator_generation_before:(if $complete then $before.histograms[$key] else null end),
+         accumulator_generation_after:(if $complete then $after.histograms[$key] else null end)
+       }))
+  };
+
 # Reconcile the wall-clock external wait recorded on each collation with the
 # ten mutually exclusive queue lifecycle categories. These fields are absent
 # from work_time_cpu_stats by design. Legacy or mixed samples remain readable,
 # but derived totals are null unless every selected collation has the complete
 # new wall-clock field set.
 def collation_external_wait_summary($rows):
+  (collation_callback_install_summary($rows)) as $callback_install |
   [
     {key:"round_live", seconds:"external_wait_round_live_s",
      calls:"external_wait_round_live_calls"},
@@ -674,6 +1064,7 @@ def collation_external_wait_summary($rows):
       external_wait_calls:$external_calls_total,
       category_calls:$category_calls,
       call_accounting_error:($category_calls - $external_calls_total),
+      callback_install:$callback_install,
       categories:(reduce $category_fields[] as $field
         ({};
          .[$field.key] = ($category_totals[$field.key] + {
@@ -709,6 +1100,7 @@ def collation_external_wait_summary($rows):
       external_wait_calls:null,
       category_calls:null,
       call_accounting_error:null,
+      callback_install:$callback_install,
       categories:(reduce $category_fields[] as $field
         ({}; .[$field.key] = {seconds:null,calls:null,fraction_of_accounted:null}))
     }
