@@ -764,6 +764,48 @@ native_payment_lanes_decimal_ge() {
   [[ $left == "$right" || $left > "$right" ]]
 }
 
+native_payment_lanes_resolved_enabled() {
+  local compose_environment=$1 value
+
+  value=$(awk -F= '
+    $1 == "NATIVE_PAYMENT_LANES_ENABLED" {sub(/^[^=]*=/, ""); print; exit}
+  ' <<<"$compose_environment")
+  # This matches the `${NATIVE_PAYMENT_LANES_ENABLED:-0}` interpolation in
+  # docker-compose.yaml, including an explicitly empty Compose input.
+  value=${value:-0}
+  case "$value" in
+    0|1) printf '%s\n' "$value" ;;
+    *)
+      echo "resolved NATIVE_PAYMENT_LANES_ENABLED must be 0 or 1, got '$value'" >&2
+      return 2
+      ;;
+  esac
+}
+
+native_payment_lanes_resolved_enabled_self_test() (
+  local NATIVE_PAYMENT_LANES_ENABLED resolved
+
+  # The caller environment is deliberately opposite to the resolved Compose
+  # environment. Provenance must describe the configuration passed through
+  # `docker compose --env-file`, rather than an unsourced shell variable.
+  NATIVE_PAYMENT_LANES_ENABLED=0
+  resolved=$(native_payment_lanes_resolved_enabled \
+    $'OTHER=value\nNATIVE_PAYMENT_LANES_ENABLED=1\nTRAILING=value')
+  [[ $resolved == 1 ]]
+  NATIVE_PAYMENT_LANES_ENABLED=1
+  resolved=$(native_payment_lanes_resolved_enabled \
+    $'NATIVE_PAYMENT_LANES_ENABLED=0\nOTHER=value')
+  [[ $resolved == 0 ]]
+
+  unset NATIVE_PAYMENT_LANES_ENABLED
+  [[ $(native_payment_lanes_resolved_enabled 'OTHER=value') == 0 ]]
+  [[ $(native_payment_lanes_resolved_enabled 'NATIVE_PAYMENT_LANES_ENABLED=') == 0 ]]
+  if native_payment_lanes_resolved_enabled \
+      'NATIVE_PAYMENT_LANES_ENABLED=true' >/dev/null 2>&1; then
+    return 1
+  fi
+)
+
 native_payment_lanes_manifest_header_valid() {
   local schema=$1 depth=$2 lane_count=$3 source_count=$4 extra=${5:-}
 
@@ -1226,6 +1268,10 @@ case "${1:-}" in
     native_payment_lanes_manifest_summary_self_test
     exit 0
     ;;
+  --self-test-native-payment-lanes-resolved-enablement)
+    native_payment_lanes_resolved_enabled_self_test
+    exit 0
+    ;;
   --self-test-ext-messages-broadcast)
     ext_messages_broadcast_self_test
     exit 0
@@ -1358,6 +1404,9 @@ benchmark_container_projects=$(docker ps -a \
   --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}')
 benchmark_container_projects_match "$benchmark_compose_project" "$benchmark_container_projects"
 compose_environment=$("${compose[@]}" config --environment)
+native_payment_lanes_enabled_expected=$(
+  native_payment_lanes_resolved_enabled "$compose_environment"
+) || exit 2
 native_pool_owners_expected=$(awk -F= '$1 == "TON_NATIVE_POOL_OWNERS" {sub(/^[^=]*=/, ""); print; exit}' <<<"$compose_environment")
 native_pool_owners_expected=${native_pool_owners_expected:-1}
 case "$native_pool_owners_expected" in
@@ -1619,7 +1668,7 @@ capture_native_payment_lanes_provenance() {
     echo "failed to inspect native payment-lane runtime configuration" >&2
     return 1
   fi
-  requested_enabled=${NATIVE_PAYMENT_LANES_ENABLED:-0}
+  requested_enabled=$native_payment_lanes_enabled_expected
   if ! enabled_check=$(native_payment_lanes_runtime_enabled_check \
       "$runtime_environment" "$requested_enabled") ||
      ! jq -e '.valid == true' <<<"$enabled_check" >/dev/null; then

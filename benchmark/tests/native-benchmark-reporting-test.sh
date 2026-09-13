@@ -28,6 +28,7 @@ command -v jq >/dev/null 2>&1 || {
 "$wrapper" --self-test-validator-stat
 "$wrapper" --self-test-ext-messages-broadcast
 "$wrapper" --self-test-native-payment-lanes-manifest
+"$wrapper" --self-test-native-payment-lanes-resolved-enablement
 
 "$wrapper" --self-test-strict-genesis-reuse
 "$wrapper" --self-test-compose-project
@@ -1805,6 +1806,8 @@ for field in \
   native_payment_lanes_canonical_awk_uint \
   native_payment_lanes_manifest_header_valid \
   native_payment_lanes_runtime_enabled_check \
+  native_payment_lanes_resolved_enabled \
+  native_payment_lanes_enabled_expected \
   native_payment_lanes_configuration_checks \
   NATIVE_PAYMENT_LANES_ENABLED \
   NATIVE_PAYMENT_LANE_COUNT \
