@@ -15,6 +15,7 @@ python3 "$script_dir/native-connections-sweep-test.py"
 python3 "$script_dir/celldb-durability-stats-test.py"
 python3 "$script_dir/native-load-record-extractor-test.py"
 python3 "$script_dir/native-work-time-index-test.py"
+python3 "$script_dir/native-rooted-run-report-test.py"
 python3 "$script_dir/native-node-shutdown-test.py"
 bash "$script_dir/native-eight-lane-reporting-test.sh"
 

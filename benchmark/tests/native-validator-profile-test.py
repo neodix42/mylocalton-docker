@@ -212,7 +212,8 @@ class ProfileTests(unittest.TestCase):
         for flag in ('TON_NATIVE_EAGER_COLLATOR_CALLBACK',
                      'TON_NATIVE_CELLDB_DURABILITY_PROFILE',
                      'TON_NATIVE_CELLDB_UNSAFE_SYNC_FALSE',
-                     'TON_NATIVE_VALIDATED_STATE_HANDOFF'):
+                     'TON_NATIVE_VALIDATED_STATE_HANDOFF',
+                     'TON_NATIVE_DIRECT_RUN_ZERO_COPY'):
             with self.subTest(flag=flag):
                 self.assertIn(flag, m.ENV_KEYS)
                 self.assertEqual(compose.read_text().count(f'- {flag}=${{{flag}:-0}}'), 1)
@@ -225,9 +226,9 @@ class ProfileTests(unittest.TestCase):
         quantum = 'TON_NATIVE_EXT_MESSAGE_POOL_MAILBOX_QUANTUM'
         self.assertIn(cache_flag, m.ENV_KEYS)
         self.assertIn(quantum, m.ENV_KEYS)
-        self.assertEqual(compose.read_text().count(f'- {cache_flag}=${{{cache_flag}:-1}}'), 1)
+        self.assertEqual(compose.read_text().count(f'- {cache_flag}=${{{cache_flag}:-0}}'), 1)
         self.assertEqual(compose.read_text().count(f'- {quantum}=${{{quantum}:-0}}'), 1)
-        self.assertEqual(physical_env.read_text().splitlines().count(f'{cache_flag}=1'), 1)
+        self.assertEqual(physical_env.read_text().splitlines().count(f'{cache_flag}=0'), 1)
         self.assertEqual(physical_env.read_text().splitlines().count(f'{quantum}=0'), 1)
 
     def test_reset_or_missing_schema_cannot_produce_attribution(self):
