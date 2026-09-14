@@ -96,6 +96,63 @@ def native_work_time_counter_values($rows; $name):
   [$rows[] | native_work_time_counter_value(.; $name) |
     select(. != null)];
 
+# Rooted NTRN runs and expanded entries are alternative candidate
+# representations.  Validation callers supply accepted candidates only:
+# rejected candidates can stop replay partway through the logical batch.
+# Require every field on every row so legacy/mixed images cannot look like a
+# successful zero-expansion treatment.  Indexed token lookup retains duplicate
+# rejection by falling back to the complete whitespace-token parser.
+def native_run_representation_summary($rows; $validation):
+  (["native_rooted_run_parents", "native_rooted_run_outputs",
+    "native_expanded_entries"] +
+   if $validation then ["native_replayed_outputs"] else [] end) as $fields |
+  [$rows[] as $row |
+    [$fields[] as $field |
+      native_work_time_whitespace_tokens($row; $field) as $tokens |
+      (if ($tokens | length) == 1
+       then ($tokens[0] | stat_counter_value)
+       else null end) as $value |
+      {field:$field, present:(($tokens | length) > 0),
+       value:(if ($value | nonnegative_integer) and
+                 (($value | isinfinite) | not) and (($value | isnan) | not)
+              then $value else null end)}] as $entries |
+    {present:any($entries[]; .present),
+     complete:all($entries[]; .value != null),
+     values:(reduce $entries[] as $entry ({}; .[$entry.field] = $entry.value))}
+  ] as $parsed |
+  (($parsed | length) > 0 and all($parsed[]; .complete)) as $complete |
+  ($complete and all($parsed[]; .values |
+    .native_rooted_run_outputs == 0 or .native_expanded_entries == 0)) as $exclusive |
+  ($complete and all($parsed[]; .values |
+    .native_rooted_run_outputs >= .native_rooted_run_parents and
+    .native_rooted_run_outputs <= 16 * .native_rooted_run_parents)) as $bounded |
+  ($complete and (if $validation then all($parsed[]; .values |
+    .native_replayed_outputs == .native_rooted_run_outputs + .native_expanded_entries)
+    else true end)) as $replayed |
+  ($complete and $exclusive and $bounded and $replayed) as $valid |
+  (reduce $fields[] as $field ({}; .[$field] = null)) as $null_totals |
+  (if $complete then reduce $fields[] as $field ({};
+    .[$field] = ([$parsed[].values[$field]] | add)) else $null_totals end) as $totals |
+  {
+    semantics:(
+      (if $validation then "accepted validation candidates" else "collated candidates" end) +
+      "; representation counters describe candidate work, not committed TPS; " +
+      "each rooted parent covers 1..16 logical outputs; boolean counters mean 0/1"
+    ),
+    telemetry_available:$complete,
+    capture_complete:$complete,
+    records_total:($parsed | length),
+    records_with_telemetry:([$parsed[] | select(.present)] | length),
+    reconciliation:{
+      valid:$valid,
+      representation_exclusive:(if $complete then $exclusive else null end),
+      rooted_output_bounds:(if $complete then $bounded else null end),
+      replay_complete:(if $complete and $validation then $replayed else null end)
+    },
+    raw_totals:$totals,
+    totals:(if $valid then $totals else $null_totals end)
+  };
+
 # Additive finer populations: old images keep usable coarse histograms while
 # absent/mixed/malformed sub-bins remain explicitly unavailable.
 def native_small_staged_histograms($rows):
