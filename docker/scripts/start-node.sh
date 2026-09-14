@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Refuse accidental disk-backed startup of the explicit RAM benchmark profile.
+bash /scripts/require-ram-storage.sh || exit $?
+
 echo starting cron
 
 printenv | while IFS='=' read -r name value; do

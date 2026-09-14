@@ -22,6 +22,7 @@ COPY --chmod=744 docker/scripts/retranslator.fc /scripts
 COPY --chmod=744 docker/scripts/create-msg.fif.template /scripts
 COPY --chmod=744 docker/scripts/start-validator.sh /scripts
 COPY --chmod=744 docker/scripts/start-node.sh /scripts
+COPY --chmod=744 docker/scripts/require-ram-storage.sh /scripts
 COPY --chmod=744 docker/scripts/cron.sh /scripts
 COPY --chmod=744 docker/scripts/participate.sh /scripts
 COPY --chmod=744 docker/scripts/reap.sh /scripts

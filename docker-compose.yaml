@@ -22,6 +22,7 @@ services:
         TON_BASE_IMAGE: ${TON_BASE_IMAGE:-${TON_IMAGE:-ghcr.io/corton-nommander/ton}:${TON_BRANCH:-master}}
     restart: unless-stopped
     cpuset: ${GENESIS_CPUSET:-}
+    memswap_limit: ${GENESIS_MEMORY_SWAP_LIMIT:-0}
     ports:
       - "${LITESERVER_BIND_IP:-0.0.0.0}:40004:40004" # lite-server
       - "40003:40003/udp" # dht-server
@@ -39,6 +40,7 @@ services:
       - native-load-wallets:/var/ton-work/db/native-spam/wallets
     environment:
       - GENESIS=true
+      - NATIVE_RAM_ENABLED=${NATIVE_RAM_ENABLED:-0}
       - NAME=genesis
       - EXTERNAL_IP # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
       - VALIDATION_PERIOD # 24h, default 20min
@@ -224,6 +226,7 @@ services:
       resources:
         limits:
           cpus: '${GENESIS_CPU_QUOTE:-1.0}'
+          memory: '${GENESIS_MEMORY_LIMIT:-0}'
     networks:
       main:
         ipv4_address: 172.28.1.10
@@ -241,6 +244,7 @@ services:
         TON_BRANCH: ${TON_BRANCH:-master}
         TON_BASE_IMAGE: ${TON_BASE_IMAGE:-${TON_IMAGE:-ghcr.io/corton-nommander/ton}:${TON_BRANCH:-master}}
     restart: "no"
+    memswap_limit: ${NATIVE_LOAD_MEMORY_SWAP_LIMIT:-0}
     volumes:
       - shared-data:/usr/share/data:ro
       - native-load-wallets:/wallets:ro
@@ -550,6 +554,7 @@ services:
       - ${DOCKER_VOLUMES_HOST_DIR:-/var/lib/docker/volumes}:/docker-volumes:ro
       - session-stats-data:/data
     restart: unless-stopped
+    memswap_limit: ${SESSION_STATS_MEMORY_SWAP_LIMIT:-0}
     cpuset: ${SESSION_STATS_CPUSET:-}
     depends_on:
       genesis:
@@ -588,6 +593,7 @@ services:
       resources:
         limits:
           cpus: '${SESSION_STATS_CPU_QUOTE:-1}'
+          memory: '${SESSION_STATS_MEMORY_LIMIT:-0}'
     networks:
       main:
         ipv4_address: 172.28.1.28

@@ -132,6 +132,11 @@ historical desktop TPS does not establish this deployment's throughput.
 
 ### Native high-rate load
 
+For the current `.env.physical` full-RAM preset, use the
+[RAM launcher and run instructions](benchmark/physical-ram.md). The direct
+Compose and historical cycle examples in this section apply to a separately
+configured disk-backed `.env`; they do not prepare the private RAM daemon.
+
 Set `NATIVE_LOAD_*` values in `.env`, create a fresh genesis so the requested source/destination accounts exist in the zero state, then start the load container against the already-running network:
 
 ```bash
@@ -261,8 +266,11 @@ message batch and source-run limits.
 
 Cycle 5 improved the wire batch average to 8.70, but its uncapped aggregate
 CWND still reached 1,593 messages while the validator had acceptance gaps near
-65 seconds. The physical profile therefore caps adaptive growth at 768
-messages: exactly one complete 64-message batch for each of 12 connections.
+65 seconds. The earlier physical profile therefore capped adaptive growth at
+768 messages: one complete 64-message batch for each of 12 connections. The
+current full-RAM TPS preset explicitly uses ten connections and a 65,536 cap,
+with separate bounded RPC and canonical-backlog limits; its performance is
+unmeasured and does not supersede those historical results.
 The JSON stream and `generator-summary.json` expose the configured and effective
 cap, clients currently at the cap, ACKs clipped by it, and the sampled CWND peak.
 
@@ -465,7 +473,14 @@ redundant external-message gossip work. Label such results as a local
 single-validator no-gossip diagnostic, not multi-validator or production-network
 capacity.
 
-The tracked `.env.physical` now targets a **48-logical-CPU server A with the
+The tracked `.env.physical` now selects the **volatile full-RAM benchmark**.
+Use the [RAM server procedure](benchmark/physical-ram.md) to prepare its separate
+Docker daemon, run the ten-minute TPS measurement and export evidence. It needs
+at least 192 GiB currently available RAM with the default budgets and creates a
+fresh test chain. Do not copy this profile over an existing production `.env`;
+the direct Compose commands below describe the existing disk deployment path.
+
+The retained physical CPU settings target a **48-logical-CPU server A with the
 load generator on server B**: genesis has a 44-CPU quota, 40 scheduler threads,
 and no fixed CPU affinity; Session Stats has a 2-CPU quota. These are CPU time
 ceilings, not dedicated cores. The old desktop masks restricted genesis to 18
@@ -481,8 +496,10 @@ project name, database mounts, chain settings, and image fixed. The
 [remote guide](https://github.com/corton-nommander/ton/blob/master/doc/native-remote-client-guide.md#scale-an-existing-48-cpu-server-a)
 contains the targeted resource update and recreation procedure, plus B's
 independent CPU/signing/admission-window controls. The profile keeps optional
-load services disabled and follows the published `master` image through
-`start-native-genesis.sh` at operator startup.
+load services disabled. Its RAM launcher prepares the published `master` image
+once, freezes the resulting identities, and routes benchmark commands to its
+private daemon. Existing disk deployments continue to use their own `.env` and
+`start-native-genesis.sh`.
 
 The following optional host-tuned source build describes the separate
 historical desktop benchmark path; it is not required to deploy server A from

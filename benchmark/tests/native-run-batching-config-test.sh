@@ -7,9 +7,12 @@ command -v jq >/dev/null 2>&1 || { echo "required command is not installed: jq" 
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
-for env_file in .env .env.devnet .env.laptop .env.physical; do
+for env_file in .env .env.devnet .env.laptop; do
   grep -qx 'NATIVE_LOAD_NATIVE_RUN_BATCHING=0' "$repo_dir/$env_file"
 done
+# The explicit RAM saturation preset uses signed runs with batching enabled.
+grep -qx 'NATIVE_LOAD_NATIVE_RUN_BATCHING=1' "$repo_dir/.env.physical"
+grep -qx 'NATIVE_LOAD_NATIVE_TRANSFER_RUNS=1' "$repo_dir/.env.physical"
 grep -Fqx '      - NATIVE_LOAD_NATIVE_RUN_BATCHING=${NATIVE_LOAD_NATIVE_RUN_BATCHING:-0}' \
   "$repo_dir/docker-compose.yaml"
 

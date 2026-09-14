@@ -4,7 +4,15 @@ Server A runs the prepared native validator and liteserver. Server B runs only t
 
 ## Prepare and start A
 
-Use the updated MyLocalTonDocker `native-payment-lanes-step6` checkout. For a fresh deployment, start from `.env.physical` and adjust `.env` for A's CPU layout, database path and public liteserver/dashboard bindings. Preserve an existing deployment's project name, database settings and native genesis configuration. Replace old `cycle-clients-*` image entries with:
+The current `.env.physical` is a **volatile RAM benchmark**. For that profile,
+follow the [RAM server procedure](../physical-ram.md) to start its private Docker
+daemon and invoke this exporter through `physical-ram-docker.py exec`. Ordinary
+Docker commands below describe an existing disk deployment. Do not overwrite a
+production `.env` with the RAM profile.
+
+Use the updated MyLocalTonDocker checkout. Preserve an existing disk deployment's
+project name, database settings and native genesis configuration. Replace old
+`cycle-clients-*` image entries with:
 
 ```dotenv
 TON_IMAGE=ghcr.io/corton-nommander/ton
@@ -14,7 +22,9 @@ TON_BUILD_PULL=true
 SESSION_STATS_IMAGE=ghcr.io/neodix42/ton-session-stats:side
 ```
 
-Fresh `.env.physical` deployments now use **eight lanes**. Copy it to `.env` only for a fresh deployment, then customize the host bindings and database path. Its topology is:
+Fresh `.env.physical` RAM benchmarks use **eight lanes**. Keep it separate from
+an existing deployment and customize the server bindings before its RAM startup.
+Its topology is:
 
 ```dotenv
 NATIVE_PAYMENT_LANE_DEPTH=3

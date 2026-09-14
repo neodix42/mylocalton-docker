@@ -47,6 +47,7 @@ class NativeNodeShutdownTest(unittest.TestCase):
                     "native-transfer-runs-config.sh",
                     "native-payment-lanes-config.sh",
                     "native-payment-lane-wallets.sh",
+                    "require-ram-storage.sh",
                 ):
                     shutil.copyfile(SCRIPTS / name, scripts / name)
                 for path in (

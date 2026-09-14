@@ -1,0 +1,109 @@
+{
+  "base_companion_commit": "e77de07689323e2a2439d24ddbd76fe2a878a1e1",
+  "date": "2026-09-14",
+  "files_sha256": {
+    ".env.physical": "eac769b9e48762c9305c52929717a8f0e6464eaad0770e2fe3a97552aab18395",
+    "Dockerfile": "2757b6427e702a1b40842e0d1d6cabff72135be19c4b35ecd68c38db46345359",
+    "README.md": "42ce0c391215006fc9b19eb0e4c33c139440aef81f129ee09238c57d8775d727",
+    "benchmark/physical-ram-docker.py": "52ca24ad3c6f5dbbc3bbac5e1f5869ef7da6da48d22af28a0f83baf35f1e96e0",
+    "benchmark/physical-ram-guard.py": "7abad0605f4099b579285346ac27866e49a7db1391ddc70e24b262c6eb003ab1",
+    "benchmark/physical-ram-preflight.py": "ba3095cf4ce4edd934f113df17952fd4a97463f713e9c577d83e57ec9548c37f",
+    "benchmark/physical-ram.md": "99e13ab598b9cb13b75f967b5e6a6b62d2382f370709b5b6527631b32125c650",
+    "benchmark/remote/README.md": "9374ca385d7171f8955e2a926d1459cb6954782b394b7f33fc88e052d417a297",
+    "benchmark/tests/native-node-shutdown-test.py": "4070b16b9fb62dd4600bba5d8cdf58900bab33819680bdc1402c517e2ead1122",
+    "benchmark/tests/native-run-batching-config-test.sh": "bb17206d1fe6575903dfdc9aa6b243737045663918ca9db304ef24a0ab8e4abc",
+    "benchmark/tests/physical-ram-docker-test.py": "5001be14c4766d3e3bc4ab2410ccb6ca289c4e6a4016a93c230f130cddfae425",
+    "benchmark/tests/physical-ram-guard-test.py": "1a4efc2aa5ec84411adf30992bf5dd6ce241dc90d6c89f2b2ce5ecff24d685b3",
+    "benchmark/tests/physical-ram-preflight-test.py": "43a5969eb38dcbeb3d11531605fae782888215dfc0836ff5bd52eb2a5c6a93c0",
+    "benchmark/tests/physical-ram-profile-test.py": "0f479dd41a0892805f23de41e42eb6ba75af131f0a8623822b8b92e439e24428",
+    "docker-compose.yaml": "7b492ad11fa654c97a3a079855ad3141a283f81dbe18c55c45091cf7e97ec1fb",
+    "docker/scripts/require-ram-storage.sh": "1ef00026e74aaabc283d29fcfe202f500865b41a5a40ca343b43df15ae69075b",
+    "docker/scripts/start-node.sh": "1785e72cd9a4bb3dad745ed06ebe33befef23fc41d713fcca6d55a04c503fcdc"
+  },
+  "local_check": {
+    "checked_at": "2026-09-14T16:02:43.461684+00:00",
+    "daemons_started": false,
+    "mem_available_bytes": 23229575168,
+    "mem_total_bytes": 134984425472,
+    "preflight_exit_code": 2,
+    "preserved_comparison_seed_database_bytes": 33402800611,
+    "ram_mount_created": false,
+    "raw_receipt_sha256": "ceec62df0e14ac234a792d393dc457b090829832b06f5c93636b918bf6c3aa03",
+    "read_only": true,
+    "reason": "Available host RAM is below the existing seed database size before the validator working set; native dockerd/containerd are absent and the original engine is Docker Desktop with active unrelated workloads and network conflicts.",
+    "swap_free_bytes": 190795776,
+    "swap_total_bytes": 8589930496,
+    "valid": false,
+    "workload_containers_started_or_stopped": false
+  },
+  "performance": {
+    "comparison_gain_percent": null,
+    "conclusion": "No new TPS result or storage speedup claim. Measure on the native Linux server; isolating storage effects requires a matching disk control there.",
+    "measurement_run": false,
+    "tps": null
+  },
+  "physical_preset": {
+    "container_heap_swap_disabled": true,
+    "drain_timeout_seconds": 180,
+    "env_file": ".env.physical",
+    "filesystem_free_guard_gib": 16,
+    "filesystem_gib": 96,
+    "genesis_cpu_quota": 44,
+    "host_kernel_network_and_persistent_exports_outside_ram_scope": true,
+    "host_reserve_gib": 32,
+    "images_frozen_before_measurement": true,
+    "intended_installed_ram_gib_at_least": 256,
+    "logical_cpus_profile": 48,
+    "measurement_seconds": 600,
+    "minimum_available_gib": 192,
+    "minimum_refers_to_current_available_not_installed_memory": true,
+    "native_engine_required": true,
+    "new_test_chain": true,
+    "payment_lanes": 8,
+    "private_containerd": true,
+    "ram_root": "/mnt/mylocalton-ram",
+    "runtime_planning_gib": 64,
+    "storage_driver": "vfs",
+    "tmpfs_noswap_required": true,
+    "validator_scheduler_threads": 40,
+    "volatile": true,
+    "warmup_seconds": 60
+  },
+  "schema": "native-physical-ram-preparation-v1",
+  "status": "prepared_not_tps_measured",
+  "task": "Prepare full validator runtime and benchmark storage in nonswapping RAM; use physical server fallback when local memory is insufficient.",
+  "validation": {
+    "actual_compose_rendering_passed": true,
+    "existing_benchmark_self_test_passed": true,
+    "existing_self_test_log_sha256": "f571ef9996397c6fb599bf96bbbb4f0fbd68a23d1cbe2821464b46fb85c5cbd8",
+    "focused_suites": [
+      {
+        "log_sha256": "62aec6db93f9644f3a1d83b088dfc6841cd07656b09d32d841b1d80010c16e3c",
+        "passed": true,
+        "suite": "preflight",
+        "test_count": 17
+      },
+      {
+        "log_sha256": "8642a1ac72c63530bbaa2c1f2526767cc3b14a928c117e4bff18cd4c4a88ad42",
+        "passed": true,
+        "suite": "guard",
+        "test_count": 8
+      },
+      {
+        "log_sha256": "8c61704ffc61ece0de1ce6972db52faf4e2a7f492b8bded89a8465948a1b3e92",
+        "passed": true,
+        "suite": "profile",
+        "test_count": 4
+      },
+      {
+        "log_sha256": "06b2032895241ae6222e28cc7867416735d05f81eb4dbd871bb5cf28c9b33c11",
+        "passed": true,
+        "suite": "launcher",
+        "test_count": 13
+      }
+    ],
+    "focused_test_count": 42,
+    "native_daemon_startup_tested": false,
+    "real_ram_storage_network_smoke_tested": false
+  }
+}
