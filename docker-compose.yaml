@@ -9,6 +9,8 @@ x-indexer-environment: &index-common
 services:
   genesis:
     container_name: genesis
+    # The engine uses default SIGTERM handling; init forwards it and reaps helpers.
+    init: true
     image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
     build:
       context: .
@@ -628,6 +630,7 @@ services:
 
   ## VALIDATORS
   validator-1:
+    init: true
     container_name: validator-1
     profiles: [validators-1, validators-2, validators-3, validators-4, validators-5]
     image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
@@ -664,6 +667,7 @@ services:
         ipv4_address: 172.28.1.11
 
   validator-2:
+    init: true
     container_name: validator-2
     profiles: [validators-2, validators-3, validators-4, validators-5]
     image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
@@ -700,6 +704,7 @@ services:
         ipv4_address: 172.28.1.12
 
   validator-3:
+    init: true
     container_name: validator-3
     profiles: [validators-3, validators-4, validators-5]
     image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
@@ -736,6 +741,7 @@ services:
         ipv4_address: 172.28.1.13
 
   validator-4:
+    init: true
     container_name: validator-4
     profiles: [validators-4, validators-5]
     image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
@@ -772,6 +778,7 @@ services:
         ipv4_address: 172.28.1.14
 
   validator-5:
+    init: true
     container_name: validator-5
     profiles: [validators-5]
     image: ${MLT_IMAGE:-ghcr.io/neodix42/mylocalton-docker}:${TON_BRANCH:-master}
