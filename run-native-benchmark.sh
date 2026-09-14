@@ -594,8 +594,8 @@ capture_genesis_identity() {
     if length != 1 then error("missing genesis identity") else .[0] end |
     {container_id:.Id,image_id:.Image,started_at:.State.StartedAt,
      restart_count:.RestartCount,running:.State.Running}')
-  # validator-engine is daemonized inside genesis. Container start/restart
-  # counters alone cannot detect a daemon restart; use PID plus kernel start
+  # Older genesis images daemonize validator-engine. Container start/restart
+  # counters alone cannot detect that daemon restarting; use PID plus kernel start
   # ticks without inspecting or recording command lines or key arguments.
   validator_identity=$(docker exec genesis sh -c '
     for process in /proc/[0-9]*; do
@@ -3084,18 +3084,9 @@ jq -L "$benchmark_jq_dir" -Rsc \
        max:$v[-1]}
     end;
   def stage_distribution($rows; $name):
-    [$rows[] |
-      ((.work_time_real_stats? // "") |
-       (capture("(?:^| )" + $name + "=(?<value>[-+0-9.eE]+)")? | .value) |
-       tonumber?) |
-      select(. != null)] |
-    distribution;
+    native_work_time_stage_values($rows; $name) | distribution;
   def native_work_counter_values($rows; $name):
-    [$rows[] |
-      ((.work_time_real_stats? // "") |
-       (capture("(?:^| )" + $name + "=(?<value>(?:[-+0-9.eE]+|true|false))")? | .value) |
-       stat_counter_value) |
-      select(. != null)];
+    native_work_time_counter_values($rows; $name);
   def native_work_counter_sum($rows; $name):
     native_work_counter_values($rows; $name) | add // 0;
   def native_work_counter_max($rows; $name):
@@ -3253,7 +3244,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
         select(.event["@type"] == "consensus.simplex.stats.voted" and
                .event.vote["@type"] == "consensus.simplex.finalizeVote")] | length)
     };
-  [split("\n")[] | fromjson?] as $records |
+  [split("\n")[] | fromjson? | native_index_work_time_stats] as $records |
   [$records[] | select(.block_stats? != null)] as $collated |
   [$records[] | select(.validated_at? != null)] as $validated |
   [$collated[] | select((.block_id.workchain? // .block_id.workchain_id? // -1) == 0)] as $wc_collated |
