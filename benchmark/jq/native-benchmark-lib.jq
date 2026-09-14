@@ -25,16 +25,75 @@ def stat_counter_value:
   else null
   end;
 
+# Index the current validator's canonical, unique key=value telemetry once per
+# row. Keep raw values: the consumers deliberately have different numeric and
+# boolean contracts. Noncanonical spacing, duplicate keys, malformed tokens,
+# and legacy formats use the original parsers below without changing their
+# prefix-match, duplicate, or missing-field behavior. The private index is
+# transient report state, never part of an emitted summary.
+def native_index_work_time_stats:
+  if type != "object" then .
+  else
+    ._native_work_time_stats_index = (
+      (.work_time_real_stats? // "") as $stats |
+      if ($stats | type) != "string" then null
+      elif $stats == "" then {}
+      elif ($stats | test(
+        "\\A[A-Za-z_][A-Za-z0-9_]*=(?:[-+]?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?|true|false)" +
+        "(?: [A-Za-z_][A-Za-z0-9_]*=(?:[-+]?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?|true|false))*\\z"))
+      then
+        ($stats | split(" ") | map(split("="))) as $tokens |
+        (reduce $tokens[] as $token ({}; .[$token[0]] = $token[1])) as $index |
+        if ($index | length) == ($tokens | length) then $index else null end
+      else null
+      end
+    )
+  end;
+
+def native_work_time_counter_value($row; $name):
+  if $row._native_work_time_stats_index? != null then
+    ($row._native_work_time_stats_index[$name] | stat_counter_value)
+  else
+    (($row.work_time_real_stats? // "") |
+      ((capture("(?:^| )" + $name +
+                "=(?<value>(?:[-+0-9.eE]+|true|false))")? | .value) // null) |
+      stat_counter_value)
+  end;
+
+def native_work_time_stage_values($rows; $name):
+  [$rows[] |
+    (if ._native_work_time_stats_index? != null then
+       (._native_work_time_stats_index[$name] | tonumber?)
+     else
+       ((.work_time_real_stats? // "") |
+        (capture("(?:^| )" + $name + "=(?<value>[-+0-9.eE]+)")? | .value) |
+        tonumber?)
+     end) |
+    select(. != null)];
+
+def native_work_time_space_tokens($row; $name):
+  if $row._native_work_time_stats_index? != null then
+    [$row._native_work_time_stats_index[$name] | select(. != null)]
+  else
+    [($row.work_time_real_stats? // "" | split(" ")[] |
+      select(startswith($name + "=")) | ltrimstr($name + "="))]
+  end;
+
+def native_work_time_whitespace_tokens($row; $name):
+  if $row._native_work_time_stats_index? != null then
+    [$row._native_work_time_stats_index[$name] | select(. != null)]
+  else
+    [(($row.work_time_real_stats? // null) | strings | splits("[[:space:]]+")) |
+     select(startswith($name + "=")) | ltrimstr($name + "=")]
+  end;
+
 # The native collator emits its fast-path counters in the space-separated
 # work_time_real_stats string.  Keep checkpoint-coalescing parsing here rather
 # than in the wrapper so the complete, all-or-nothing contract is testable and
 # older result bundles remain explicitly distinguishable from a zero-counter
 # run.
 def native_work_time_counter_values($rows; $name):
-  [$rows[] |
-    ((.work_time_real_stats? // "") |
-     (capture("(?:^| )" + $name + "=(?<value>(?:[-+0-9.eE]+|true|false))")? | .value) |
-     stat_counter_value) |
+  [$rows[] | native_work_time_counter_value(.; $name) |
     select(. != null)];
 
 # Additive finer populations: old images keep usable coarse histograms while
@@ -45,8 +104,7 @@ def native_small_staged_histograms($rows):
   [$prefixes[] as $prefix | ($bins + ["le64"])[] | $prefix + .] as $fields |
   [$rows[] as $row |
     reduce $fields[] as $field ({};
-      [($row.work_time_real_stats? // "" | split(" ")[] |
-        select(startswith($field + "=")) | ltrimstr($field + "="))] as $tokens |
+      native_work_time_space_tokens($row; $field) as $tokens |
       (if ($tokens | length) == 1 then ($tokens[0] | tonumber? // null) else null end) as $value |
       .[$field] = (if ($value | nonnegative_integer) then $value else null end))] as $records |
   (($records | length) > 0 and all($records[]; all(.[]; . != null))) as $complete |
@@ -72,8 +130,7 @@ def native_staged_worker_histograms($rows):
    [$tiers[] | "native_staged_workers_" + .]) as $fields |
   [$rows[] as $row |
     reduce $fields[] as $field ({};
-      [($row.work_time_real_stats? // "" | split(" ")[] |
-        select(startswith($field + "=")) | ltrimstr($field + "="))] as $tokens |
+      native_work_time_space_tokens($row; $field) as $tokens |
       (if ($tokens | length) == 1 then ($tokens[0] | tonumber? // null) else null end) as $value |
       .[$field] = (if $value | nonnegative_integer then $value else null end))] as $records |
   (($records | length) > 0 and all($records[]; all(.[]; . != null))) as $complete |
@@ -556,12 +613,7 @@ def collation_callback_install_summary($rows):
     {key:"request_to_epoch_s", stat:"external_delivery_callback_install_request_to_epoch_s", kind:"seconds"}
   ] as $fields |
   def work_stat_tokens($row; $name):
-    ($name + "=") as $prefix |
-    [
-      (($row.work_time_real_stats? // null) | strings | splits("[[:space:]]+")) |
-      select(startswith($prefix)) |
-      ltrimstr($prefix)
-    ];
+    native_work_time_whitespace_tokens($row; $name);
   def nonnegative_finite_number:
     if type != "string" or
        (test("^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$") | not)
@@ -961,10 +1013,7 @@ def collation_external_wait_summary($rows):
     else null
     end;
   def work_stat($row; $name):
-    (($row.work_time_real_stats? // "") |
-      ((capture("(?:^| )" + $name +
-                "=(?<value>(?:[-+0-9.eE]+|true|false))")? | .value) // null) |
-      stat_counter_value);
+    native_work_time_counter_value($row; $name);
   [
     $rows[] as $row |
     (work_stat($row; "external_wait_accounted_s")) as $accounted |
