@@ -27,7 +27,13 @@ RAM_KEYS = (
 )
 BENCHMARK_PORTS = {"tcp": {40002, 40004, 8888, 18000},
                    "udp": {40001, 40003, 41001}}
-PLANNED_NETWORKS = ("172.28.1.0/24", "172.29.0.0/24", "172.30.0.0/16")
+NETWORK_DEFAULTS = {
+    "MLT_NETWORK_PREFIX": "172.28.1",
+    "NATIVE_RAM_BRIDGE_CIDR": "172.29.0.1/24",
+    "NATIVE_RAM_ADDRESS_POOL": "172.30.0.0/16",
+}
+PRIVATE_NETWORKS = tuple(ipaddress.IPv4Network(value) for value in
+                         ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
 
 class CheckError(ValueError):
@@ -35,12 +41,12 @@ class CheckError(ValueError):
 
 
 def read_config(path):
-    """Parse only the six literal RAM settings, without executing dotenv text."""
+    """Parse literal RAM and network settings without executing dotenv text."""
     raw = Path(path).read_bytes()
     settings = {}
     for number, line in enumerate(raw.decode("utf-8").splitlines(), 1):
-        match = re.match(r"^\s*(?:export\s+)?(NATIVE_RAM_[A-Za-z0-9_]+)\s*=(.*)$", line)
-        if not match or match[1] not in RAM_KEYS:
+        match = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$", line)
+        if not match or match[1] not in (*RAM_KEYS, *NETWORK_DEFAULTS):
             continue
         key, value = match.groups()
         if key in settings:
@@ -74,7 +80,39 @@ def read_config(path):
     values["required_available_bytes"] = values["required_available_gib"] * GIB
     values["capacity_is_reserved"] = False
     values["env_sha256"] = hashlib.sha256(raw).hexdigest()
+    values.update(read_network_config(settings))
     return values
+
+
+def read_network_config(settings):
+    settings = {**NETWORK_DEFAULTS, **settings}
+    prefix = settings["MLT_NETWORK_PREFIX"]
+    if not re.fullmatch(r"[0-9]{1,3}(?:\.[0-9]{1,3}){2}", prefix):
+        raise CheckError("MLT_NETWORK_PREFIX must contain three literal IPv4 octets")
+    try:
+        compose = ipaddress.IPv4Network(prefix + ".0/24")
+        bridge = ipaddress.IPv4Interface(settings["NATIVE_RAM_BRIDGE_CIDR"])
+        pool = ipaddress.IPv4Network(settings["NATIVE_RAM_ADDRESS_POOL"], strict=True)
+    except ValueError as error:
+        raise CheckError("invalid RAM IPv4 network setting: " + str(error)) from error
+    if "/" not in settings["NATIVE_RAM_BRIDGE_CIDR"] or bridge.network.prefixlen > 30 or \
+            bridge.ip in (bridge.network.network_address, bridge.network.broadcast_address):
+        raise CheckError("NATIVE_RAM_BRIDGE_CIDR must specify a usable gateway in an IPv4 subnet of /30 or larger")
+    if "/" not in settings["NATIVE_RAM_ADDRESS_POOL"] or pool.prefixlen > 24:
+        raise CheckError("NATIVE_RAM_ADDRESS_POOL must specify an IPv4 network of /24 or larger")
+    networks = (("MLT_NETWORK_PREFIX", compose),
+                ("NATIVE_RAM_BRIDGE_CIDR", bridge.network),
+                ("NATIVE_RAM_ADDRESS_POOL", pool))
+    for name, network in networks:
+        if not any(network.subnet_of(private) for private in PRIVATE_NETWORKS):
+            raise CheckError(f"{name} must use an RFC1918 private IPv4 network")
+    for index, (name, network) in enumerate(networks):
+        for other_name, other_network in networks[index + 1:]:
+            if network.overlaps(other_network):
+                raise CheckError(f"configured RAM networks overlap: {name} ({network}) and "
+                                 f"{other_name} ({other_network})")
+    return {"network_prefix": prefix, "bridge_cidr": str(bridge), "address_pool": str(pool),
+            "planned_ipv4_networks": [str(network) for _, network in networks]}
 
 
 def run_readonly(argv):
@@ -130,11 +168,15 @@ def host_snapshot():
         "mount_path": shutil.which("mount"),
         "findmnt_path": shutil.which("findmnt"),
         "ip_path": shutil.which("ip"),
+        "iptables_path": shutil.which("iptables"),
+        "ipv4_forwarding": Path("/proc/sys/net/ipv4/ip_forward").read_text().strip() == "1"
+            if Path("/proc/sys/net/ipv4/ip_forward").is_file() else False,
         "logical_cpus": os.cpu_count(),
         "memory_pressure": Path("/proc/pressure/memory").read_text().strip()
             if Path("/proc/pressure/memory").is_file() else None,
         "benchmark_port_listeners": listening_ports(),
         "planned_bridge_exists": Path("/sys/class/net/tonram0").exists(),
+        "planned_compose_bridge_exists": Path("/sys/class/net/tonram1").exists(),
     }
     try:
         host["ipv4_routes"] = json.loads(run_readonly(["ip", "-json", "-4", "route", "show", "table", "all"]))
@@ -215,7 +257,9 @@ def daemon_plan(config):
         "data-root": paths["data_root"], "exec-root": paths["exec_root"],
         "pidfile": paths["pid_file"], "hosts": ["unix://" + paths["socket"]],
         "storage-driver": "vfs", "bridge": "tonram0",
-        "default-address-pools": [{"base": "172.30.0.0/16", "size": 24}],
+        "iptables": False, "ip6tables": False, "ip-masq": False,
+        "ip-forward": False, "userland-proxy": True,
+        "default-address-pools": [{"base": config["address_pool"], "size": 24}],
         "log-driver": "json-file", "live-restore": False,
         "features": {"containerd-snapshotter": False},
         "containerd-namespace": "mylocalton-ram",
@@ -228,15 +272,17 @@ def daemon_plan(config):
             "containerd_paths": containerd_paths, "containerd_config": containerd_config,
             "containerd_argv": ["containerd", "--config", containerd_paths["config"]],
             "docker_host": "unix://" + paths["socket"],
-            "bridge": {"name": "tonram0", "address": "172.29.0.1/24"},
+            "bridge": {"name": "tonram0", "address": config["bridge_cidr"]},
+            "compose_bridge": {"name": "tonram1", "subnet": config["planned_ipv4_networks"][0]},
             "mount_argv": ["mount", "-t", "tmpfs", "-o",
                 f"size={config['size_gib']}G,noswap,nodev,nosuid,mode=0700", "tmpfs", str(root)],
-            "planned_ipv4_networks": list(PLANNED_NETWORKS),
+            "planned_ipv4_networks": list(config["planned_ipv4_networks"]),
             "notes": ["All paths belong to the new tmpfs; never use the original daemon's data root.",
                       "vfs stores independent image/container filesystem copies; budget their full size.",
                       "Start the explicit private containerd first; automatic system containerd discovery would use host storage.",
                       "Keep json-file logs: the benchmark reads final generator proofs with docker logs.",
                       "Create/address the dedicated bridge before dockerd; custom bridge and bip are mutually exclusive.",
+                      "Docker firewall changes are disabled; the runner owns rules scoped to tonram0 and tonram1.",
                       "Mount success and the --require-mounted check establish noswap support.",
                       "Readiness is a point-in-time check; the runner must guard RAM and tmpfs free space."]}
 
@@ -287,7 +333,7 @@ def evaluate(config, host, docker, mount):
         errors.append("a native Linux host is required")
     if not host.get("cgroup_v2"):
         errors.append("the host must use cgroup v2")
-    for tool in ("dockerd", "containerd", "docker", "mount", "findmnt", "ip"):
+    for tool in ("dockerd", "containerd", "docker", "mount", "findmnt", "ip", "iptables"):
         if not host.get(tool + "_path"):
             errors.append(f"required host executable is unavailable: {tool}")
     if host.get("mem_available_bytes", 0) < config["required_available_bytes"]:
@@ -298,9 +344,13 @@ def evaluate(config, host, docker, mount):
         errors.append("a host listener already occupies a benchmark TCP/UDP port")
     if host.get("planned_bridge_exists"):
         errors.append("planned RAM Docker bridge tonram0 already exists")
+    if host.get("planned_compose_bridge_exists"):
+        errors.append("planned RAM Compose bridge tonram1 already exists")
+    if not host.get("ipv4_forwarding"):
+        errors.append("host IPv4 forwarding must already be enabled; the RAM runner will not change the host setting")
     if host.get("route_inspection_error"):
         errors.append("host route inspection failed: " + host["route_inspection_error"])
-    planned = [ipaddress.ip_network(value) for value in PLANNED_NETWORKS]
+    planned = [ipaddress.ip_network(value) for value in config["planned_ipv4_networks"]]
     for route in host.get("ipv4_routes", []):
         destination = route.get("dst", "default")
         if destination in ("default", "0.0.0.0/0"):
@@ -321,8 +371,6 @@ def evaluate(config, host, docker, mount):
             errors.append("the original Docker daemon must report cgroup v2")
         if any("rootless" in item.lower() for item in docker.get("security_options", [])):
             errors.append("the original Docker daemon must be rootful")
-        if docker.get("running_containers"):
-            errors.append("the original Docker daemon has running containers; use a dedicated benchmark host maintenance window")
         if docker.get("benchmark_port_publications"):
             errors.append("the original Docker daemon publishes a benchmark TCP/UDP port")
         for network in docker.get("networks", []):

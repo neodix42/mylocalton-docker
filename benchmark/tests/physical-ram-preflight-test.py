@@ -32,12 +32,13 @@ class PhysicalRamPreflightTest(unittest.TestCase):
         self.env.write_text(self.base)
         self.config = CHECK.read_config(self.env)
         self.host = {"platform": "linux", "cgroup_v2": True,
+                     "ipv4_forwarding": True,
                      "mem_available_bytes": 220 * CHECK.GIB,
                      "benchmark_port_listeners": [], "planned_bridge_exists": False,
                      "ipv4_routes": [{"dst": "default", "dev": "eno1"},
                                      {"dst": "192.0.2.0/24", "dev": "eno1"}]}
         self.host.update({name + "_path": "/usr/bin/" + name
-                          for name in ("docker", "dockerd", "containerd", "mount", "findmnt", "ip")})
+                          for name in ("docker", "dockerd", "containerd", "mount", "findmnt", "ip", "iptables")})
         self.docker = {"os_type": "linux", "operating_system": "Ubuntu 24.04",
                        "cgroup_version": "2", "security_options": ["name=seccomp,profile=builtin"],
                        "networks": [{"name": "bridge", "subnets": ["172.17.0.0/16"]}],
@@ -96,9 +97,87 @@ class PhysicalRamPreflightTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.CheckError, "symlinks"):
             CHECK.read_config(self.env)
 
-    def test_original_daemon_activity_is_rejected_even_without_port_conflict(self):
+    def test_unrelated_original_daemon_activity_is_admitted(self):
         self.docker["running_containers"] = [{"id": "a" * 64, "name": "unrelated-service"}]
-        self.assertTrue(any("running containers" in reason for reason in self.errors()))
+        self.assertEqual(self.errors(), [])
+
+    def test_configured_ram_networks_drive_bridge_pool_and_admission(self):
+        self.env.write_text(self.base + "MLT_NETWORK_PREFIX=10.203.1\n"
+                            "NATIVE_RAM_BRIDGE_CIDR=10.203.2.1/24\n"
+                            "NATIVE_RAM_ADDRESS_POOL=10.204.0.0/16\n")
+        self.config = CHECK.read_config(self.env)
+        self.assertEqual(self.config["network_prefix"], "10.203.1")
+        self.assertEqual(self.config["planned_ipv4_networks"],
+                         ["10.203.1.0/24", "10.203.2.0/24", "10.204.0.0/16"])
+        plan = CHECK.daemon_plan(self.config)
+        self.assertEqual(plan["bridge"], {"name": "tonram0", "address": "10.203.2.1/24"})
+        self.assertEqual(plan["daemon_config"]["default-address-pools"],
+                         [{"base": "10.204.0.0/16", "size": 24}])
+        self.assertEqual(plan["compose_bridge"], {"name": "tonram1", "subnet": "10.203.1.0/24"})
+        self.assertEqual(plan["planned_ipv4_networks"], self.config["planned_ipv4_networks"])
+        for subnet in ("10.203.1.128/25", "10.203.2.1/32", "10.204.42.0/24"):
+            docker = copy.deepcopy(self.docker)
+            docker["networks"].append({"name": "conflict", "subnets": [subnet]})
+            host = copy.deepcopy(self.host)
+            host["ipv4_routes"].append({"dst": subnet, "dev": "vpn0"})
+            with self.subTest(subnet=subnet):
+                self.assertTrue(any("original Docker network conflict" in reason
+                                    for reason in self.errors(docker=docker)))
+                self.assertTrue(any("host route" in reason for reason in self.errors(host=host)))
+
+    def test_five_services_and_existing_mylocalton_network_are_recorded_without_rejection(self):
+        self.env.write_text(self.base + "MLT_NETWORK_PREFIX=10.203.1\n"
+                            "NATIVE_RAM_BRIDGE_CIDR=10.203.2.1/24\n"
+                            "NATIVE_RAM_ADDRESS_POOL=10.204.0.0/16\n")
+        self.config = CHECK.read_config(self.env)
+        names = ["maivlab-fin-nginx-1", "maivlab-fin", "solarisone-web-1",
+                 "solarisone-contact-1", "maivlab-bot"]
+        self.docker["running_containers"] = [{"id": str(index) * 64, "name": name}
+                                             for index, name in enumerate(names)]
+        self.docker["networks"].append({"name": "mylocalton-network", "subnets": ["172.28.1.0/24"]})
+        self.host["ipv4_routes"].extend({"dst": destination, "dev": "br-6c6455c67014"}
+                                          for destination in ("172.28.1.0/24", "172.28.1.1", "172.28.1.255"))
+        self.assertEqual(self.errors(), [])
+        with patch.object(CHECK, "host_snapshot", return_value=self.host), \
+             patch.object(CHECK, "docker_snapshot", return_value=self.docker), \
+             patch("sys.stdout", new_callable=io.StringIO) as output:
+            self.assertEqual(CHECK.main(["--env-file", str(self.env)]), 0)
+            receipt = json.loads(output.getvalue())
+        self.assertTrue(receipt["valid"])
+        self.assertEqual(receipt["original_docker"]["running_containers"], self.docker["running_containers"])
+        self.docker["benchmark_port_publications"] = [{"protocol": "tcp", "port": 40004}]
+        self.assertTrue(any("publishes" in reason for reason in self.errors()))
+        self.docker["benchmark_port_publications"] = []
+        self.host["benchmark_port_listeners"] = [{"protocol": "udp", "port": 40001}]
+        self.assertTrue(any("host listener" in reason for reason in self.errors()))
+
+    def test_network_settings_must_be_literal_private_ipv4_and_have_usable_ranges(self):
+        invalid = {
+            "MLT_NETWORK_PREFIX": ["10.203", "10.203.1.0", "10.203.256", "010.203.1",
+                                   "8.8.8", "127.0.0", "169.254.1", "224.0.0", "${PREFIX}", "::1"],
+            "NATIVE_RAM_BRIDGE_CIDR": ["10.203.2.0/24", "10.203.2.255/24", "10.203.2.1/31",
+                                       "10.203.2.1", "8.8.8.1/24", "fc00::1/64", "$(id)"],
+            "NATIVE_RAM_ADDRESS_POOL": ["10.204.1.0/16", "10.204.0.0/25", "10.204.0.0",
+                                        "0.0.0.0/0", "8.0.0.0/8", "fc00::/48", "`id`"],
+        }
+        for key, values in invalid.items():
+            for value in values:
+                self.env.write_text(self.base + f"{key}={value}\n")
+                with self.subTest(key=key, value=value), self.assertRaises(CHECK.CheckError):
+                    CHECK.read_config(self.env)
+        for key, value in CHECK.NETWORK_DEFAULTS.items():
+            self.env.write_text(self.base + f"{key}={value}\nexport {key}={value}\n")
+            with self.subTest(duplicate=key), self.assertRaisesRegex(CHECK.CheckError, "duplicate"):
+                CHECK.read_config(self.env)
+
+    def test_overlap_between_any_two_configured_networks_is_rejected(self):
+        settings = ["MLT_NETWORK_PREFIX=172.29.0\n",
+                    "MLT_NETWORK_PREFIX=172.30.1\n",
+                    "NATIVE_RAM_BRIDGE_CIDR=172.30.42.1/24\n"]
+        for setting in settings:
+            self.env.write_text(self.base + setting)
+            with self.subTest(setting=setting), self.assertRaisesRegex(CHECK.CheckError, "networks overlap"):
+                CHECK.read_config(self.env)
 
     def test_docker_null_network_config_and_ports_are_valid_inspection_shapes(self):
         replies = [json.dumps([{"Endpoints": {"docker": {"Host": "unix:///var/run/docker.sock"}}}]),
@@ -141,6 +220,16 @@ class PhysicalRamPreflightTest(unittest.TestCase):
         self.assertTrue(any("host listener" in error for error in errors))
         self.assertTrue(any("unavailable: dockerd" in error for error in errors))
         self.assertTrue(any("publishes" in error for error in errors))
+
+    def test_coexistence_requires_forwarding_iptables_and_unclaimed_owned_bridges(self):
+        for field, value, fragment in (("ipv4_forwarding", False, "IPv4 forwarding"),
+                                       ("iptables_path", None, "unavailable: iptables"),
+                                       ("planned_bridge_exists", True, "tonram0 already exists"),
+                                       ("planned_compose_bridge_exists", True, "tonram1 already exists")):
+            host = copy.deepcopy(self.host)
+            host[field] = value
+            with self.subTest(field=field):
+                self.assertTrue(any(fragment in error for error in self.errors(host=host)))
 
     def test_empty_root_only_before_mount(self):
         self.assertEqual(CHECK.check_mount(self.config, False)["errors"], [])
@@ -191,6 +280,9 @@ class PhysicalRamPreflightTest(unittest.TestCase):
         self.assertFalse(daemon["features"]["containerd-snapshotter"])
         self.assertEqual(daemon["log-driver"], "json-file")
         self.assertEqual(daemon["bridge"], "tonram0")
+        for option in ("iptables", "ip6tables", "ip-masq", "ip-forward"):
+            self.assertIs(daemon[option], False)
+        self.assertIs(daemon["userland-proxy"], True)
         self.assertNotIn("bip", daemon)
         self.assertEqual(plan["bridge"]["address"], "172.29.0.1/24")
         self.assertNotEqual(daemon["containerd-namespace"], "moby")

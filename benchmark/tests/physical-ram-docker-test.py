@@ -24,6 +24,7 @@ class LauncherTests(unittest.TestCase):
         self.launcher = MODULE.Launcher.__new__(MODULE.Launcher)
         self.launcher.root = self.root
         self.launcher.env = {}
+        self.launcher.config = {"network_prefix": "10.203.1"}
         self.launcher.env_file = self.root / "profile.env"
         self.launcher.env_file.write_text("COMPOSE_PROJECT_NAME=mylocalton-desktop\nNATIVE_RAM_ENABLED=1\n")
         self.launcher.state = {"project": "mylocalton-desktop", "images": {
@@ -40,9 +41,12 @@ class LauncherTests(unittest.TestCase):
     def config(self):
         data = {"volumes": {"db": {}}, "services": {name: {
             "environment": {"NATIVE_RAM_ENABLED": "1"}, "memswap_limit": "1024",
+            "networks": {"main": {}},
             "deploy": {"resources": {"limits": {"memory": "1024"}}},
             "volumes": [{"type": "volume", "source": "db", "target": "/data"}]}
             for name in MODULE.SERVICES}}
+        data["networks"] = {"main": {"driver": "bridge", "ipam": {"config": [{"subnet": "10.203.1.0/24"}]},
+                                      "driver_opts": {"com.docker.network.bridge.name": "tonram1"}}}
         data["services"]["session-stats"]["volumes"].extend([
             {"type": "bind", "source": str(self.root), "target": "/hostfs", "read_only": True},
             {"type": "bind", "source": str(self.root / "data/volumes"),
@@ -81,6 +85,24 @@ class LauncherTests(unittest.TestCase):
 
     def test_expected_named_and_read_only_ram_mounts_accepted(self):
         self.resolve_config(self.config())
+
+    def test_compose_cannot_escape_the_checked_network(self):
+        for mutation in ("subnet", "bridge", "external", "host", "extra_network"):
+            with self.subTest(mutation=mutation):
+                config = self.config()
+                main = config["networks"]["main"]
+                if mutation == "subnet":
+                    main["ipam"]["config"] = [{"subnet": "172.28.1.0/24"}]
+                elif mutation == "bridge":
+                    main["driver_opts"]["com.docker.network.bridge.name"] = "br-existing"
+                elif mutation == "external":
+                    main["external"] = True
+                elif mutation == "host":
+                    config["services"]["genesis"]["network_mode"] = "host"
+                else:
+                    config["services"]["genesis"]["networks"]["other"] = {}
+                with self.assertRaisesRegex(MODULE.LauncherError, "network"):
+                    self.resolve_config(config)
 
     def test_reject_redirected_storage(self):
         for mutation in ("external", "driver", "host_root", "writable", "wrong_target", "wrong_service"):
@@ -179,11 +201,31 @@ class LauncherTests(unittest.TestCase):
                               "containerd_paths": {"config": str(self.root / "containerd.toml"),
                                                    "socket": str(self.root / "containerd.sock")}}
         self.launcher.state["bridge"] = {"name": "tonram0", "ifindex": 123}
+        self.launcher.state["firewall"] = {"owned": "fixture"}
         with patch.object(MODULE, "process_owned", return_value=False), \
                 patch.object(MODULE, "socket_live", return_value=True), \
+                patch.object(MODULE.FIREWALL_MODULE, "remove") as firewall_remove, \
                 patch.object(MODULE, "command") as run, patch.object(MODULE.os, "kill") as kill:
             with self.assertRaises(MODULE.LauncherError):
                 self.launcher.stop_processes()
+            run.assert_not_called()
+            kill.assert_not_called()
+            firewall_remove.assert_not_called()
+
+    def test_stopped_private_daemons_allow_owned_firewall_cleanup(self):
+        self.launcher.plan = {"paths": {"daemon_config": str(self.root / "daemon.json"),
+                                       "socket": str(self.root / "docker.sock")},
+                              "containerd_paths": {"config": str(self.root / "containerd.toml"),
+                                                   "socket": str(self.root / "containerd.sock")}}
+        self.launcher.state["bridge"] = {"name": "tonram0", "ifindex": 123}
+        self.launcher.state["firewall"] = {"owned": "fixture"}
+        with patch.object(MODULE, "process_owned", return_value=False), \
+                patch.object(MODULE, "socket_live", return_value=False), \
+                patch.object(MODULE.Path, "exists", return_value=False), \
+                patch.object(MODULE.FIREWALL_MODULE, "remove") as firewall_remove, \
+                patch.object(MODULE, "command") as run, patch.object(MODULE.os, "kill") as kill:
+            self.launcher.stop_processes()
+            firewall_remove.assert_called_once_with(self.launcher.state["firewall"], persist=self.launcher.save_state)
             run.assert_not_called()
             kill.assert_not_called()
 

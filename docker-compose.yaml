@@ -1,5 +1,5 @@
 x-indexer-environment: &index-common
-  POSTGRES_HOST: 172.28.1.100
+  POSTGRES_HOST: ${MLT_NETWORK_PREFIX:-172.28.1}.100
   POSTGRES_PORT: 5432
   POSTGRES_DB: ${POSTGRES_DB:-ton_index}
   POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -229,7 +229,7 @@ services:
           memory: '${GENESIS_MEMORY_LIMIT:-0}'
     networks:
       main:
-        ipv4_address: 172.28.1.10
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.10
 
   native-load-generator:
     container_name: native-load-generator
@@ -321,7 +321,7 @@ services:
           memory: '${NATIVE_LOAD_MEMORY_LIMIT:-2g}'
     networks:
       main:
-        ipv4_address: 172.28.1.29
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.29
 
   # MyLocalTon optional services
   blockchain-explorer:
@@ -339,7 +339,7 @@ services:
     restart: unless-stopped
     environment:
       - SERVER_PORT=8080
-      - FILE_SERVER_IP=172.28.1.24
+      - FILE_SERVER_IP=${MLT_NETWORK_PREFIX:-172.28.1}.24
       - FILE_SERVER_PORT=8000
     ports:
       - "${UI_BIND_IP:-0.0.0.0}:8080:8080"
@@ -355,7 +355,7 @@ services:
         condition: service_healthy
     networks:
       main:
-        ipv4_address: 172.28.1.20
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.20
 
   lite-server:
     container_name: lite-server
@@ -388,7 +388,7 @@ services:
         condition: service_healthy
     networks:
       main:
-        ipv4_address: 172.28.1.30
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.30
 
   faucet:
     container_name: faucet
@@ -422,7 +422,7 @@ services:
       test: curl -sS http://127.0.0.1:88|| echo 1
     networks:
       main:
-        ipv4_address: 172.28.1.21
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.21
 
   data:
     container_name: data-generator
@@ -451,7 +451,7 @@ services:
       test: curl -sS http://127.0.0.1:99|| echo 1
     networks:
       main:
-        ipv4_address: 172.28.1.22
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.22
 
   config-update:
     container_name: config-update
@@ -481,7 +481,7 @@ services:
       test: curl -sS http://127.0.0.1:8084 || echo 1
     networks:
       main:
-        ipv4_address: 172.28.1.26
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.26
 
   admin-portal:
     container_name: admin-portal
@@ -512,7 +512,7 @@ services:
       test: curl -sS http://127.0.0.1:8085 || echo 1
     networks:
       main:
-        ipv4_address: 172.28.1.27
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.27
 
   time-machine:
     container_name: time-machine
@@ -541,7 +541,7 @@ services:
       test: curl -sS http://127.0.0.1:8083 || echo 1
     networks:
       main:
-        ipv4_address: 172.28.1.23
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.23
 
   session-stats:
     container_name: session-stats
@@ -596,7 +596,7 @@ services:
           memory: '${SESSION_STATS_MEMORY_LIMIT:-0}'
     networks:
       main:
-        ipv4_address: 172.28.1.28
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.28
 
   file-server:
     container_name: file-server
@@ -614,7 +614,7 @@ services:
       test: curl -sS http://127.0.0.1:8000|| echo 1
     networks:
       main:
-        ipv4_address: 172.28.1.24
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.24
 
   restarter:
     container_name: explorer-restarter
@@ -629,7 +629,7 @@ services:
         condition: service_healthy
     networks:
       main:
-        ipv4_address: 172.28.1.25
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.25
 
 
   # ADDITIONAL SERVICES
@@ -646,7 +646,7 @@ services:
       - ton-db-val1:/var/ton-work/db
     environment:
       - NAME=validator-1
-      - GENESIS_IP=172.28.1.10
+      - GENESIS_IP=${MLT_NETWORK_PREFIX:-172.28.1}.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
@@ -670,7 +670,7 @@ services:
           cpus: '${VALIDATOR_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.11
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.11
 
   validator-2:
     init: true
@@ -688,7 +688,7 @@ services:
       retries: 10
     environment:
       - NAME=validator-2
-      - GENESIS_IP=172.28.1.10
+      - GENESIS_IP=${MLT_NETWORK_PREFIX:-172.28.1}.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
@@ -707,7 +707,7 @@ services:
           cpus: '${VALIDATOR_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.12
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.12
 
   validator-3:
     init: true
@@ -720,7 +720,7 @@ services:
       - ton-db-val3:/var/ton-work/db
     environment:
       - NAME=validator-3
-      - GENESIS_IP=172.28.1.10
+      - GENESIS_IP=${MLT_NETWORK_PREFIX:-172.28.1}.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
@@ -744,7 +744,7 @@ services:
           cpus: '${VALIDATOR_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.13
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.13
 
   validator-4:
     init: true
@@ -757,7 +757,7 @@ services:
       - ton-db-val4:/var/ton-work/db
     environment:
       - NAME=validator-4
-      - GENESIS_IP=172.28.1.10
+      - GENESIS_IP=${MLT_NETWORK_PREFIX:-172.28.1}.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
@@ -781,7 +781,7 @@ services:
           cpus: '${VALIDATOR_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.14
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.14
 
   validator-5:
     init: true
@@ -794,7 +794,7 @@ services:
       - ton-db-val5:/var/ton-work/db
     environment:
       - NAME=validator-5
-      - GENESIS_IP=172.28.1.10
+      - GENESIS_IP=${MLT_NETWORK_PREFIX:-172.28.1}.10
       - VERBOSITY=${VALIDATOR_VERBOSITY:-1}
       - CUSTOM_PARAMETERS
       - TON_SIMPLEX_MAX_TPS=${TON_SIMPLEX_MAX_TPS:-0}
@@ -818,7 +818,7 @@ services:
           cpus: '${VALIDATOR_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.15
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.15
 
   ## TON HTTP API V2
   tonhttpapi:
@@ -859,7 +859,7 @@ services:
       retries: 10
     networks:
       main:
-        ipv4_address: 172.28.1.105
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.105
 
   ## TonCenter Indexer (v3)
   event-cache:
@@ -876,7 +876,7 @@ services:
       retries: 5
     networks:
       main:
-        ipv4_address: 172.28.1.104
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.104
 
   event-classifier:
     container_name: index-event-classifier
@@ -892,14 +892,14 @@ services:
       <<: *index-common
       TON_INDEXER_API_ROOT_PATH:
       TON_INDEXER_IS_TESTNET:
-      TON_INDEXER_REDIS_DSN: redis://172.28.1.104:6379
+      TON_INDEXER_REDIS_DSN: redis://${MLT_NETWORK_PREFIX:-172.28.1}.104:6379
     deploy:
       resources:
         limits:
           cpus: '${CLASSIFIER_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.103
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.103
 
   index-api:
     container_name: index-api
@@ -914,11 +914,11 @@ services:
         host_ip: ${UI_BIND_IP:-0.0.0.0}
     environment:
       <<: *index-common
-      TON_INDEXER_TON_HTTP_API_ENDPOINT: http://172.28.1.102:8081/api/v2/
+      TON_INDEXER_TON_HTTP_API_ENDPOINT: http://${MLT_NETWORK_PREFIX:-172.28.1}.102:8081/api/v2/
     restart: always
     networks:
       main:
-        ipv4_address: 172.28.1.102
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.102
 
   run-migrations:
     container_name: run-migrations
@@ -934,7 +934,7 @@ services:
       TON_WORKER_BINARY: ton-index-postgres-migrate
     networks:
       main:
-    command: --pg postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@172.28.1.100:5432/${POSTGRES_DB}
+    command: --pg postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${MLT_NETWORK_PREFIX:-172.28.1}.100:5432/${POSTGRES_DB}
     restart: on-failure
 
   index-worker:
@@ -952,7 +952,7 @@ services:
     environment:
       <<: *index-common
       TON_WORKER_BINARY: ton-index-postgres
-    command: --pg postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@172.28.1.100:5432/${POSTGRES_DB} --db /tondb --working-dir /ton_index_workdir --from ${TON_WORKER_FROM:-1}
+    command: --pg postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${MLT_NETWORK_PREFIX:-172.28.1}.100:5432/${POSTGRES_DB} --db /tondb --working-dir /ton_index_workdir --from ${TON_WORKER_FROM:-1}
     restart: unless-stopped
     deploy:
       resources:
@@ -960,7 +960,7 @@ services:
           cpus: '${INDEXER_CPU_QUOTE:-1.0}'
     networks:
       main:
-        ipv4_address: 172.28.1.101
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.101
 
   postgres:
     container_name: index-postgres
@@ -989,7 +989,7 @@ services:
         max-size: 4G
     networks:
       main:
-        ipv4_address: 172.28.1.100
+        ipv4_address: ${MLT_NETWORK_PREFIX:-172.28.1}.100
 
 volumes:
   shared-data:
@@ -1013,8 +1013,11 @@ volumes:
 
 networks:
   main:
-    name: mylocalton-network
+    name: ${MLT_NETWORK_NAME:-mylocalton-network}
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: ${MLT_NETWORK_BRIDGE:-}
     ipam:
       driver: default
       config:
-        - subnet: 172.28.1.0/24
+        - subnet: ${MLT_NETWORK_PREFIX:-172.28.1}.0/24

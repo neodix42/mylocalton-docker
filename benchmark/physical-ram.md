@@ -16,10 +16,10 @@ network conflicts. No local daemon, mount, or container was changed for this
 experiment. The preceding in-memory-CellDb results still used persistent disk
 storage and are a different treatment.
 
-Use a dedicated test server or a maintenance window. The launcher refuses to
-start while the original Docker daemon has running containers, benchmark ports
-are occupied, or the benchmark subnets overlap existing routes/networks. It
-never stops the original daemon or its containers. Existing production state is
+Unrelated containers on the original Docker daemon may remain running. The
+launcher records them as background load and rejects actual benchmark port,
+subnet and owned-bridge conflicts. It never stops the original daemon or its
+containers. Existing production state is
 not copied or modified: this workflow creates a fresh test chain. Do not replace
 an existing production deployment's `.env` with this volatile profile.
 
@@ -53,12 +53,33 @@ equal memory-plus-swap limits disable their swap. These per-container ceilings
 are not a reservation or permission to exceed the host guard.
 
 Prerequisites are root access, native Linux Docker Engine with `dockerd`,
-`containerd` and the Compose plugin, cgroup v2, Python 3.11+, Bash, `ip`, `mount`,
-`findmnt`, and the existing benchmark tools including `jq`. The kernel must accept and report tmpfs `noswap`;
+`containerd` and the Compose plugin, cgroup v2, Python 3.11+, Bash, `ip`, `iptables`,
+`mount`, `findmnt`, and the existing benchmark tools including `jq`. IPv4
+forwarding must already be enabled (`net.ipv4.ip_forward=1`); the launcher does
+not change global forwarding policy. The kernel must accept and report tmpfs `noswap`;
 the launcher checks this after mounting and fails if unsupported. Keep the
-configured addresses `172.28.1.0/24`, `172.29.0.0/24` and `172.30.0.0/16` free.
+configured addresses `10.203.1.0/24`, `10.203.2.0/24` and `10.204.0.0/16` free.
 Review the existing public port bindings and set the server address for remote
 clients as in the normal remote guide.
+
+The existing `mylocalton-network` on `172.28.1.0/24` can stay in place. The RAM
+stack uses its own network; Docker networks are not shared across the two
+daemons. For an older customized `.env.physical`, add these settings while
+preserving your RAM budgets and server settings:
+
+```dotenv
+MLT_NETWORK_PREFIX=10.203.1
+MLT_NETWORK_NAME=mylocalton-ram-network
+MLT_NETWORK_BRIDGE=tonram1
+NATIVE_RAM_BRIDGE_CIDR=10.203.2.1/24
+NATIVE_RAM_ADDRESS_POOL=10.204.0.0/16
+```
+
+If these ranges overlap your host routes, choose three disjoint RFC1918 ranges
+and rerun `check`. `MLT_NETWORK_PREFIX` supplies three octets for the Compose
+/24; its service addresses and endpoints move together. Keep the bridge names
+`tonram0` and `tonram1` reserved for this launcher. Profiles without these
+settings retain the ordinary `172.28.1.0/24` Compose network.
 
 From the `MyLocalTonDocker` checkout, use new persistent output directories for
 each action. Output paths and their parents must not be symlinks. If your
@@ -116,6 +137,15 @@ before creating the validator. Host executables, kernel/network activity and
 persistent result exports remain outside this RAM store; this does not claim
 that every host I/O operation disappears.
 
+The private daemon disables Docker's automatic firewall management and IP
+masquerading. The launcher installs separately named, ownership-tagged IPv4
+forwarding/NAT rules scoped to `tonram0` and `tonram1` and their configured
+subnets. Published TCP/UDP ports use Docker's userland proxy. Cleanup removes
+only the recorded RAM rules and chains; it does not flush the original daemon's
+`DOCKER` chains or change the host's default firewall policy. Existing host
+ingress rules still govern remote access. Shared host CPU/RAM use can influence
+TPS, so keep the recorded background load with your results.
+
 The guard records samples and stops only containers identified by the private
 daemon ID and exact Compose ownership. Two samples below the host or filesystem
 reserve trigger a stop; host memory below 8 GiB triggers an immediate stop.
@@ -141,12 +171,21 @@ remain enabled, but syncing tmpfs does not provide disk durability.
 Implementation references: [Docker tmpfs and memory accounting](https://docs.docker.com/engine/storage/tmpfs/),
 [Linux tmpfs](https://docs.kernel.org/filesystems/tmpfs.html), and
 [Docker multiple-daemon configuration](https://docs.docker.com/reference/cli/dockerd/#run-multiple-daemons).
-Docker labels multiple-daemon operation experimental; this workflow isolates its
-state and refuses concurrent original-daemon workloads rather than treating it
-as a production storage deployment.
+Docker labels multiple-daemon operation experimental; this workflow isolates
+storage and firewall ownership while permitting unrelated original-daemon
+workloads. It remains a volatile benchmark setup.
 
-Preparation validation is recorded in
+The original preparation validation is recorded in
 [the 14 September receipt](physical-ram-preparation-20260914.json): 42 focused
 tests and the existing benchmark self-test passed, including actual Compose
 configuration rendering. Native daemon startup, the real storage/network smoke
-and sustained TPS have not run here; those remain server validation steps.
+and sustained TPS have not run here; those remain server validation steps. That
+receipt describes the initial preset before the coexistence fix above.
+
+Coexistence validation: 63 focused tests and the existing benchmark self-test
+pass. Fixtures cover the five reported services plus the existing
+`172.28.1.0/24` network/routes, real conflict rejection, Compose address remapping,
+and preservation of original Docker rules during owned firewall cleanup. The
+local read-only check records 24 running containers without an activity or
+subnet rejection. Native daemon/firewall startup still needs server validation;
+no live host firewall or container configuration was changed in these checks.

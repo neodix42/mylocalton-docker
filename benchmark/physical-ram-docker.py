@@ -29,9 +29,13 @@ sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
 PREFLIGHT = REPO / "benchmark/physical-ram-preflight.py"
 GUARD = REPO / "benchmark/physical-ram-guard.py"
+FIREWALL = REPO / "benchmark/physical-ram-firewall.py"
 SPEC = importlib.util.spec_from_file_location("physical_ram_preflight", PREFLIGHT)
 PREFLIGHT_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PREFLIGHT_MODULE)
+FIREWALL_SPEC = importlib.util.spec_from_file_location("physical_ram_firewall", FIREWALL)
+FIREWALL_MODULE = importlib.util.module_from_spec(FIREWALL_SPEC)
+FIREWALL_SPEC.loader.exec_module(FIREWALL_MODULE)
 SERVICES = ("native-load-generator", "genesis", "session-stats")
 HEX_ID = re.compile(r"[0-9a-f]{64}")
 
@@ -290,10 +294,19 @@ class Launcher:
 
     def service_config(self):
         config = json.loads(command(self.compose("config", "--format", "json"), self.env))
+        network = config.get("networks", {}).get("main", {})
+        expected_subnet = self.config["network_prefix"] + ".0/24"
+        require(network.get("driver") == "bridge" and not network.get("external")
+                and network.get("driver_opts", {}).get("com.docker.network.bridge.name") == "tonram1"
+                and network.get("ipam", {}).get("config") == [{"subnet": expected_subnet}],
+                "RAM Compose network must match the checked subnet " + expected_subnet
+                + " and use the owned MLT_NETWORK_BRIDGE=tonram1")
         require(config["services"]["genesis"].get("environment", {}).get("NATIVE_RAM_ENABLED") in ("1", 1),
                 "genesis must enable NATIVE_RAM_ENABLED=1")
         for name in SERVICES:
             item = config["services"][name]
+            require(set(item.get("networks", {})) == {"main"} and not item.get("network_mode"),
+                    name + " must use only the checked RAM Compose network")
             memory = int(item.get("deploy", {}).get("resources", {}).get("limits", {}).get("memory") or 0)
             require(memory > 0 and int(item.get("memswap_limit") or 0) == memory,
                     name + " profile must configure equal positive memory and memswap_limit")
@@ -328,7 +341,7 @@ class Launcher:
         token = uuid.uuid4().hex
         harness = ["docker-compose.yaml", "prepare-native-images.sh", "run-native-benchmark.sh",
                    "benchmark/physical-ram-docker.py", "benchmark/physical-ram-preflight.py",
-                   "benchmark/physical-ram-guard.py"]
+                   "benchmark/physical-ram-guard.py", "benchmark/physical-ram-firewall.py"]
         self.state = {"schema": "native-physical-ram-owner-v1", "at": utc(), "token": token,
                       "project": project, "root": str(self.root), "mount_device": self.root.stat().st_dev,
                       "env_sha256": self.config["env_sha256"], "env_file": str(self.env_file),
@@ -347,6 +360,12 @@ class Launcher:
         self.save_state()
         command(["ip", "addr", "add", bridge["address"], "dev", bridge["name"]])
         command(["ip", "link", "set", bridge["name"], "up"])
+        self.state["firewall"] = FIREWALL_MODULE.plan(self.plan["compose_bridge"]["subnet"],
+            self.config["planned_ipv4_networks"][1], token)
+        self.save_state()
+        # Persist ownership before the first rule and after each created chain
+        # so a failed startup can remove exactly its partial firewall setup.
+        FIREWALL_MODULE.install(self.state["firewall"], persist=self.save_state)
         daemon_environment = dict(self.env, **self.plan["environment"])
         containerd_config = Path(self.plan["containerd_paths"]["config"])
         containerd_config.write_text(self.plan["containerd_config"])
@@ -678,6 +697,9 @@ print("container TCP/UDP passed")
             path = Path("/sys/class/net", bridge["name"], "ifindex")
             if path.exists():
                 require(int(path.read_text()) == bridge["ifindex"], "owned bridge identity changed; no bridge removed")
+            if self.state.get("firewall"):
+                FIREWALL_MODULE.remove(self.state["firewall"], persist=self.save_state)
+            if path.exists():
                 command(["ip", "link", "delete", bridge["name"], "type", "bridge"])
 
     def execute(self):
@@ -742,7 +764,8 @@ def main(argv=None):
             launcher.prepare_output()
             getattr(launcher, args.action)()
         return 0
-    except (LauncherError, OSError, ValueError, KeyError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+    except (LauncherError, FIREWALL_MODULE.FirewallError, OSError, ValueError, KeyError,
+            subprocess.SubprocessError, KeyboardInterrupt) as error:
         print("Error: " + str(error), file=sys.stderr)
         if launcher and launcher.output:
             write_json(launcher.output / "failure.json", {"at": utc(), "action": args.action,

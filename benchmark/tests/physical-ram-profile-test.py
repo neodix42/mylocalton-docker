@@ -12,13 +12,13 @@ GUARD = ROOT / 'docker/scripts/require-ram-storage.sh'
 
 
 class RamProfileTest(unittest.TestCase):
-    def compose(self, profile):
+    def compose(self, profile, all_profiles=False):
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith(('COMPOSE_', 'NATIVE_', 'TON_', 'GENESIS_', 'SESSION_STATS_'))}
+               if not k.startswith(('COMPOSE_', 'NATIVE_', 'TON_', 'GENESIS_', 'SESSION_STATS_', 'MLT_'))}
         return json.loads(subprocess.check_output([
             'docker', 'compose', '-f', str(ROOT / 'docker-compose.yaml'),
             '--project-directory', str(ROOT), '--env-file', str(ROOT / profile),
-            '--profile', 'native-load-generator', '--profile', 'session-stats',
+            '--profile', '*' if all_profiles else 'native-load-generator', '--profile', 'session-stats',
             'config', '--format', 'json'], env=env, text=True))
 
     def test_physical_profile_accounts_for_swap_and_stats_volume_tree(self):
@@ -47,13 +47,30 @@ class RamProfileTest(unittest.TestCase):
         self.assertEqual(load['NATIVE_LOAD_PAYMENT_LANE_DEPTH'], '3')
 
     def test_default_keeps_disk_volumes_and_no_new_memory_limit(self):
-        services = self.compose('.env')['services']
+        config = self.compose('.env')
+        services = config['services']
+        self.assertEqual(config['networks']['main']['ipam']['config'], [{'subnet': '172.28.1.0/24'}])
+        self.assertEqual(config['networks']['main']['name'], 'mylocalton-network')
+        self.assertEqual(config['networks']['main']['driver_opts']['com.docker.network.bridge.name'], '')
         genesis = services['genesis']
         self.assertEqual(genesis['environment']['NATIVE_RAM_ENABLED'], '0')
         self.assertEqual(int(genesis['deploy']['resources']['limits'].get('memory', 0)), 0)
         self.assertEqual(genesis.get('memswap_limit', 0), 0)
         db = next(v for v in genesis['volumes'] if v['target'] == '/var/ton-work/db')
         self.assertEqual((db['type'], db['source']), ('volume', 'ton-db-val0'))
+
+    def test_physical_network_remaps_addresses_and_service_endpoints(self):
+        config = self.compose('.env.physical', all_profiles=True)
+        network = config['networks']['main']
+        self.assertEqual(network['ipam']['config'], [{'subnet': '10.203.1.0/24'}])
+        self.assertEqual(network['name'], 'mylocalton-ram-network')
+        self.assertEqual(network['driver_opts']['com.docker.network.bridge.name'], 'tonram1')
+        self.assertNotIn('172.28.1.', json.dumps(config))
+        for name, service in config['services'].items():
+            for attachment in service.get('networks', {}).values():
+                address = (attachment or {}).get('ipv4_address', '')
+                if address:
+                    self.assertTrue(address.startswith('10.203.1.'), (name, address))
 
     def run_guard(self, enabled, bad_path=None):
         with tempfile.TemporaryDirectory() as tmp:
