@@ -133,6 +133,14 @@ def command(argv, env=None, timeout=30):
     return completed.stdout.strip()
 
 
+def recent_log(path):
+    """Read a bounded command-log tail for failure diagnostics."""
+    with Path(path).open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        stream.seek(max(0, stream.tell() - 8192))
+        return "\n".join(stream.read().decode("utf-8", errors="replace").splitlines()[-20:])
+
+
 class Launcher:
     def __init__(self, args):
         self.args = args
@@ -145,6 +153,7 @@ class Launcher:
         self.output = None
         self.env = None
         self.lock_fd = None
+        self.cleanup_on_error = False
 
     def lock(self):
         require(os.geteuid() == 0, "start, run, exec, and stop require root")
@@ -202,7 +211,7 @@ class Launcher:
         if self.state:
             require(self.root.stat().st_dev == self.state["mount_device"], "RAM mount identity changed")
 
-    def load_state(self, immutable=True):
+    def load_state(self, immutable=True, ready=False):
         require(os.geteuid() == 0, "start, run, exec, and stop require root")
         self.mount_check()
         require(self.state_path.is_file() and not self.state_path.is_symlink(), "launcher ownership receipt missing")
@@ -210,6 +219,12 @@ class Launcher:
         require(self.state.get("schema") == "native-physical-ram-owner-v1"
                 and self.state.get("root") == str(self.root), "invalid launcher ownership receipt")
         self.mount_check()
+        if ready:
+            require(self.state.get("phase") in ("ready", "measured"),
+                    f"RAM experiment is not ready (phase: {self.state.get('phase', 'unknown')}). "
+                    "run/exec require a completed start. Inspect the original start output; "
+                    "use stop with a new --output directory, then follow the fresh-start "
+                    "recovery steps in benchmark/physical-ram.md.")
         if immutable:
             require(self.state["env_sha256"] == self.config["env_sha256"],
                     "environment changed since start; stop and prepare a separate experiment")
@@ -268,7 +283,8 @@ class Launcher:
             try:
                 while child.poll() is None:
                     self.guard_check()
-                    require(time.monotonic() < deadline, "command timed out: " + str(argv[0]))
+                    require(time.monotonic() < deadline,
+                            f"{log_name} timed out after {timeout} seconds; see {destination}")
                     if time.monotonic() >= next_progress:
                         print(f"{log_name}: running for {int(time.monotonic() - started)} seconds; resource guard active", flush=True)
                         next_progress = time.monotonic() + 30
@@ -284,6 +300,12 @@ class Launcher:
                     except subprocess.TimeoutExpired:
                         os.killpg(child.pid, signal.SIGKILL)
                         child.wait(timeout=10)
+                try:
+                    tail = recent_log(destination)
+                    if tail:
+                        print(f"Last command output from {destination}:\n{tail}", file=sys.stderr, flush=True)
+                except OSError:
+                    pass
                 raise
 
     def compose(self, *argv):
@@ -347,6 +369,7 @@ class Launcher:
                       "env_sha256": self.config["env_sha256"], "env_file": str(self.env_file),
                       "harness_sha256": {name: digest(REPO / name) for name in harness},
                       "original_docker": report["original_docker"], "phase": "mounted"}
+        self.cleanup_on_error = True
         self.save_state()
         shutil.copyfile(self.env_file, self.root / "receipts/profile.env")
         write_json(self.root / "receipts/preflight.json", report)
@@ -424,12 +447,25 @@ class Launcher:
         self.save_state()
         write_json(self.root / "receipts/frozen-images.json", self.state["images"])
         self.smoke()
-        self.monitored(self.compose("up", "-d", "--no-deps", "--no-build", "--pull", "never",
-                                    "genesis", "session-stats"), "start-services.log", 300)
-        self.state["phase"] = "bootstrapping"
+        self.start_services()
+        self.state["phase"] = "ready"
         self.save_state()
+        self.capture_runtime("startup")
+        self.export()
+        print(f"RAM genesis is healthy. Private Docker: {self.plan['docker_host']}. Guard remains active. Evidence: {self.output}")
+
+    def start_services(self):
         bootstrap = int(profile_literal(self.env_file, "NATIVE_RAM_BOOTSTRAP_TIMEOUT_SECONDS"))
         require(60 <= bootstrap <= 10800, "NATIVE_RAM_BOOTSTRAP_TIMEOUT_SECONDS must be within 60..10800")
+        self.state["phase"] = "starting_genesis"
+        self.save_state()
+        # --no-deps still retains health dependencies between explicitly named
+        # services. Start genesis alone so Compose cannot wait for its health
+        # inside the shorter container-start timeout on behalf of session-stats.
+        self.monitored(self.compose("up", "-d", "--no-deps", "--no-build", "--pull", "never",
+                                    "genesis"), "start-genesis.log", 300)
+        self.state["phase"] = "bootstrapping"
+        self.save_state()
         deadline = time.monotonic() + bootstrap
         bootstrap_started = time.monotonic()
         next_progress = bootstrap_started
@@ -448,12 +484,19 @@ class Launcher:
             time.sleep(5)
         self.state["genesis_id"] = genesis["Id"]
         self.state["genesis_started_at"] = genesis["State"]["StartedAt"]
-        self.inspect_service("session-stats")
-        self.state["phase"] = "ready"
+        self.state["phase"] = "starting_session_stats"
         self.save_state()
-        self.capture_runtime("startup")
-        self.export()
-        print(f"RAM genesis is healthy. Private Docker: {self.plan['docker_host']}. Guard remains active. Evidence: {self.output}")
+        self.monitored(self.compose("up", "-d", "--no-deps", "--no-build", "--pull", "never",
+                                    "session-stats"), "start-session-stats.log", 300)
+        stats = self.inspect_service("session-stats")
+        require(stats["State"].get("Running") and not stats["State"].get("OOMKilled"),
+                "session-stats stopped during startup")
+        current = self.inspect_service("genesis")
+        require(current["Id"] == self.state["genesis_id"]
+                and current["State"]["StartedAt"] == self.state["genesis_started_at"]
+                and current["State"].get("Running") and not current["State"].get("OOMKilled")
+                and current["State"].get("Health", {}).get("Status") == "healthy",
+                "genesis identity, start time, or health changed while starting session-stats")
 
     def inspect_service(self, service):
         rows = json.loads(self.docker("inspect", service))
@@ -573,10 +616,9 @@ print("container TCP/UDP passed")
             require(actual["Id"] == receipt["id"], "frozen image changed: " + service)
 
     def run(self):
-        self.load_state()
+        self.load_state(ready=True)
         self.verify_daemon()
         self.guard_check()
-        require(self.state.get("phase") in ("ready", "measured"), "start must complete before run")
         self.verify_images()
         config = self.service_config()
         settings = config["services"]["native-load-generator"]["environment"]
@@ -593,6 +635,7 @@ print("container TCP/UDP passed")
         result = self.root / "results" / run_id
         self.env.update(BENCHMARK_COMPOSE_PROJECT=self.state["project"], BENCHMARK_IMAGES_PREBUILT="1",
                         BENCHMARK_STRICT_IMAGE_REUSE="1", BENCHMARK_STRICT_GENESIS_REUSE="1")
+        self.cleanup_on_error = True
         self.monitored(["bash", str(REPO / "run-native-benchmark.sh"), str(self.env_file), str(result)],
                        run_id + "-benchmark.log", warmup + duration + drain + 1200)
         self.verify_daemon()
@@ -642,6 +685,7 @@ print("container TCP/UDP passed")
 
     def stop(self):
         self.load_state(immutable=False)
+        self.cleanup_on_error = True
         if self.state.get("daemon_id") and process_owned(self.state.get("dockerd", {}), self.plan["paths"]["daemon_config"]):
             self.verify_daemon()
             self.stop_containers()
@@ -703,7 +747,7 @@ print("container TCP/UDP passed")
                 command(["ip", "link", "delete", bridge["name"], "type", "bridge"])
 
     def execute(self):
-        self.load_state()
+        self.load_state(ready=True)
         self.verify_daemon()
         self.guard_check()
         self.verify_images()
@@ -769,8 +813,9 @@ def main(argv=None):
         print("Error: " + str(error), file=sys.stderr)
         if launcher and launcher.output:
             write_json(launcher.output / "failure.json", {"at": utc(), "action": args.action,
-                                                        "error": str(error), "complete": False})
-            if launcher.state:
+                                                        "error": str(error), "complete": False,
+                                                        "phase": (launcher.state or {}).get("phase")})
+            if launcher.state and launcher.cleanup_on_error:
                 try:
                     launcher.failure_cleanup()
                 except Exception as export_error:

@@ -91,7 +91,7 @@ directory (shown by `realpath benchmark-results`) in the commands below.
 sudo python3 benchmark/physical-ram-docker.py check --env-file .env.physical
 
 # Mount RAM, start its private daemon, build/pin images, smoke-test storage and
-# networking, then bootstrap fresh genesis + stats. No load starts here.
+# networking, then bootstrap fresh genesis and start stats. No load starts here.
 sudo python3 benchmark/physical-ram-docker.py start --env-file .env.physical \
   --output benchmark-results/ram-start
 
@@ -104,15 +104,66 @@ sudo python3 benchmark/physical-ram-docker.py stop --env-file .env.physical \
   --output benchmark-results/ram-stop
 ```
 
-Fresh wallet/zero-state preparation can take tens of minutes. The launcher prints
-the live log path and progress every 30 seconds during long steps. Keep the terminal
-open and do not start a second setup. `start` and `run` leave the guard active;
-use `stop` when finished, including after a failed attempt with retained state.
+Fresh wallet/zero-state preparation can take tens of minutes. The launcher starts
+genesis alone with `--no-deps`, waits for it to become healthy under the resource
+guard, then starts Session Stats separately. `NATIVE_RAM_BOOTSTRAP_TIMEOUT_SECONDS`
+controls that health wait (default 5,400 seconds, allowed range 60–10,800). Stats
+startup does not share a short Compose deadline with genesis bootstrap.
+Before declaring startup complete, the launcher also checks that genesis stayed
+healthy with the same container and start time while Session Stats was starting.
+
+The launcher prints the live log path and progress every 30 seconds during long
+steps. Keep the terminal open and do not start a second setup. Run `run` only after
+`start` reports success. `start` and `run` leave the guard active; use `stop` when
+finished, including after a failed attempt with retained state.
 The read-only `check` applies to a **new** start; after startup, use `exec` for
 inspection of the verified private daemon. An ordinary `docker compose` command
 can select the original Docker daemon and is not the RAM test. The new validator
 wrapper also refuses the RAM profile when its root/image/data filesystem is on
 disk, before bootstrap writes keys.
+
+If startup fails, its output path is a directory containing evidence, not a text
+log. For the reported `start-services.log` timeout, inspect these files from the
+original attempt:
+
+```bash
+cat benchmark-results/ram-start/failure.json
+cat benchmark-results/ram-start/failure-cleanup.json
+tail -n 160 benchmark-results/ram-start/ram-evidence/logs/start-services.log
+# If genesis was created and its logs were captured:
+tail -n 160 benchmark-results/ram-start/ram-evidence/logs/failure-genesis.log
+```
+
+`start-services.log` belongs to the earlier combined startup command. The timeout
+alone does not establish why startup was slow; the command and genesis logs supply
+that evidence. Updated runs use separate `start-genesis.log` and
+`start-session-stats.log` in the same exported logs directory. Failure cleanup
+attempts to stop the private Docker/containerd processes, so `run` cannot continue
+a failed startup. The launcher now reports the failed startup phase before
+checking daemon identity, and a rejected `run` preserves the original experiment
+state instead of repeating failure cleanup. Command failures include a bounded
+tail of the stage log in the terminal; `failure.json` records the failing phase.
+
+After updating the launcher, a fresh retry can use the following sequence. Every
+output directory must be new. Keep the original evidence; `stop` exports additional
+evidence and stops only the owned RAM runtime. **Unmounting discards the retained
+test database and images**; use this step only when choosing a fresh test chain.
+
+```bash
+sudo python3 benchmark/physical-ram-docker.py stop --env-file .env.physical \
+  --output benchmark-results/ram-stop-after-failure
+# Continue only after stop succeeds and the private runtime is stopped.
+sudo umount /mnt/mylocalton-ram
+sudo python3 benchmark/physical-ram-docker.py start --env-file .env.physical \
+  --output benchmark-results/ram-start-retry-1
+# Continue only after start reports success.
+sudo python3 benchmark/physical-ram-docker.py run --env-file .env.physical \
+  --output benchmark-results/ram-tps-retry-1
+```
+
+Use your configured `NATIVE_RAM_ROOT` if it differs from `/mnt/mylocalton-ram`.
+The saved persistent output directories survive that unmount. Neither cleanup nor
+this retry procedure stops unrelated containers on the original Docker daemon.
 
 For server A with load on B, use `start`, then export through the private daemon:
 
@@ -189,3 +240,8 @@ and preservation of original Docker rules during owned firewall cleanup. The
 local read-only check records 24 running containers without an activity or
 subnet rejection. Native daemon/firewall startup still needs server validation;
 no live host firewall or container configuration was changed in these checks.
+
+Startup regression validation: all 73 focused tests pass. These include a
+simulated 620-second genesis bootstrap, guard/deadline failures, genesis restart
+during stats startup, failed-phase recovery messages, and command-log diagnostics.
+No live server startup or TPS measurement was performed for this fix.
