@@ -30,6 +30,41 @@ Run this script itself with sudo when Docker requires root access. Optional:
 EOF
 }
 
+# The outer RAM runner reads this small receipt instead of mistaking lengthy
+# readiness or report generation for active transaction submission. Updates
+# are atomic; the journal retains the stage that preceded an interrupted run.
+benchmark_progress() {
+  local phase=$1 detail=$2 message=${3:-} record temporary
+  case "$phase" in setup|generator|reporting|complete) ;; *) return 2 ;; esac
+  record=$(jq -cn --arg schema native-benchmark-progress-v1 \
+    --arg phase "$phase" --arg detail "$detail" --arg message "$message" \
+    --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --argjson updated_at_epoch_s "$(date +%s)" \
+    '{$schema,$phase,$detail,$message,$updated_at,$updated_at_epoch_s}')
+  temporary=$result_dir/.benchmark-progress.json.$BASHPID
+  printf '%s\n' "$record" >"$temporary"
+  mv -- "$temporary" "$result_dir/benchmark-progress.json"
+  printf '%s\n' "$record" >>"$result_dir/benchmark-progress.jsonl"
+  printf 'Benchmark phase: %s/%s%s\n' "$phase" "$detail" "${message:+; $message}"
+}
+
+# Preserve the generator's own proof result before expensive validator/resource
+# reports. This receipt is not full wrapper acceptance (runtime identity and
+# validator cleanup still have separate checks).
+preserve_generator_final_record() {
+  local destination=$result_dir/native-load-generator-final.json temporary
+  temporary=$destination.tmp
+  if ! jq -e -s '[.[] | select(.schema == "native-load-v2" and .final == true)] |
+      if length == 1 then .[0] else error("expected exactly one final generator record") end' \
+      "$generator_records_file" >"$temporary"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+  mv -- "$temporary" "$destination"
+  jq -r '"Generator measurement complete: canonical average=\(.canonical_chain_measure_avg_tps // "unknown") TPS; peak 1s=\(.canonical_chain_measure_peak_1s_tps // "unknown") TPS; generator run valid=\(.benchmark_result_valid // false); chain capacity valid=\(.chain_capacity_valid // false). Validator/resource reports follow."' \
+    "$destination"
+}
+
 benchmark_project_name_valid() {
   [[ ${1:-} =~ ^[a-z0-9][a-z0-9_-]*$ ]]
 }
@@ -1521,6 +1556,7 @@ if [[ -d "$result_dir" && -n $(find "$result_dir" -mindepth 1 -maxdepth 1 -print
 fi
 mkdir -p "$result_dir"
 result_dir=$(cd "$result_dir" && pwd)
+benchmark_progress setup configuration "verifying images, runtime configuration and validator provenance"
 container_stats_file=$result_dir/container-resources.jsonl
 host_stats_file=$result_dir/host-resources.jsonl
 cgroup_stats_file=$result_dir/cgroup-resources.jsonl
@@ -2725,6 +2761,7 @@ if [[ $strict_image_reuse == 1 ]] &&
   echo "strict image reuse detected validator recreation or restart before measurement" >&2
   exit 3
 fi
+benchmark_progress generator generator_start "starting generator and its readiness checks"
 echo "Starting a fresh native-load-generator container"
 if [[ $interrupted -eq 1 ]]; then
   exit 130
@@ -2775,6 +2812,7 @@ collector_pids+=("$!")
 
 echo "Native load is running; live generator JSON follows"
 
+benchmark_progress generator generator_wait "waiting for readiness, measurement and drain; generator JSON carries the measurement phase"
 set +e
 generator_container_exit_code=$(docker wait "$generator_cleanup_id" 2>"$result_dir/docker-wait.stderr.log")
 wait_status=$?
@@ -2783,6 +2821,7 @@ if [[ $wait_status -ne 0 || ! $generator_container_exit_code =~ ^[0-9]+$ ]]; the
   generator_container_exit_code=125
 fi
 benchmark_exit_code=$generator_container_exit_code
+benchmark_progress reporting generator_exited "container exit code=$generator_container_exit_code; validating runtime identity"
 strict_image_reuse_valid=null
 strict_genesis_after=null
 strict_generator_image_after=
@@ -2820,14 +2859,19 @@ fi
 
 finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 finished_epoch=$(date +%s)
+benchmark_progress reporting collector_shutdown "joining resource and actor collectors"
 stop_collectors
 wait_actor_stats_collector
+benchmark_progress reporting generator_record_capture "saving and extracting the completed generator log"
 docker logs "$container_name" >"$generator_log_file" 2>&1 || true
 if ! python3 "$script_dir/benchmark/extract-native-load-records.py" \
   "$generator_log_file" "$generator_records_file" "$generator_records_report_file"; then
   echo "native load record extraction did not produce exactly one valid final record" >&2
   benchmark_exit_code=125
+elif ! preserve_generator_final_record; then
+  benchmark_exit_code=125
 fi
+benchmark_progress reporting validator_capture "capturing post-drain actor and pool telemetry"
 capture_validator_actor_stats_record \
   "$validator_actor_stats_final_file" "$validator_actor_stats_final_metadata_file" post_drain 0
 jq -L "$benchmark_jq_dir" -s \
@@ -2895,6 +2939,7 @@ jq -Rsc '
   }
 ' "$validator_scheduling_log_file" >"$validator_scheduling_log_summary_file"
 
+benchmark_progress reporting validator_cleanup "checking canonical pool cleanup"
 # Multi-owner validators intentionally do not expose a root-only pool as an
 # aggregate. Validate every declared owner and retain scoped evidence before
 # applying the same final native cleanup boundary as the legacy single pool.
@@ -3048,6 +3093,7 @@ if ! jq -en --argjson start "$generator_measure_start" --argjson end "$generator
   benchmark_exit_code=125
 fi
 
+benchmark_progress reporting validator_session_capture "copying validator session telemetry"
 validator_session_stats_first_line=$((validator_session_stats_start_line + 1))
 if ! docker exec genesis sh -c \
   'file=/var/ton-work/db/log.session-stats; first=$1; old=$2
@@ -3059,6 +3105,7 @@ if ! docker exec genesis sh -c \
   : >"$validator_session_stats_file"
 fi
 
+benchmark_progress reporting validator_pipeline_report "processing validator timing and consensus records; no new load is submitted"
 # Keep the raw JSONL for detailed inspection and publish robust distributions
 # for the fields needed to classify the limiting stage.  The file is parsed as
 # text so one partial final line cannot invalidate an otherwise complete run.
@@ -3308,6 +3355,7 @@ jq -L "$benchmark_jq_dir" -Rsc \
   }
 ' "$validator_session_stats_file" >"$validator_pipeline_summary_file"
 
+benchmark_progress reporting validator_scheduling_report "processing consensus scheduling distributions"
 # INFO scheduling summaries are optional at normal validator verbosity. The
 # structured consensus event stream is always captured by log.session-stats,
 # so derive cadence and wall-time telemetry from it without enabling noisy
@@ -3426,6 +3474,7 @@ session_stats_settle_seconds=$(docker inspect session-stats |
 if ! [[ $session_stats_settle_seconds =~ ^[0-9]+$ ]]; then
   session_stats_settle_seconds=77
 fi
+benchmark_progress reporting session_stats_settle "waiting ${session_stats_settle_seconds}s for the importer tail"
 echo "Waiting ${session_stats_settle_seconds}s for Session Stats to import the run tail"
 sleep "$session_stats_settle_seconds"
 
@@ -3433,6 +3482,7 @@ elapsed_seconds=$((finished_epoch - started_epoch))
 if [[ $elapsed_seconds -lt 1 ]]; then
   elapsed_seconds=1
 fi
+benchmark_progress reporting session_stats_query "querying independent canonical statistics"
 session_stats_base='http://127.0.0.1:18000/api/stats_single?stat=BLOCK_APPLIED_native_transfers'
 # Session Stats persists imported validator samples in minute buckets. Query
 # whole source buckets so a run that starts or finishes mid-minute is not
@@ -3493,6 +3543,7 @@ jq -n \
     }
   ' >"$session_stats_summary_file"
 
+benchmark_progress reporting generator_summary "validating proof, completion and capacity dimensions"
 jq -L "$benchmark_jq_dir" -Rs \
   --argjson expected_run_batching "$native_run_batching_expected" \
   --argjson expected_signed_runs "$native_signed_runs_expected" \
@@ -3763,6 +3814,7 @@ if jq -e '.valid_canonical_run == true and .chain_capacity_valid != true' \
   echo "notice: the run is canonically correct but not a valid chain-capacity result; do not claim a TPS ceiling from it" >&2
 fi
 
+benchmark_progress reporting resource_summary "summarizing host and container resources"
 jq -L "$benchmark_jq_dir" -s \
   --argjson host_vcpus "$(getconf _NPROCESSORS_ONLN)" \
   --argjson host_memory_bytes "$(awk '/^MemTotal:/ {print $2 * 1024; exit}' /proc/meminfo)" '
@@ -3920,6 +3972,7 @@ jq -n \
   '{containers:$containers[0],host:$host[0],cgroups:$cgroups[0],
     devices:$devices[0],thread_hotspots:$threads[0]}' >"$resource_summary_file"
 
+benchmark_progress reporting run_metadata "capturing final runtime, image and source provenance"
 docker inspect genesis "$container_name" session-stats |
   jq '[.[] | {
     name: (.Name | ltrimstr("/")),
@@ -4113,6 +4166,7 @@ jq -n -L "$benchmark_jq_dir" \
     })} | . + {load_level_acceptance:native_benchmark_load_level_acceptance(.)}' \
   >"$summary_file"
 
+benchmark_progress complete reports_complete "full summary written; wrapper exit code=$benchmark_exit_code"
 echo "Benchmark summary: $summary_file"
 jq . "$summary_file"
 

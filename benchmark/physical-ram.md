@@ -16,6 +16,11 @@ network conflicts. No local daemon, mount, or container was changed for this
 experiment. The preceding in-memory-CellDb results still used persistent disk
 storage and are a different treatment.
 
+The [15 September server observation](physical-ram-server-20260915.md) records
+the user-reported 56,711.80 canonical TPS measurement. Its generator completed
+with proof checks passing, but the enclosing command timed out during finalization;
+full wrapper acceptance and a matched disk comparison remain unavailable.
+
 Unrelated containers on the original Docker daemon may remain running. The
 launcher records them as background load and rejects actual benchmark port,
 subnet and owned-bridge conflicts. It never stops the original daemon or its
@@ -113,7 +118,9 @@ Before declaring startup complete, the launcher also checks that genesis stayed
 healthy with the same container and start time while Session Stats was starting.
 
 The launcher prints the live log path and progress every 30 seconds during long
-steps. Keep the terminal open and do not start a second setup. Run `run` only after
+steps. Benchmark progress includes the phase and current operation, such as
+`generator/generator_wait` or `reporting/validator_pipeline_report`.
+Keep the terminal open and do not start a second setup. Run `run` only after
 `start` reports success. `start` and `run` leave the guard active; use `stop` when
 finished, including after a failed attempt with retained state.
 The read-only `check` applies to a **new** start; after startup, use `exec` for
@@ -121,6 +128,32 @@ inspection of the verified private daemon. An ordinary `docker compose` command
 can select the original Docker daemon and is not the RAM test. The new validator
 wrapper also refuses the RAM profile when its root/image/data filesystem is on
 disk, before bootstrap writes keys.
+
+Benchmark execution has separate bounded time budgets, so preparation cannot
+consume the reporting allowance. These are upper limits, not added sleeps;
+the measurement remains 600 seconds for `.env.physical`.
+
+| Execution phase | Default physical-profile limit | Included work |
+| --- | ---: | --- |
+| Wrapper setup | 600 s | Configuration, image and runtime checks |
+| Generator | 4,440 s | 1,800 s preparation allowance, 1,800 s lane readiness, 60 s warmup, 600 s measurement, 180 s drain |
+| Reporting | 1,800 s | Runtime checks, collector shutdown, proof extraction, validator/resource reports and Session Stats |
+
+The launcher saves the exact components in `receipts/<run-id>-time-budgets.json`.
+`NATIVE_RAM_WRAPPER_SETUP_TIMEOUT_SECONDS`,
+`NATIVE_RAM_GENERATOR_SETUP_TIMEOUT_SECONDS` and
+`NATIVE_RAM_REPORT_TIMEOUT_SECONDS` control the three extra allowances; older
+customized profiles inherit the defaults if those settings are absent. The
+generator limit also includes configured lane readiness, ramp, warmup,
+measurement and drain durations. Progress within one phase never renews its
+deadline, and the resource guard stays active throughout.
+
+Each benchmark result directory contains an atomic `benchmark-progress.json`
+receipt and a `benchmark-progress.jsonl` history. After extracting the generator
+log, the wrapper saves `native-load-generator-final.json` and prints its TPS
+before the heavier validator/resource reports. That file preserves the generator's
+own validity fields, including a false capacity assessment; it does not replace
+`benchmark-summary.json` or the wrapper's successful exit and acceptance checks.
 
 If startup fails, its output path is a directory containing evidence, not a text
 log. For the reported `start-services.log` timeout, inspect these files from the
@@ -150,15 +183,14 @@ evidence and stops only the owned RAM runtime. **Unmounting discards the retaine
 test database and images**; use this step only when choosing a fresh test chain.
 
 ```bash
+ram_attempt=$(date -u +%Y%m%dT%H%M%S)-$$
 sudo python3 benchmark/physical-ram-docker.py stop --env-file .env.physical \
-  --output benchmark-results/ram-stop-after-failure
-# Continue only after stop succeeds and the private runtime is stopped.
-sudo umount /mnt/mylocalton-ram
+  --output "benchmark-results/ram-stop-$ram_attempt" &&
+sudo umount /mnt/mylocalton-ram &&
 sudo python3 benchmark/physical-ram-docker.py start --env-file .env.physical \
-  --output benchmark-results/ram-start-retry-1
-# Continue only after start reports success.
+  --output "benchmark-results/ram-start-$ram_attempt" &&
 sudo python3 benchmark/physical-ram-docker.py run --env-file .env.physical \
-  --output benchmark-results/ram-tps-retry-1
+  --output "benchmark-results/ram-tps-$ram_attempt"
 ```
 
 Use your configured `NATIVE_RAM_ROOT` if it differs from `/mnt/mylocalton-ram`.
@@ -245,3 +277,10 @@ Startup regression validation: all 73 focused tests pass. These include a
 simulated 620-second genesis bootstrap, guard/deadline failures, genesis restart
 during stats startup, failed-phase recovery messages, and command-log diagnostics.
 No live server startup or TPS measurement was performed for this fix.
+
+Finalization regression validation: 80 focused RAM tests and six wrapper progress
+tests pass, along with the full benchmark self-test. The simulated run completes
+reporting beyond the former 2,040-second deadline; missing or stale progress and
+repeated substage updates cannot extend a phase. Tests also preserve an achieved
+TPS record whose chain-capacity assessment is false. These checks use mocks and
+fixtures; they do not constitute another server TPS run.

@@ -2095,5 +2095,6 @@ jq -n -e -L "$jq_dir" '
 ' >/dev/null
 
 python3 "$script_dir/native-validator-profile-test.py"
+python3 "$script_dir/native-benchmark-progress-test.py"
 
 echo "native benchmark reporting tests passed"

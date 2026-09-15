@@ -331,6 +331,31 @@ class LauncherTests(unittest.TestCase):
         failure = json.loads((self.launcher.output / "failure.json").read_text())
         self.assertEqual(failure["phase"], "bootstrapping")
 
+    def test_run_passes_phase_budgets_and_progress_path_to_monitor(self):
+        (self.root / "receipts").mkdir()
+        config = self.config()
+        config["services"]["native-load-generator"]["environment"].update(
+            NATIVE_LOAD_DURATION_SECONDS="600", NATIVE_LOAD_WARMUP_SECONDS="60",
+            NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS="180", NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS="1800")
+        genesis = self.service()
+        genesis["State"] = {"Running": True, "StartedAt": "fixture-start", "Health": {"Status": "healthy"}}
+        self.launcher.state.update(phase="ready", genesis_id=genesis["Id"], genesis_started_at="fixture-start")
+        with patch.object(self.launcher, "load_state"), patch.object(self.launcher, "verify_daemon"), \
+                patch.object(self.launcher, "guard_check"), patch.object(self.launcher, "verify_images"), \
+                patch.object(self.launcher, "service_config", return_value=config), \
+                patch.object(self.launcher, "inspect_service", return_value=genesis), \
+                patch.object(self.launcher, "monitored") as monitored, \
+                patch.object(self.launcher, "save_state"), patch.object(self.launcher, "capture_runtime"), \
+                patch.object(self.launcher, "export"), patch("sys.stdout", new_callable=io.StringIO):
+            self.launcher.output = self.root / "output"
+            self.launcher.run()
+        call = monitored.call_args
+        self.assertEqual(call.args[2], 6840)
+        self.assertEqual(call.kwargs["phase_timeouts"], {"setup": 600, "generator": 4440, "reporting": 1800})
+        self.assertEqual(call.kwargs["progress_path"], Path(self.launcher.state["last_result"]) / "benchmark-progress.json")
+        receipt = next((self.root / "receipts").glob("*-time-budgets.json"))
+        self.assertEqual(json.loads(receipt.read_text())["total_seconds"], 6840)
+
     def test_failure_log_tail_is_bounded(self):
         path = self.root / "large.log"
         path.write_text("x" * 100000 + "\n" + "\n".join(f"line {n}" for n in range(50)))
@@ -411,6 +436,148 @@ class LauncherTests(unittest.TestCase):
         stop.assert_called_once()
         export.assert_called_once()
         self.assertEqual(self.launcher.state["phase"], "failed_cleanup_incomplete")
+
+
+class BenchmarkDeadlineTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.env = self.root / "profile.env"
+        self.env.write_text("NATIVE_RAM_ENABLED=1\n")
+        self.progress = self.root / "benchmark-progress.json"
+        self.settings = {"NATIVE_LOAD_DURATION_SECONDS": "600", "NATIVE_LOAD_WARMUP_SECONDS": "60",
+                         "NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS": "180", "NATIVE_LOAD_RAMP_SECONDS": "0",
+                         "NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS": "1800"}
+
+    def publish(self, phase, detail):
+        self.progress.write_text(json.dumps({"schema": "native-benchmark-progress-v1", "phase": phase,
+                                             "detail": detail, "updated_at_epoch_s": 1000}))
+
+    def test_budgets_include_preparation_readiness_ramp_and_separate_reporting(self):
+        budget = MODULE.benchmark_time_budgets(self.env, self.settings)
+        self.assertEqual(budget["phase_seconds"], {"setup": 600, "generator": 4440, "reporting": 1800})
+        self.assertEqual(budget["total_seconds"], 6840)
+        self.env.write_text("NATIVE_RAM_WRAPPER_SETUP_TIMEOUT_SECONDS=120\n"
+                            "NATIVE_RAM_GENERATOR_SETUP_TIMEOUT_SECONDS=300\n"
+                            "NATIVE_RAM_REPORT_TIMEOUT_SECONDS=600\n")
+        self.settings["NATIVE_LOAD_RAMP_SECONDS"] = "90"
+        changed = MODULE.benchmark_time_budgets(self.env, self.settings)
+        self.assertEqual(changed["phase_seconds"], {"setup": 120, "generator": 3030, "reporting": 600})
+
+    def test_budget_input_is_bounded_and_duplicate_allowances_are_rejected(self):
+        for key, bad in (("NATIVE_LOAD_DURATION_SECONDS", "0"), ("NATIVE_LOAD_RAMP_SECONDS", "-1"),
+                         ("NATIVE_LOAD_WARMUP_SECONDS", "601"), ("NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS", "0"),
+                         ("NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS", 0)):
+            with self.subTest(key=key), self.assertRaises(MODULE.LauncherError):
+                MODULE.benchmark_time_budgets(self.env, {**self.settings, key: bad})
+        for text in ("NATIVE_RAM_REPORT_TIMEOUT_SECONDS=0\n", "NATIVE_RAM_REPORT_TIMEOUT_SECONDS=$(id)\n",
+                     "NATIVE_RAM_REPORT_TIMEOUT_SECONDS=600\nNATIVE_RAM_REPORT_TIMEOUT_SECONDS=900\n"):
+            self.env.write_text(text)
+            with self.subTest(text=text), self.assertRaises(MODULE.LauncherError):
+                MODULE.benchmark_time_budgets(self.env, self.settings)
+
+    def test_reporting_keeps_its_full_budget_after_the_old_2040s_deadline(self):
+        budget = MODULE.benchmark_time_budgets(self.env, self.settings)["phase_seconds"]
+        deadline = MODULE.BenchmarkDeadline(self.progress, budget, 0)
+        self.publish("generator", "generator_wait")
+        deadline.refresh(10)
+        deadline.check(1813, "fixture", "fixture.log")
+        self.publish("reporting", "generator_exited")
+        deadline.refresh(1813)
+        deadline.check(2041, "fixture", "fixture.log")
+        # Later reports and a 'complete' event cannot repeatedly reset the timer.
+        for now, phase, detail in ((2400, "reporting", "resource_summary"), (3500, "complete", "complete")):
+            self.publish(phase, detail)
+            deadline.refresh(now)
+            deadline.check(now, "fixture", "fixture.log")
+        self.assertEqual(deadline.phase_started, 1813)
+        with self.assertRaisesRegex(MODULE.LauncherError, "phase=reporting/complete"):
+            deadline.check(3613, "fixture", "fixture.log")
+
+    def test_missing_malformed_or_backward_progress_cannot_extend_deadline(self):
+        deadline = MODULE.BenchmarkDeadline(self.progress, {"setup": 60, "generator": 100, "reporting": 60}, 0)
+        deadline.refresh(30)
+        with self.assertRaises(MODULE.LauncherError):
+            deadline.check(60, "fixture", "fixture.log")
+        self.publish("generator", "generator_wait")
+        deadline.refresh(10)
+        self.publish("setup", "stale")
+        deadline.refresh(50)
+        self.progress.write_text("partial JSON")
+        deadline.refresh(70)
+        self.assertEqual((deadline.phase, deadline.detail, deadline.phase_started), ("generator", "generator_wait", 10))
+        with self.assertRaises(MODULE.LauncherError):
+            deadline.check(110, "fixture", "fixture.log")
+
+    def test_monitor_reporting_timeout_retains_stage_and_stops_only_owned_child_group(self):
+        (self.root / "logs").mkdir()
+        clock = [0]
+        launcher = MODULE.Launcher.__new__(MODULE.Launcher)
+        launcher.root, launcher.env = self.root, {}
+        child = Mock(pid=123)
+        child.poll.return_value = None
+
+        def spawn(*args, **kwargs):
+            kwargs["stdout"].write(b"fixture generator finished; processing validator telemetry\n")
+            return child
+
+        def advance(seconds):
+            clock[0] += seconds
+            if clock[0] == 2:
+                self.publish("generator", "generator_wait")
+            elif clock[0] == 4:
+                self.publish("reporting", "validator_pipeline_report")
+            elif clock[0] == 6:
+                self.publish("reporting", "validator_scheduling_report")
+
+        with patch.object(MODULE.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(MODULE.time, "sleep", side_effect=advance), \
+                patch.object(MODULE.subprocess, "Popen", side_effect=spawn) as popen, \
+                patch.object(MODULE.os, "killpg") as kill, patch.object(launcher, "guard_check") as guard, \
+                patch("sys.stdout", new_callable=io.StringIO) as output, \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            with self.assertRaisesRegex(MODULE.LauncherError,
+                                        "phase=reporting/validator_scheduling_report, phase elapsed=6/6s"):
+                launcher.monitored(["never-execute"], "benchmark.log", 100,
+                                   progress_path=self.progress,
+                                   phase_timeouts={"setup": 10, "generator": 60, "reporting": 6})
+            kill.assert_called_once_with(123, MODULE.signal.SIGTERM)
+            child.wait.assert_called_once_with(timeout=15)
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            self.assertGreaterEqual(guard.call_count, 6)
+            self.assertIn("phase=reporting/validator_scheduling_report", output.getvalue())
+            self.assertIn("fixture generator finished", stderr.getvalue())
+        self.assertEqual(clock[0], 10)  # Substage update at t=6 cannot renew the t=4 deadline.
+        self.assertEqual(json.loads(self.progress.read_text())["detail"], "validator_scheduling_report")
+
+    def test_monitor_allows_completed_load_to_finish_reports_beyond_old_limit(self):
+        (self.root / "logs").mkdir()
+        clock = [0]
+        launcher = MODULE.Launcher.__new__(MODULE.Launcher)
+        launcher.root, launcher.env = self.root, {}
+        child = Mock(pid=123, returncode=0)
+        child.poll.side_effect = lambda: 0 if clock[0] >= 2400 else None
+
+        def advance(seconds):
+            clock[0] += seconds
+            if clock[0] == 2:
+                self.publish("generator", "generator_wait")
+            if clock[0] == 1814:
+                self.publish("reporting", "validator_pipeline_report")
+
+        with patch.object(MODULE.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(MODULE.time, "sleep", side_effect=advance), \
+                patch.object(MODULE.subprocess, "Popen", return_value=child), \
+                patch.object(MODULE.os, "killpg") as kill, patch.object(launcher, "guard_check") as guard, \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            budget = MODULE.benchmark_time_budgets(self.env, self.settings)
+            launcher.monitored(["never-execute"], "benchmark.log", budget["total_seconds"],
+                               progress_path=self.progress, phase_timeouts=budget["phase_seconds"])
+            kill.assert_not_called()
+            self.assertGreater(guard.call_count, 1000)
+            self.assertIn("phase=reporting/validator_pipeline_report", output.getvalue())
+        self.assertEqual(clock[0], 2400)
 
 
 if __name__ == "__main__":

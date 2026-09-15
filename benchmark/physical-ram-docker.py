@@ -68,12 +68,85 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def profile_literal(path, key):
+def profile_literal(path, key, default=None):
     rows = re.findall(r"^\s*(?:export\s+)?" + re.escape(key) + r"\s*=(.*)$", Path(path).read_text(), re.M)
+    if not rows and default is not None:
+        return str(default)
     require(len(rows) == 1, "profile must define exactly one literal " + key)
     values = shlex.split(rows[0], comments=True)
     require(len(values) == 1 and not any(char in values[0] for char in "$`\n\r\x00"), "profile " + key + " must be literal")
     return values[0]
+
+
+def benchmark_time_budgets(env_file, settings):
+    def seconds(value, name, minimum, maximum):
+        require(re.fullmatch(r"[0-9]+", str(value)) is not None, name + " must be an integer number of seconds")
+        result = int(value)
+        require(minimum <= result <= maximum, f"{name} must be within {minimum}..{maximum} seconds")
+        return result
+
+    def setting(name, default, minimum, maximum):
+        value = settings.get(name)
+        return seconds(default if value is None or value == "" else value, name, minimum, maximum)
+
+    def allowance(name, default, maximum):
+        return seconds(profile_literal(env_file, name, default), name, 60, maximum)
+
+    components = {
+        "wrapper_setup": allowance("NATIVE_RAM_WRAPPER_SETUP_TIMEOUT_SECONDS", 600, 7200),
+        "generator_setup": allowance("NATIVE_RAM_GENERATOR_SETUP_TIMEOUT_SECONDS", 1800, 14400),
+        "lane_readiness": setting("NATIVE_LOAD_PAYMENT_LANE_READY_TIMEOUT_SECONDS", 900, 1, 86400),
+        "ramp": setting("NATIVE_LOAD_RAMP_SECONDS", 0, 0, 3600),
+        "warmup": setting("NATIVE_LOAD_WARMUP_SECONDS", 0, 0, 600),
+        "measurement": setting("NATIVE_LOAD_DURATION_SECONDS", 0, 1, 3600),
+        "drain": setting("NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS", 0, 1, 1800),
+        "reporting": allowance("NATIVE_RAM_REPORT_TIMEOUT_SECONDS", 1800, 7200),
+    }
+    phases = {"setup": components["wrapper_setup"],
+              "generator": sum(components[key] for key in
+                               ("generator_setup", "lane_readiness", "ramp", "warmup", "measurement", "drain")),
+              "reporting": components["reporting"]}
+    return {"schema": "native-physical-ram-time-budgets-v1", "components_seconds": components,
+            "phase_seconds": phases, "total_seconds": sum(phases.values()),
+            "semantics": "Separate bounded setup, generator (including preparation/readiness), and reporting budgets; measurement duration is unchanged."}
+
+
+class BenchmarkDeadline:
+    """Substage updates cannot renew a phase budget or authorize a valid result."""
+    PHASES = ("setup", "generator", "reporting")
+
+    def __init__(self, path, budgets, started):
+        self.path, self.budgets = Path(path), budgets
+        self.phase, self.detail, self.phase_started = "setup", "waiting_for_wrapper", started
+
+    def refresh(self, now):
+        # The wrapper replaces this small receipt atomically. Missing/invalid
+        # progress cannot extend the deadline or turn a timeout into success.
+        try:
+            if self.path.is_symlink() or self.path.stat().st_size > 16384:
+                return
+            record = json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            return
+        if not isinstance(record, dict) or record.get("schema") != "native-benchmark-progress-v1":
+            return
+        phase = record.get("phase")
+        if phase == "complete":
+            phase = "reporting"
+        if phase not in self.PHASES or self.PHASES.index(phase) < self.PHASES.index(self.phase):
+            return
+        if phase != self.phase:
+            self.phase, self.phase_started = phase, now
+        detail = record.get("detail")
+        if isinstance(detail, str):
+            self.detail = re.sub(r"[^A-Za-z0-9_.:-]", "_", detail)[:160]
+
+    def describe(self, now):
+        return f"phase={self.phase}/{self.detail}, phase elapsed={int(now - self.phase_started)}/{self.budgets[self.phase]}s"
+
+    def check(self, now, log_name, destination):
+        require(now - self.phase_started < self.budgets[self.phase],
+                f"{log_name} timed out: {self.describe(now)}; see {destination} and {self.path}")
 
 
 def private_environment(host, temporary, project):
@@ -270,11 +343,13 @@ class Launcher:
         if receipt:
             require(process_owned(receipt, str(GUARD)), "RAM guard exited; workload cannot continue unguarded")
 
-    def monitored(self, argv, log_name, timeout):
+    def monitored(self, argv, log_name, timeout, *, progress_path=None, phase_timeouts=None):
         self.guard_check()
         destination = self.root / "logs" / log_name
         started = time.monotonic()
+        phase_deadline = BenchmarkDeadline(progress_path, phase_timeouts, started) if phase_timeouts else None
         next_progress = started + 30
+        last_stage = None
         print(f"Running {log_name}; live log: {destination}", flush=True)
         with destination.open("ab", buffering=0) as log:
             child = subprocess.Popen(argv, cwd=REPO, env=self.env, stdout=log,
@@ -283,11 +358,17 @@ class Launcher:
             try:
                 while child.poll() is None:
                     self.guard_check()
-                    require(time.monotonic() < deadline,
+                    now = time.monotonic()
+                    if phase_deadline:
+                        phase_deadline.refresh(now)
+                        phase_deadline.check(now, log_name, destination)
+                    require(now < deadline,
                             f"{log_name} timed out after {timeout} seconds; see {destination}")
-                    if time.monotonic() >= next_progress:
-                        print(f"{log_name}: running for {int(time.monotonic() - started)} seconds; resource guard active", flush=True)
-                        next_progress = time.monotonic() + 30
+                    stage = (phase_deadline.phase, phase_deadline.detail) if phase_deadline else None
+                    if now >= next_progress or stage != last_stage:
+                        progress = "; " + phase_deadline.describe(now) if phase_deadline else ""
+                        print(f"{log_name}: running for {int(now - started)} seconds{progress}; resource guard active", flush=True)
+                        next_progress, last_stage = now + 30, stage
                     time.sleep(2)
                 self.guard_check()
                 require(child.returncode == 0, f"command failed ({child.returncode}); see {destination}")
@@ -622,22 +703,21 @@ print("container TCP/UDP passed")
         self.verify_images()
         config = self.service_config()
         settings = config["services"]["native-load-generator"]["environment"]
-        duration = int(settings.get("NATIVE_LOAD_DURATION_SECONDS") or 0)
-        warmup = int(settings.get("NATIVE_LOAD_WARMUP_SECONDS") or 0)
-        drain = int(settings.get("NATIVE_LOAD_DRAIN_TIMEOUT_SECONDS") or 0)
-        require(0 < duration <= 3600 and 0 <= warmup <= 600 and 0 < drain <= 1800,
-                "run requires a bounded profile: duration 1..3600, warmup 0..600, drain 1..1800 seconds")
+        budgets = benchmark_time_budgets(self.env_file, settings)
         genesis = self.inspect_service("genesis")
         require(genesis["Id"] == self.state["genesis_id"]
                 and genesis["State"]["StartedAt"] == self.state["genesis_started_at"]
                 and genesis["State"].get("Health", {}).get("Status") == "healthy", "genesis identity, start time, or health changed")
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
         result = self.root / "results" / run_id
+        write_json(self.root / "receipts" / (run_id + "-time-budgets.json"), budgets)
+        print("Benchmark phase limits (seconds): " + json.dumps(budgets["phase_seconds"], sort_keys=True), flush=True)
         self.env.update(BENCHMARK_COMPOSE_PROJECT=self.state["project"], BENCHMARK_IMAGES_PREBUILT="1",
                         BENCHMARK_STRICT_IMAGE_REUSE="1", BENCHMARK_STRICT_GENESIS_REUSE="1")
         self.cleanup_on_error = True
         self.monitored(["bash", str(REPO / "run-native-benchmark.sh"), str(self.env_file), str(result)],
-                       run_id + "-benchmark.log", warmup + duration + drain + 1200)
+                       run_id + "-benchmark.log", budgets["total_seconds"],
+                       progress_path=result / "benchmark-progress.json", phase_timeouts=budgets["phase_seconds"])
         self.verify_daemon()
         self.verify_images()
         self.inspect_service("native-load-generator")
