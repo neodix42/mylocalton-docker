@@ -107,6 +107,10 @@ sudo python3 benchmark/physical-ram-docker.py run --env-file .env.physical \
 # Save final evidence and stop the owned benchmark/daemon. Retain RAM volumes.
 sudo python3 benchmark/physical-ram-docker.py stop --env-file .env.physical \
   --output benchmark-results/ram-stop
+
+# For a fresh cycle, explicitly discard and atomically unmount after export.
+sudo python3 benchmark/physical-ram-docker.py stop --env-file .env.physical \
+  --discard-and-unmount --output benchmark-results/ram-stop-and-unmount
 ```
 
 Fresh wallet/zero-state preparation can take tens of minutes. The launcher starts
@@ -155,6 +159,20 @@ before the heavier validator/resource reports. That file preserves the generator
 own validity fields, including a false capacity assessment; it does not replace
 `benchmark-summary.json` or the wrapper's successful exit and acceptance checks.
 
+`stop` now records `receipts/post-stop-mount.json`. It lists any process whose
+working directory, root, executable, open file descriptor or mapped file is
+inside the RAM filesystem, as well as stacked or nested mounts. Run the
+read-only diagnostic at any time, even if `owner.json` is missing:
+
+```bash
+sudo python3 benchmark/physical-ram-docker.py diagnose --env-file .env.physical
+```
+
+`--discard-and-unmount` exports evidence first, requires a complete clean holder
+scan, then calls `umount` itself. It never kills a process merely because that
+process has the mount open. This closes the gap where a successful `stop` could
+be followed by an unexplained manual `umount: target is busy`.
+
 If startup fails, its output path is a directory containing evidence, not a text
 log. For the reported `start-services.log` timeout, inspect these files from the
 original attempt:
@@ -183,10 +201,9 @@ evidence and stops only the owned RAM runtime. **Unmounting discards the retaine
 test database and images**; use this step only when choosing a fresh test chain.
 
 ```bash
-ram_attempt=$(date -u +%Y%m%dT%H%M%S)-$$
+ram_attempt=$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM
 sudo python3 benchmark/physical-ram-docker.py stop --env-file .env.physical \
-  --output "benchmark-results/ram-stop-$ram_attempt" &&
-sudo umount /mnt/mylocalton-ram &&
+  --discard-and-unmount --output "benchmark-results/ram-stop-$ram_attempt" &&
 sudo python3 benchmark/physical-ram-docker.py start --env-file .env.physical \
   --output "benchmark-results/ram-start-$ram_attempt" &&
 sudo python3 benchmark/physical-ram-docker.py run --env-file .env.physical \
@@ -196,6 +213,25 @@ sudo python3 benchmark/physical-ram-docker.py run --env-file .env.physical \
 Use your configured `NATIVE_RAM_ROOT` if it differs from `/mnt/mylocalton-ram`.
 The saved persistent output directories survive that unmount. Neither cleanup nor
 this retry procedure stops unrelated containers on the original Docker daemon.
+
+If an earlier `rm -rf /mnt/mylocalton-ram/` deleted the in-RAM ownership receipt,
+the database, images and other files it removed cannot be recovered from the
+mount. Do not repeat that command. `recover-unmount` can use the exact
+`owner.json` saved by an earlier successful persistent export. It validates the
+recorded root and mount device and only signals recorded processes whose PID,
+start time and command still match; visible third-party holders cause a refusal.
+
+```bash
+ram_recovery=$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM
+sudo python3 benchmark/physical-ram-docker.py recover-unmount \
+  --env-file .env.physical \
+  --owner-evidence "$(realpath benchmark-results/ram-stop-6/ram-evidence/owner.json)" \
+  --output "benchmark-results/ram-recover-$ram_recovery"
+```
+
+If it refuses, inspect `mount-diagnostic.json` in that new persistent output.
+It contains the precise PIDs/references or nested mount paths still blocking
+release. The recovery command does not use or change the original Docker daemon.
 
 For server A with load on B, use `start`, then export through the private daemon:
 
@@ -278,9 +314,16 @@ simulated 620-second genesis bootstrap, guard/deadline failures, genesis restart
 during stats startup, failed-phase recovery messages, and command-log diagnostics.
 No live server startup or TPS measurement was performed for this fix.
 
-Finalization regression validation: 80 focused RAM tests and six wrapper progress
+Finalization regression validation: 90 focused RAM tests and six wrapper progress
 tests pass, along with the full benchmark self-test. The simulated run completes
 reporting beyond the former 2,040-second deadline; missing or stale progress and
 repeated substage updates cannot extend a phase. Tests also preserve an achieved
 TPS record whose chain-capacity assessment is false. These checks use mocks and
 fixtures; they do not constitute another server TPS run.
+
+Mount-release regression validation includes six offline mount-namespace and
+process-reference tests plus four launcher recovery tests. They cover deleted
+open files, working directories, memory mappings, nested and stacked mounts,
+external ownership restoration, export-before-unmount ordering, and refusal to
+terminate an unowned holder. No local mount, daemon, container or process was
+changed by these tests.

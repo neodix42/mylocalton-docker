@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run a fresh, isolated native Docker benchmark entirely on noswap tmpfs.
 
-check is read-only. start prepares images and a fresh genesis; run measures the
-profile's workload. exec exposes the verified private Docker endpoint. stop
-exports evidence and stops this launcher’s processes, retaining the RAM mount.
+check and diagnose are read-only. start prepares images and a fresh genesis; run
+measures the profile's workload. exec exposes the verified private Docker
+endpoint. stop exports evidence and stops this launcher's processes, retaining
+the RAM mount unless explicit discard-and-unmount is requested. recover-unmount
+uses previously exported ownership after in-RAM metadata was accidentally lost.
 No command uses, stops, or reconfigures containers on the original daemon.
 """
 import argparse
@@ -30,12 +32,16 @@ REPO = Path(__file__).resolve().parents[1]
 PREFLIGHT = REPO / "benchmark/physical-ram-preflight.py"
 GUARD = REPO / "benchmark/physical-ram-guard.py"
 FIREWALL = REPO / "benchmark/physical-ram-firewall.py"
+MOUNT_DIAGNOSTIC = REPO / "benchmark/physical-ram-mount.py"
 SPEC = importlib.util.spec_from_file_location("physical_ram_preflight", PREFLIGHT)
 PREFLIGHT_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PREFLIGHT_MODULE)
 FIREWALL_SPEC = importlib.util.spec_from_file_location("physical_ram_firewall", FIREWALL)
 FIREWALL_MODULE = importlib.util.module_from_spec(FIREWALL_SPEC)
 FIREWALL_SPEC.loader.exec_module(FIREWALL_MODULE)
+MOUNT_SPEC = importlib.util.spec_from_file_location("physical_ram_mount", MOUNT_DIAGNOSTIC)
+MOUNT_MODULE = importlib.util.module_from_spec(MOUNT_SPEC)
+MOUNT_SPEC.loader.exec_module(MOUNT_MODULE)
 SERVICES = ("native-load-generator", "genesis", "session-stats")
 HEX_ID = re.compile(r"[0-9a-f]{64}")
 
@@ -274,6 +280,15 @@ class Launcher:
     def save_state(self):
         write_json(self.state_path, self.state)
 
+    def restore_state_storage(self):
+        """Recreate launcher metadata removed from an otherwise live mount."""
+        receipts = self.root / "receipts"
+        require(not receipts.is_symlink(), "RAM receipts path must not be a symlink")
+        receipts.mkdir(mode=0o700, exist_ok=True)
+        require(receipts.is_dir(), "RAM receipts path is not a directory")
+        require(not self.state_path.is_symlink(), "RAM ownership path must not be a symlink")
+        self.save_state()
+
     def mount_check(self):
         # Cleanup and evidence export remain possible after the free-space guard
         # trips. Live admission thresholds belong to preflight and the guard.
@@ -284,11 +299,18 @@ class Launcher:
         if self.state:
             require(self.root.stat().st_dev == self.state["mount_device"], "RAM mount identity changed")
 
-    def load_state(self, immutable=True, ready=False):
+    def load_state(self, immutable=True, ready=False, owner_evidence=None):
         require(os.geteuid() == 0, "start, run, exec, and stop require root")
         self.mount_check()
-        require(self.state_path.is_file() and not self.state_path.is_symlink(), "launcher ownership receipt missing")
-        self.state = json.loads(self.state_path.read_text())
+        source = self.state_path
+        if owner_evidence:
+            require(not self.state_path.exists() and not self.state_path.is_symlink(),
+                    "in-RAM ownership receipt exists; omit --owner-evidence and use the current receipt")
+            source = Path(owner_evidence).expanduser().absolute()
+            require(source.resolve() == source and not source.is_relative_to(self.root),
+                    "external ownership evidence and its parents must not be symlinks or reside in the RAM root")
+        require(source.is_file() and not source.is_symlink(), "launcher ownership receipt missing")
+        self.state = json.loads(source.read_text())
         require(self.state.get("schema") == "native-physical-ram-owner-v1"
                 and self.state.get("root") == str(self.root), "invalid launcher ownership receipt")
         self.mount_check()
@@ -444,7 +466,8 @@ class Launcher:
         token = uuid.uuid4().hex
         harness = ["docker-compose.yaml", "prepare-native-images.sh", "run-native-benchmark.sh",
                    "benchmark/physical-ram-docker.py", "benchmark/physical-ram-preflight.py",
-                   "benchmark/physical-ram-guard.py", "benchmark/physical-ram-firewall.py"]
+                   "benchmark/physical-ram-guard.py", "benchmark/physical-ram-firewall.py",
+                   "benchmark/physical-ram-mount.py"]
         self.state = {"schema": "native-physical-ram-owner-v1", "at": utc(), "token": token,
                       "project": project, "root": str(self.root), "mount_device": self.root.stat().st_dev,
                       "env_sha256": self.config["env_sha256"], "env_file": str(self.env_file),
@@ -763,19 +786,100 @@ print("container TCP/UDP passed")
                 stopped.append(json.loads(self.docker("inspect", row["Id"]))[0])
         write_json(self.root / "receipts/stopped-containers.json", stopped)
 
-    def stop(self):
-        self.load_state(immutable=False)
-        self.cleanup_on_error = True
+    def stop_runtime(self):
         if self.state.get("daemon_id") and process_owned(self.state.get("dockerd", {}), self.plan["paths"]["daemon_config"]):
-            self.verify_daemon()
-            self.stop_containers()
-            self.capture_runtime("stopped")
-            self.remove_owned_containers_and_networks()
+            configs_available = (Path(self.plan["paths"]["daemon_config"]).is_file()
+                                 and Path(self.plan["containerd_paths"]["config"]).is_file())
+            if configs_available:
+                self.verify_daemon()
+                self.stop_containers()
+                self.capture_runtime("stopped")
+                self.remove_owned_containers_and_networks()
+            else:
+                print("RAM runtime metadata was deleted; stopping only processes whose recorded PID, start time, and command still match.",
+                      flush=True)
         self.stop_processes()
+
+    def mount_report(self):
+        return MOUNT_MODULE.inspect_mount(self.root)
+
+    @staticmethod
+    def mount_blockers(report):
+        parts = []
+        if report.get("stacked_root_mounts"):
+            parts.append(f"{len(report['stacked_root_mounts'])} stacked root mount(s)")
+        if report.get("nested_mounts"):
+            paths = [item["mountpoint"] for item in report["nested_mounts"][:3]]
+            parts.append("nested mount(s): " + ", ".join(paths))
+        if report.get("holders"):
+            labels = [f"pid {item['pid']} ({item['name']})" for item in report["holders"][:5]]
+            parts.append("process holder(s): " + ", ".join(labels))
+        if report.get("errors"):
+            parts.append("incomplete diagnostics: " + "; ".join(report["errors"][:3]))
+        return "; ".join(parts) or "the kernel rejected the unmount without a visible holder"
+
+    def discard_and_unmount(self, report):
+        require(report.get("mounted") is True, "RAM root is not mounted")
+        require(report.get("unmount_ready") is True,
+                "RAM mount is still busy: " + self.mount_blockers(report))
+        completed = subprocess.run(["umount", "--", str(self.root)], cwd=REPO, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False)
+        receipt = {"schema": "native-physical-ram-unmount-v1", "at": utc(),
+                   "root": str(self.root), "discarded": completed.returncode == 0,
+                   "returncode": completed.returncode, "stderr": completed.stderr.strip()[:1200],
+                   "pre_unmount": report}
+        write_json(self.output / "unmount.json", receipt)
+        require(completed.returncode == 0,
+                "umount failed after a clean holder scan: " + (receipt["stderr"] or "no diagnostic"))
+        require(not os.path.ismount(self.root), "umount returned success but the RAM root remains mounted")
+        export_path = self.output / "export.json"
+        if export_path.is_file() and not export_path.is_symlink():
+            exported = json.loads(export_path.read_text())
+            exported.update(mount_retained=False, unmounted_at=utc(),
+                            note="Evidence exported before the explicitly requested volatile RAM unmount.")
+            write_json(export_path, exported)
+
+    def stop(self):
+        self.load_state(immutable=False, owner_evidence=self.args.owner_evidence)
+        if self.args.owner_evidence:
+            self.restore_state_storage()
+        self.cleanup_on_error = True
+        self.stop_runtime()
         self.state["phase"] = "stopped"
         self.save_state()
+        report = self.mount_report()
+        self.state["post_stop_unmount_ready"] = report["unmount_ready"]
+        self.save_state()
+        write_json(self.root / "receipts/post-stop-mount.json", report)
         self.export()
-        print(f"Owned RAM Docker stopped; evidence exported to {self.output}. RAM data remains mounted at {self.root}.")
+        if self.args.discard_and_unmount:
+            self.cleanup_on_error = False
+            self.discard_and_unmount(report)
+            print(f"Owned RAM Docker stopped, evidence exported to {self.output}, and volatile RAM data unmounted.")
+        else:
+            status = "no unmount blockers detected" if report["unmount_ready"] else self.mount_blockers(report)
+            print(f"Owned RAM Docker stopped; evidence exported to {self.output}. RAM data remains mounted at {self.root}; {status}.")
+
+    def recover_unmount(self):
+        require(self.args.owner_evidence, "recover-unmount requires --owner-evidence from a prior persistent RAM export")
+        self.load_state(immutable=False, owner_evidence=self.args.owner_evidence)
+        self.restore_state_storage()
+        self.cleanup_on_error = False
+        self.stop_runtime()
+        self.state["phase"] = "recovered_stopped"
+        self.save_state()
+        report = self.mount_report()
+        write_json(self.output / "mount-diagnostic.json", report)
+        write_json(self.output / "recovery.json", {"schema": "native-physical-ram-recovery-v1",
+                   "at": utc(), "root": str(self.root), "owner_evidence": str(Path(self.args.owner_evidence).absolute()),
+                   "mount_device": self.state["mount_device"], "unmount_ready": report["unmount_ready"]})
+        self.discard_and_unmount(report)
+        print(f"Recovered exact launcher ownership and unmounted discarded RAM data at {self.root}; evidence: {self.output}.")
+
+    def diagnose(self):
+        require(os.geteuid() == 0, "diagnose requires root to inspect every process holder")
+        report = self.mount_report()
+        print(json.dumps(report, indent=2, sort_keys=True))
 
     def remove_owned_containers_and_networks(self):
         removed = {"containers": [], "networks": [], "volumes_removed": False}
@@ -865,25 +969,36 @@ print("container TCP/UDP passed")
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
-    for action in ("check", "start", "run", "exec", "stop"):
+    for action in ("check", "diagnose", "start", "run", "exec", "stop", "recover-unmount"):
         child = subparsers.add_parser(action)
         child.add_argument("--env-file", default=str(REPO / ".env.physical"))
         child.add_argument("--docker-context", help="original native Docker context used only by preflight")
-        child.add_argument("--output", help="new persistent evidence directory (required for start/run/stop)")
+        child.add_argument("--output", help="new persistent evidence directory (required for start/run/stop/recover-unmount)")
         if action == "exec":
             child.add_argument("command", nargs=argparse.REMAINDER)
+        if action in ("stop", "recover-unmount"):
+            child.add_argument("--owner-evidence",
+                               help="external owner.json from a prior persistent ram-evidence export")
+        if action == "stop":
+            child.add_argument("--discard-and-unmount", action="store_true",
+                               help="after exporting evidence, verify no holders and unmount the volatile RAM filesystem")
     args = parser.parse_args(argv)
     launcher = None
     try:
         launcher = Launcher(args)
-        if args.action != "check":
+        if args.action not in ("check", "diagnose"):
             launcher.lock()
         if args.action == "check":
             if args.output:
                 launcher.prepare_output()
             launcher.preflight()
+        elif args.action == "diagnose":
+            launcher.diagnose()
         elif args.action == "exec":
             return launcher.execute()
+        elif args.action == "recover-unmount":
+            launcher.prepare_output()
+            launcher.recover_unmount()
         else:
             launcher.prepare_output()
             getattr(launcher, args.action)()

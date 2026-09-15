@@ -437,6 +437,81 @@ class LauncherTests(unittest.TestCase):
         export.assert_called_once()
         self.assertEqual(self.launcher.state["phase"], "failed_cleanup_incomplete")
 
+    def test_external_owner_evidence_restores_deleted_ram_metadata(self):
+        external_temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(external_temporary.cleanup)
+        external = Path(external_temporary.name)
+        owner = external / "owner.json"
+        state = {**self.launcher.state, "schema": "native-physical-ram-owner-v1",
+                 "root": str(self.root), "mount_device": self.root.stat().st_dev,
+                 "phase": "stopped"}
+        owner.write_text(json.dumps(state))
+        self.launcher.state_path = self.root / "owner.json"
+        self.launcher.plan = {"docker_host": "unix:///ram/docker.sock"}
+        with patch.object(MODULE.os, "geteuid", return_value=0), \
+                patch.object(self.launcher, "mount_check"):
+            self.launcher.load_state(immutable=False, owner_evidence=owner)
+            self.launcher.restore_state_storage()
+        self.assertEqual(json.loads(self.launcher.state_path.read_text())["mount_device"],
+                         self.root.stat().st_dev)
+        self.assertTrue((self.root / "receipts").is_dir())
+
+    def test_stop_records_mount_blockers_and_explicit_unmount_runs_after_export(self):
+        self.launcher.args = argparse.Namespace(owner_evidence=None, discard_and_unmount=True)
+        self.launcher.output = self.root / "persistent-stop"
+        self.launcher.output.mkdir()
+        (self.root / "receipts").mkdir()
+        report = {"mounted": True, "unmount_ready": True, "holders": [],
+                  "nested_mounts": [], "stacked_root_mounts": [], "errors": []}
+        calls = []
+        with patch.object(self.launcher, "load_state"), \
+                patch.object(self.launcher, "stop_runtime", side_effect=lambda: calls.append("runtime")), \
+                patch.object(self.launcher, "save_state"), \
+                patch.object(self.launcher, "mount_report", return_value=report), \
+                patch.object(self.launcher, "export", side_effect=lambda: calls.append("export")), \
+                patch.object(self.launcher, "discard_and_unmount", side_effect=lambda value: calls.append("unmount")), \
+                patch("sys.stdout", new_callable=io.StringIO):
+            self.launcher.stop()
+        self.assertEqual(calls, ["runtime", "export", "unmount"])
+        self.assertEqual(json.loads((self.root / "receipts/post-stop-mount.json").read_text()), report)
+        self.assertFalse(self.launcher.cleanup_on_error)
+
+    def test_recover_unmount_requires_exported_owner_and_refuses_visible_holder(self):
+        self.launcher.args = argparse.Namespace(owner_evidence="/persistent/owner.json")
+        self.launcher.output = self.root / "persistent-recovery"
+        self.launcher.output.mkdir()
+        report = {"mounted": True, "unmount_ready": False, "stacked_root_mounts": [],
+                  "nested_mounts": [], "errors": [],
+                  "holders": [{"pid": 42, "name": "old-tail", "references": []}]}
+        with patch.object(self.launcher, "load_state"), \
+                patch.object(self.launcher, "restore_state_storage"), \
+                patch.object(self.launcher, "stop_runtime"), \
+                patch.object(self.launcher, "save_state"), \
+                patch.object(self.launcher, "mount_report", return_value=report), \
+                patch.object(self.launcher, "discard_and_unmount", wraps=self.launcher.discard_and_unmount):
+            self.launcher.state.update(mount_device=123)
+            with self.assertRaisesRegex(MODULE.LauncherError, r"pid 42 \(old-tail\)"):
+                self.launcher.recover_unmount()
+        saved = json.loads((self.launcher.output / "mount-diagnostic.json").read_text())
+        self.assertEqual(saved["holders"][0]["pid"], 42)
+        self.assertFalse(json.loads((self.launcher.output / "recovery.json").read_text())["unmount_ready"])
+
+    def test_discard_unmount_is_exact_and_updates_persistent_export(self):
+        self.launcher.output = self.root / "persistent-unmount"
+        self.launcher.output.mkdir()
+        (self.launcher.output / "export.json").write_text(json.dumps({"mount_retained": True}))
+        report = {"mounted": True, "unmount_ready": True, "stacked_root_mounts": [],
+                  "nested_mounts": [], "holders": [], "errors": []}
+        completed = Mock(returncode=0, stdout="", stderr="")
+        with patch.object(MODULE.subprocess, "run", return_value=completed) as run, \
+                patch.object(MODULE.os.path, "ismount", return_value=False):
+            self.launcher.discard_and_unmount(report)
+        self.assertEqual(run.call_args.args[0], ["umount", "--", str(self.root)])
+        self.assertTrue(json.loads((self.launcher.output / "unmount.json").read_text())["discarded"])
+        exported = json.loads((self.launcher.output / "export.json").read_text())
+        self.assertFalse(exported["mount_retained"])
+        self.assertIn("unmounted_at", exported)
+
 
 class BenchmarkDeadlineTests(unittest.TestCase):
     def setUp(self):
