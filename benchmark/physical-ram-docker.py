@@ -872,8 +872,13 @@ print("container TCP/UDP passed")
         write_json(self.output / "mount-diagnostic.json", report)
         write_json(self.output / "recovery.json", {"schema": "native-physical-ram-recovery-v1",
                    "at": utc(), "root": str(self.root), "owner_evidence": str(Path(self.args.owner_evidence).absolute()),
-                   "mount_device": self.state["mount_device"], "unmount_ready": report["unmount_ready"]})
-        self.discard_and_unmount(report)
+                   "mount_device": self.state["mount_device"], "unmount_ready": report["unmount_ready"],
+                   "next_action_if_busy": "Resolve only the reported holder, then run normal stop --discard-and-unmount with a new output; ownership is restored."})
+        try:
+            self.discard_and_unmount(report)
+        except LauncherError as error:
+            raise LauncherError(str(error) +
+                "; ownership is restored; after resolving the reported blocker, run normal stop --discard-and-unmount with a new output") from error
         print(f"Recovered exact launcher ownership and unmounted discarded RAM data at {self.root}; evidence: {self.output}.")
 
     def diagnose(self):

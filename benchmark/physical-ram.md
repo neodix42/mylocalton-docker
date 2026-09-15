@@ -231,7 +231,10 @@ sudo python3 benchmark/physical-ram-docker.py recover-unmount \
 
 If it refuses, inspect `mount-diagnostic.json` in that new persistent output.
 It contains the precise PIDs/references or nested mount paths still blocking
-release. The recovery command does not use or change the original Docker daemon.
+release. The attempted recovery has restored the in-RAM ownership receipt; after
+resolving only the reported blocker, use normal `stop --discard-and-unmount`
+with another new output directory instead of rerunning `recover-unmount`. The
+recovery command does not use or change the original Docker daemon.
 
 For server A with load on B, use `start`, then export through the private daemon:
 

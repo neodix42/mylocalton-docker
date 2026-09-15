@@ -490,11 +490,14 @@ class LauncherTests(unittest.TestCase):
                 patch.object(self.launcher, "mount_report", return_value=report), \
                 patch.object(self.launcher, "discard_and_unmount", wraps=self.launcher.discard_and_unmount):
             self.launcher.state.update(mount_device=123)
-            with self.assertRaisesRegex(MODULE.LauncherError, r"pid 42 \(old-tail\)"):
+            with self.assertRaisesRegex(MODULE.LauncherError,
+                                        r"pid 42 \(old-tail\).*normal stop --discard-and-unmount"):
                 self.launcher.recover_unmount()
         saved = json.loads((self.launcher.output / "mount-diagnostic.json").read_text())
         self.assertEqual(saved["holders"][0]["pid"], 42)
-        self.assertFalse(json.loads((self.launcher.output / "recovery.json").read_text())["unmount_ready"])
+        recovery = json.loads((self.launcher.output / "recovery.json").read_text())
+        self.assertFalse(recovery["unmount_ready"])
+        self.assertIn("ownership is restored", recovery["next_action_if_busy"])
 
     def test_discard_unmount_is_exact_and_updates_persistent_export(self):
         self.launcher.output = self.root / "persistent-unmount"
